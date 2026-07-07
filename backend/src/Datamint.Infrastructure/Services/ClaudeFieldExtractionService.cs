@@ -28,7 +28,7 @@ public class ClaudeFieldExtractionService : IAiFieldExtractionService
         _logger = logger;
     }
 
-    public async Task<AiExtractionResultDto> ExtractStructuredDataAsync(IEnumerable<PdfPageTextDto> pages, CancellationToken ct = default)
+    public async Task<AiExtractionResultDto> ExtractStructuredDataAsync(IEnumerable<PdfPageTextDto> pages, IReadOnlyList<string>? requestedFields = null, CancellationToken ct = default)
     {
         var apiKey = _config["Claude:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -37,12 +37,13 @@ public class ClaudeFieldExtractionService : IAiFieldExtractionService
                 "Claude API key is not configured. Set 'Claude:ApiKey' in appsettings/user-secrets.");
         }
 
-        var prompt = AiExtractionPromptHelper.BuildPrompt(pages);
+        var prompt = AiExtractionPromptHelper.BuildPrompt(pages, requestedFields);
 
         var requestBody = new
         {
             model = _config["Claude:Model"] ?? "claude-sonnet-5",
             max_tokens = 4096,
+            temperature = 0, // deterministic extraction - the same document should yield the same fields every time
             messages = new[] { new { role = "user", content = prompt } }
         };
 

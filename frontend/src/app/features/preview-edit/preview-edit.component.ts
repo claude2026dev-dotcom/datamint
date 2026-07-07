@@ -38,7 +38,8 @@ import { ExtractedFieldEdit } from '../../core/models/models';
           <div class="field-grid">
             @for (field of fieldsForPage(page); track field.id) {
               <div class="field-row">
-                <label>{{ field.fieldKey }}</label>
+                <input class="dm-input field-key" [(ngModel)]="field.fieldKey" (blur)="saveField(field)"
+                       title="Rename this field — the name used when exporting to Excel" />
                 <input class="dm-input" [(ngModel)]="field.fieldValue" (blur)="saveField(field)" />
                 @if (field.wasEditedByUser) { <span class="edited-badge">edited</span> }
               </div>
@@ -57,7 +58,8 @@ import { ExtractedFieldEdit } from '../../core/models/models';
     .page-block { padding: 20px; margin-bottom: 18px; }
     .field-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 12px; }
     .field-row { display: flex; flex-direction: column; gap: 6px; position: relative; }
-    .field-row label { font-size: 0.8rem; color: var(--dm-text-muted); }
+    .field-key { font-size: 0.8rem; color: var(--dm-text-muted); border: none; background: transparent; padding: 2px 4px; }
+    .field-key:hover, .field-key:focus { border: 1px solid var(--dm-border); background: var(--dm-surface); }
     .edited-badge { position: absolute; top: 0; right: 0; font-size: 0.7rem; color: var(--dm-accent); }
     @media (max-width: 700px) { .field-grid { grid-template-columns: 1fr; } .header { flex-direction: column; } }
   `]
@@ -94,7 +96,7 @@ export class PreviewEditComponent implements OnInit {
   }
 
   saveField(field: ExtractedFieldEdit) {
-    this.documentService.updateField(this.documentId, field.id, field.fieldValue ?? '').subscribe({
+    this.documentService.updateField(this.documentId, field.id, field.fieldValue ?? '', field.fieldKey).subscribe({
       next: () => { field.wasEditedByUser = true; },
       error: () => this.toast.error('Could not save that change. Please try again.')
     });

@@ -28,7 +28,7 @@ public class OpenAiFieldExtractionService : IAiFieldExtractionService
         _logger = logger;
     }
 
-    public async Task<AiExtractionResultDto> ExtractStructuredDataAsync(IEnumerable<PdfPageTextDto> pages, CancellationToken ct = default)
+    public async Task<AiExtractionResultDto> ExtractStructuredDataAsync(IEnumerable<PdfPageTextDto> pages, IReadOnlyList<string>? requestedFields = null, CancellationToken ct = default)
     {
         var apiKey = _config["OpenAI:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -37,7 +37,7 @@ public class OpenAiFieldExtractionService : IAiFieldExtractionService
                 "OpenAI API key is not configured. Set 'OpenAI:ApiKey' in appsettings/user-secrets.");
         }
 
-        var prompt = AiExtractionPromptHelper.BuildPrompt(pages);
+        var prompt = AiExtractionPromptHelper.BuildPrompt(pages, requestedFields);
 
         var requestBody = new
         {

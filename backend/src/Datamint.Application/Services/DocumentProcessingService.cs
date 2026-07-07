@@ -48,7 +48,8 @@ public class DocumentProcessingService
     }
 
     public async Task<Result<DocumentSummaryDto>> UploadAndQueueAsync(
-        Guid? userId, string originalFileName, string storedFilePath, long fileSizeBytes, string? uploaderIp, CancellationToken ct = default)
+        Guid? userId, string originalFileName, string storedFilePath, long fileSizeBytes, string? uploaderIp,
+        string extractionMode = "Dynamic", string? requestedFields = null, CancellationToken ct = default)
     {
         // Free-tier / plan limit gate is enforced server-side in DocumentsController
         // before this method is called (anonymous: by IP, logged-in: by subscription).
@@ -66,7 +67,9 @@ public class DocumentProcessingService
             StoredFilePath = storedFilePath,
             FileSizeBytes = fileSizeBytes,
             UploaderIpAddress = userId is null ? uploaderIp : null,
-            Status = DocumentStatus.Uploaded
+            Status = DocumentStatus.Uploaded,
+            ExtractionMode = extractionMode == "Formatted" ? "Formatted" : "Dynamic",
+            RequestedFields = extractionMode == "Formatted" ? requestedFields : null
         };
 
         await _documents.AddAsync(document, ct);
@@ -117,7 +120,11 @@ public class DocumentProcessingService
                 });
             }
 
-            var aiResult = await _aiExtraction.ExtractStructuredDataAsync(textResult.Pages, ct);
+            List<string>? requestedFieldsList = document.ExtractionMode == "Formatted" && !string.IsNullOrWhiteSpace(document.RequestedFields)
+                ? document.RequestedFields.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList()
+                : null;
+
+            var aiResult = await _aiExtraction.ExtractStructuredDataAsync(textResult.Pages, requestedFieldsList, ct);
             if (!aiResult.Success)
             {
                 document.Status = DocumentStatus.Failed;
@@ -160,7 +167,7 @@ public class DocumentProcessingService
         }
     }
 
-    public async Task<Result> UpdateFieldAsync(Guid documentId, Guid fieldId, string? newValue, CancellationToken ct = default)
+    public async Task<Result> UpdateFieldAsync(Guid documentId, Guid fieldId, string? newValue, string? newKey = null, CancellationToken ct = default)
     {
         var document = await _documents.GetWithDetailsAsync(documentId, ct);
         if (document is null) return Result.Failure("Document not found.", "NOT_FOUND");
@@ -170,6 +177,9 @@ public class DocumentProcessingService
 
         field.FieldValue = newValue;
         field.WasEditedByUser = field.OriginalAiValue != newValue;
+        if (!string.IsNullOrWhiteSpace(newKey))
+            field.FieldKey = newKey.Trim();
+
         await _documents.SaveChangesAsync(ct);
         return Result.Success();
     }
@@ -187,6 +197,52 @@ public class DocumentProcessingService
 
         await _audit.LogAsync("Document.Export", document.UserId, "Document", document.Id.ToString(), null, true, ct);
         return Result<byte[]>.Success(bytes);
+    }
+
+    /// <summary>
+    /// One combined workbook for several documents at once (rows=documents,
+    /// columns=field keys) - the ownership check for each id already happened in
+    /// the controller before these tracked entities were fetched, so this trusts the list.
+    /// </summary>
+    public async Task<Result<byte[]>> ExportBatchToExcelAsync(List<Document> documents, CancellationToken ct = default)
+    {
+        if (documents.Count == 0) return Result<byte[]>.Failure("No documents to export.", "NOT_FOUND");
+
+        var dtos = documents.Select(MapToDetailDto).ToList();
+        var bytes = await _excel.GenerateBatchExcelAsync(dtos, ct);
+
+        foreach (var document in documents)
+            document.Status = DocumentStatus.Exported;
+        await _documents.SaveChangesAsync(ct);
+
+        foreach (var document in documents)
+            await _audit.LogAsync("Document.BatchExport", document.UserId, "Document", document.Id.ToString(), null, true, ct);
+
+        return Result<byte[]>.Success(bytes);
+    }
+
+    public async Task<Result> EmailBatchExportAsync(List<Document> documents, string toAddress, CancellationToken ct = default)
+    {
+        var exportResult = await ExportBatchToExcelAsync(documents, ct);
+        if (!exportResult.Succeeded) return Result.Failure(exportResult.Error!, exportResult.ErrorCode!);
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"datamint-batch-export-{Guid.NewGuid()}.xlsx");
+        await File.WriteAllBytesAsync(tempPath, exportResult.Data!, ct);
+
+        var sent = await _email.SendAsync(
+            toAddress,
+            "Your Datamint extracted data export",
+            $"<p>Hi,</p><p>Please find attached the combined extracted data for {documents.Count} document(s) from Datamint.</p><p>— Datamint</p>",
+            tempPath,
+            "datamint-batch-export.xlsx",
+            ct);
+
+        if (File.Exists(tempPath)) File.Delete(tempPath);
+
+        foreach (var document in documents)
+            await _audit.LogAsync("Document.BatchEmailSent", document.UserId, "Document", document.Id.ToString(), $"{{\"to\":\"{toAddress}\"}}", sent, ct);
+
+        return sent ? Result.Success() : Result.Failure("Failed to send email. Please check email service configuration.", "EMAIL_FAILED");
     }
 
     public async Task<Result> EmailExportAsync(Guid documentId, string toAddress, CancellationToken ct = default)

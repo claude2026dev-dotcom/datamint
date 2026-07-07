@@ -26,6 +26,10 @@ public record DocumentDetailDto(
     string Status,
     List<ExtractedFieldEditDto> Fields);
 
-public record UpdateFieldRequestDto(Guid FieldId, string? NewValue);
+public record UpdateFieldRequestDto(Guid FieldId, string? NewValue, string? NewKey = null);
 
 public record SendEmailRequestDto(Guid DocumentId, string ToAddress, string? Message);
+
+public record BatchDocumentIdsRequestDto(List<Guid> DocumentIds);
+
+public record BatchSendEmailRequestDto(List<Guid> DocumentIds, string ToAddress);

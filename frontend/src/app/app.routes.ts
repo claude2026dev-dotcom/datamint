@@ -14,6 +14,7 @@ export const routes: Routes = [
   // uploads before signing in. The backend still enforces per-document ownership
   // for documents that belong to a logged-in user.
   { path: 'documents/:id/review', loadComponent: () => import('./features/preview-edit/preview-edit.component').then(m => m.PreviewEditComponent) },
+  { path: 'documents/batch-review', loadComponent: () => import('./features/batch-review/batch-review.component').then(m => m.BatchReviewComponent) },
   { path: 'plans', loadComponent: () => import('./features/subscription/plans/plans.component').then(m => m.PlansComponent) },
   { path: 'checkout/:planId', loadComponent: () => import('./features/subscription/checkout/checkout.component').then(m => m.CheckoutComponent), canActivate: [authGuard] },
   { path: 'terms', loadComponent: () => import('./features/legal/terms.component').then(m => m.TermsComponent) },

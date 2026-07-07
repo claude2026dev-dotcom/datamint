@@ -46,10 +46,18 @@ public class DocumentsController : ControllerBase
     [HttpPost("upload")]
     [EnforcesUploadLimit]
     [RequestSizeLimit(30_000_000)]
-    public async Task<IActionResult> Upload([FromForm] List<IFormFile> files, CancellationToken ct = default)
+    public async Task<IActionResult> Upload(
+        [FromForm] List<IFormFile> files,
+        [FromForm] string? extractionMode = "Dynamic",
+        [FromForm] string? requestedFields = null,
+        CancellationToken ct = default)
     {
         if (files is null || files.Count == 0)
             return BadRequest(new { success = false, message = "Please select at least one PDF file to upload." });
+
+        var isFormatted = string.Equals(extractionMode, "Formatted", StringComparison.OrdinalIgnoreCase);
+        if (isFormatted && string.IsNullOrWhiteSpace(requestedFields))
+            return BadRequest(new { success = false, message = "List the field names to extract, separated by commas, or switch to Dynamic mode." });
 
         var userId = _currentUser.UserId;
         Domain.Entities.Subscription? subscription = null;
@@ -109,7 +117,9 @@ public class DocumentsController : ControllerBase
             await using (var stream = new FileStream(storedPath, FileMode.Create))
                 await file.CopyToAsync(stream, ct);
 
-            var result = await _service.UploadAndQueueAsync(userId, file.FileName, storedPath, file.Length, _currentUser.IpAddress, ct);
+            var result = await _service.UploadAndQueueAsync(
+                userId, file.FileName, storedPath, file.Length, _currentUser.IpAddress,
+                isFormatted ? "Formatted" : "Dynamic", isFormatted ? requestedFields : null, ct);
             if (!result.Succeeded)
                 return BadRequest(new { success = false, message = result.Error });
 
@@ -160,6 +170,8 @@ public class DocumentsController : ControllerBase
             document.PageCount,
             document.RequiresOcr,
             Status = document.Status.ToString(),
+            document.ExtractionMode,
+            document.RequestedFields,
             Fields = document.ExtractedFields.OrderBy(f => f.SortOrder).Select(f => new
             {
                 f.Id,
@@ -177,7 +189,7 @@ public class DocumentsController : ControllerBase
         var (_, error) = await GetOwnedDocumentAsync(id, ct);
         if (error is not null) return error;
 
-        var result = await _service.UpdateFieldAsync(id, dto.FieldId, dto.NewValue, ct);
+        var result = await _service.UpdateFieldAsync(id, dto.FieldId, dto.NewValue, dto.NewKey, ct);
         return result.Succeeded ? Ok(new { success = true }) : NotFound(new { success = false, message = result.Error });
     }
 
@@ -199,6 +211,49 @@ public class DocumentsController : ControllerBase
         if (error is not null) return error;
 
         var result = await _service.EmailExportAsync(id, dto.ToAddress, ct);
+        return result.Succeeded
+            ? Ok(new { success = true, message = "Export emailed successfully." })
+            : BadRequest(new { success = false, message = result.Error });
+    }
+
+    /// <summary>Fetches ownership-checked entities for a batch endpoint - returns an error result the caller should return as-is if any id fails.</summary>
+    private async Task<(List<Domain.Entities.Document>? documents, IActionResult? error)> GetOwnedDocumentsAsync(List<Guid> ids, CancellationToken ct)
+    {
+        var documents = new List<Domain.Entities.Document>();
+        foreach (var id in ids)
+        {
+            var (document, error) = await GetOwnedDocumentAsync(id, ct);
+            if (error is not null) return (null, error);
+            documents.Add(document!);
+        }
+        return (documents, null);
+    }
+
+    /// <summary>Combined Excel export for several documents at once - one row per document, columns = field keys.</summary>
+    [HttpPost("batch-export")]
+    public async Task<IActionResult> BatchExport(BatchDocumentIdsRequestDto dto, CancellationToken ct)
+    {
+        if (dto.DocumentIds is null || dto.DocumentIds.Count == 0)
+            return BadRequest(new { success = false, message = "No documents selected." });
+
+        var (documents, error) = await GetOwnedDocumentsAsync(dto.DocumentIds, ct);
+        if (error is not null) return error;
+
+        var result = await _service.ExportBatchToExcelAsync(documents!, ct);
+        if (!result.Succeeded) return NotFound(new { success = false, message = result.Error });
+        return File(result.Data!, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "datamint-batch-export.xlsx");
+    }
+
+    [HttpPost("batch-send-email")]
+    public async Task<IActionResult> BatchSendEmail(BatchSendEmailRequestDto dto, CancellationToken ct)
+    {
+        if (dto.DocumentIds is null || dto.DocumentIds.Count == 0)
+            return BadRequest(new { success = false, message = "No documents selected." });
+
+        var (documents, error) = await GetOwnedDocumentsAsync(dto.DocumentIds, ct);
+        if (error is not null) return error;
+
+        var result = await _service.EmailBatchExportAsync(documents!, dto.ToAddress, ct);
         return result.Succeeded
             ? Ok(new { success = true, message = "Export emailed successfully." })
             : BadRequest(new { success = false, message = result.Error });

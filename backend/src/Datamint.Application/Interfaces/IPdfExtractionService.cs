@@ -21,5 +21,9 @@ public interface IPdfTextExtractionService
 /// </summary>
 public interface IAiFieldExtractionService
 {
-    Task<AiExtractionResultDto> ExtractStructuredDataAsync(IEnumerable<PdfPageTextDto> pages, CancellationToken ct = default);
+    /// <param name="requestedFields">
+    /// Null/empty = dynamic mode (AI decides which fields exist). Non-empty = formatted
+    /// mode: extract ONLY these exact fields, in this order, null value if not found.
+    /// </param>
+    Task<AiExtractionResultDto> ExtractStructuredDataAsync(IEnumerable<PdfPageTextDto> pages, IReadOnlyList<string>? requestedFields = null, CancellationToken ct = default);
 }
