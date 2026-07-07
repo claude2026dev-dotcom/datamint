@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Datamint.Infrastructure</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Datamint.Domain\Datamint.Domain.csproj" />
+    <ProjectReference Include="..\Datamint.Application\Datamint.Application.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- EF Core / SQL Server -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.10">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <!-- PDF text extraction -->
+    <PackageReference Include="PdfPig" Version="0.1.15" />
+    <!-- OCR fallback for scanned/image-only PDFs -->
+    <PackageReference Include="Tesseract" Version="5.2.0" />
+    <PackageReference Include="PdfiumViewer.Native.x86_64.v8-xfa" Version="2018.4.8.256" />
+    <!-- Excel export -->
+    <PackageReference Include="ClosedXML" Version="0.104.1" />
+    <!-- Email -->
+    <PackageReference Include="MailKit" Version="4.17.0" />
+    <!-- JWT -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.10" />
+    <!-- Google token validation -->
+    <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
+    <!-- Razorpay -->
+    <PackageReference Include="Razorpay" Version="3.1.0" />
+    <!-- Password hashing (used by DbSeeder for the default admin account) -->
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+  </ItemGroup>
+</Project>

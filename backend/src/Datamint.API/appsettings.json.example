@@ -1,0 +1,67 @@
+{
+  "Logging": {
+    "LogLevel": { "Default": "Information", "Microsoft.AspNetCore": "Warning" }
+  },
+  "AllowedHosts": "*",
+
+  "// 1": "----- PASTE YOUR SQL SERVER CONNECTION STRING BELOW -----",
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=YOUR_SERVER;Database=DatamintDb;User Id=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;MultipleActiveResultSets=true"
+  },
+
+  "// 2": "----- JWT: generate a long random string for Secret (never commit the real value; use user-secrets/env var in production) -----",
+  "Jwt": {
+    "Secret": "REPLACE_WITH_A_LONG_RANDOM_SECRET_AT_LEAST_32_CHARS",
+    "Issuer": "Datamint.API",
+    "Audience": "Datamint.Client",
+    "AccessTokenMinutes": "30",
+    "RefreshTokenDays": "7"
+  },
+
+  "// 3": "----- GOOGLE OAUTH: OAuth 2.0 Web Client ID from Google Cloud Console. Frontend must use the SAME client id. -----",
+  "GoogleAuth": {
+    "ClientId": "YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com"
+  },
+
+  "// 4": "----- EMAIL (MailKit/SMTP). For Gmail use an App Password, not your normal password. -----",
+  "Email": {
+    "Host": "smtp.gmail.com",
+    "Port": "587",
+    "Username": "YOUR_EMAIL@gmail.com",
+    "Password": "YOUR_APP_PASSWORD",
+    "FromAddress": "YOUR_EMAIL@gmail.com",
+    "FromName": "Datamint"
+  },
+
+  "// 5": "----- AI PROVIDER: which one actually extracts structured data. Set to \"Claude\" or \"OpenAI\" - only the matching ApiKey below needs to be real. -----",
+  "AiProvider": {
+    "Provider": "Claude"
+  },
+  "Claude": {
+    "ApiKey": "YOUR_ANTHROPIC_API_KEY",
+    "Model": "claude-sonnet-5"
+  },
+  "OpenAI": {
+    "ApiKey": "YOUR_OPENAI_API_KEY",
+    "Model": "gpt-4o"
+  },
+
+  "// 6": "----- RAZORPAY for subscription payments (use test keys while integrating) -----",
+  "Razorpay": {
+    "KeyId": "YOUR_RAZORPAY_KEY_ID",
+    "KeySecret": "YOUR_RAZORPAY_KEY_SECRET"
+  },
+
+  "Ocr": {
+    "TessDataPath": "./tessdata"
+  },
+
+  "FileStorage": {
+    "UploadsRootPath": "./uploads",
+    "MaxFileSizeMb": 25
+  },
+
+  "Cors": {
+    "AllowedOrigins": [ "https://localhost:4200" ]
+  }
+}

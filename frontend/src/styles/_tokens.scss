@@ -1,0 +1,29 @@
+// ===== Datamint design tokens =====
+// A single indigo/violet "data intelligence" theme used across every page,
+// so nothing looks like mismatched default Bootstrap/Material components.
+:root {
+  --dm-bg: #0b0e17;
+  --dm-bg-elevated: #12172a;
+  --dm-surface: #171d33;
+  --dm-surface-hover: #1e2540;
+  --dm-border: #262e4a;
+
+  --dm-primary: #6366f1;      // indigo
+  --dm-primary-light: #818cf8;
+  --dm-accent: #22d3ee;       // cyan accent for "data" highlights
+  --dm-success: #34d399;
+  --dm-warning: #fbbf24;
+  --dm-danger: #f87171;
+
+  --dm-text: #e5e7f0;
+  --dm-text-muted: #9095b3;
+
+  --dm-radius-sm: 8px;
+  --dm-radius-md: 14px;
+  --dm-radius-lg: 22px;
+
+  --dm-shadow: 0 8px 30px rgba(0,0,0,0.35);
+  --dm-gradient-primary: linear-gradient(135deg, #6366f1 0%, #22d3ee 100%);
+
+  --dm-font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}

@@ -1,0 +1,25 @@
+# .NET
+backend/**/bin/
+backend/**/obj/
+backend/src/Datamint.API/logs/
+backend/src/Datamint.API/uploads/
+*.user
+
+# Real backend config - contains live secrets (DB connection string, JWT
+# secret, Google/OpenAI/Claude/Razorpay/SMTP credentials). Never commit this.
+# See appsettings.json.example for the placeholder shape.
+backend/src/Datamint.API/appsettings.json
+
+# Angular / Node
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+
+# Editor / OS
+.vs/
+.vscode/
+*.swp
+.DS_Store
+
+# Claude Code local-machine settings (permission grants etc.) - not shared
+.claude/settings.local.json
