@@ -146,13 +146,28 @@ public class DocumentsController : ControllerBase
         return Ok(new { success = true, documents = results });
     }
 
-    /// <summary>Anonymous (unowned) documents are viewable by anyone with the id, matching the anonymous upload flow; documents owned by a user are only viewable by that user.</summary>
+    /// <summary>
+    /// Anonymous (unowned) documents are viewable by anyone with the id, matching the
+    /// anonymous upload flow. Documents owned by a user are only viewable by that user -
+    /// and if someone else's shared link ends up on your screen, we deliberately don't
+    /// distinguish "not yours" from "doesn't exist": an unauthenticated visitor is asked
+    /// to sign in (they might be the actual owner in a fresh session), while a different
+    /// logged-in user gets the same 404 as a genuinely missing document, so a shared URL
+    /// never confirms someone else's document even exists.
+    /// </summary>
     private async Task<(Domain.Entities.Document? document, IActionResult? error)> GetOwnedDocumentAsync(Guid id, CancellationToken ct)
     {
         var document = await _documents.GetWithDetailsAsync(id, ct);
         if (document is null) return (null, NotFound(new { success = false, message = "Document not found." }));
+
         if (document.UserId is not null && document.UserId != _currentUser.UserId)
-            return (null, StatusCode(403, new { success = false, message = "You don't have permission to access this document." }));
+        {
+            if (_currentUser.UserId is null)
+                return (null, StatusCode(401, new { success = false, message = "Please sign in to view this document.", errorCode = "LOGIN_REQUIRED" }));
+
+            return (null, NotFound(new { success = false, message = "Document not found." }));
+        }
+
         return (document, null);
     }
 

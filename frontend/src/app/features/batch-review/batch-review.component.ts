@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { DocumentService } from '../../core/services/document.service';
 import { ToastService } from '../../core/services/toast.service';
@@ -20,9 +20,17 @@ interface BatchDocument {
 @Component({
   selector: 'app-batch-review',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="dm-container page">
+      @if (notFound) {
+        <div class="dm-card not-found-card">
+          <div class="icon">🔍</div>
+          <h2>Some of these documents aren't available</h2>
+          <p class="muted">One or more links in this batch don't point to documents we can show you — they may not exist, or belong to someone else's account.</p>
+          <a routerLink="/upload" class="dm-btn dm-btn-primary">Upload new PDFs</a>
+        </div>
+      } @else {
       <div class="header">
         <div>
           <h1>Combined preview — {{ documents.length }} file(s)</h1>
@@ -73,6 +81,7 @@ interface BatchDocument {
           </table>
         </div>
       }
+      }
     </div>
   `,
   styles: [`
@@ -81,6 +90,10 @@ interface BatchDocument {
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     .actions { display: flex; gap: 10px; }
     .email-box { display: flex; gap: 10px; padding: 16px; margin-bottom: 20px; }
+    .not-found-card { max-width: 460px; margin: 60px auto; padding: 40px 32px; text-align: center; }
+    .not-found-card .icon { font-size: 2.6rem; margin-bottom: 14px; }
+    .not-found-card h2 { margin-bottom: 10px; }
+    .not-found-card p { margin-bottom: 20px; }
     .table-wrap { padding: 0; overflow-x: auto; }
     .batch-table { border-collapse: collapse; width: 100%; min-width: max-content; }
     .batch-table th, .batch-table td { padding: 10px 14px; border-bottom: 1px solid var(--dm-border); text-align: left; white-space: nowrap; }
@@ -94,6 +107,7 @@ export class BatchReviewComponent implements OnInit {
   documents: BatchDocument[] = [];
   columns: string[] = [];
   loading = true;
+  notFound = false;
   showEmailBox = false;
   emailAddress = '';
   sendingEmail = false;
@@ -122,7 +136,7 @@ export class BatchReviewComponent implements OnInit {
         }
         this.loading = false;
       },
-      error: () => { this.loading = false; this.toast.error('Could not load one or more documents.'); }
+      error: () => { this.loading = false; this.notFound = true; }
     });
   }
 

@@ -19,12 +19,14 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
         <app-google-signin-button (credential)="loginWithGoogle($event)" />
         <div class="divider"><span>or</span></div>
 
+        @if (errorMessage) { <div class="error-banner">{{ errorMessage }}</div> }
+
         <form (ngSubmit)="submit()" #f="ngForm">
           <label>Email</label>
-          <input class="dm-input" type="email" name="email" [(ngModel)]="email" required />
+          <input class="dm-input" type="email" name="email" [(ngModel)]="email" required (ngModelChange)="errorMessage = ''" />
 
           <label>Password</label>
-          <input class="dm-input" type="password" name="password" [(ngModel)]="password" required minlength="6" />
+          <input class="dm-input" type="password" name="password" [(ngModel)]="password" required minlength="6" (ngModelChange)="errorMessage = ''" />
 
           <button class="dm-btn dm-btn-primary submit" type="submit" [disabled]="f.invalid || loading">
             {{ loading ? 'Signing in…' : 'Log in' }}
@@ -43,6 +45,7 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
     .submit { width: 100%; margin-top: 20px; }
     .divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: var(--dm-text-muted); font-size: 0.8rem; }
     .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--dm-border); }
+    .error-banner { background: rgba(239,68,68,0.1); border: 1px solid var(--dm-danger); color: var(--dm-danger); font-size: 0.85rem; padding: 10px 14px; border-radius: var(--dm-radius-sm); margin-bottom: 4px; }
     .footer-link { margin-top: 18px; text-align: center; }
     .footer-link a { color: var(--dm-primary-light); }
   `]
@@ -51,14 +54,16 @@ export class LoginComponent {
   email = '';
   password = '';
   loading = false;
+  errorMessage = '';
 
   constructor(private auth: AuthService, private toast: ToastService) {}
 
   submit() {
     this.loading = true;
+    this.errorMessage = '';
     this.auth.login(this.email, this.password).subscribe({
       next: res => this.auth.completeLogin(res),
-      error: () => this.loading = false,
+      error: err => { this.loading = false; this.errorMessage = err?.error?.message || 'Something went wrong. Please try again.'; },
       complete: () => this.loading = false
     });
   }

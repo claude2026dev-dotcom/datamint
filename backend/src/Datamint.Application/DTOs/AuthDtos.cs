@@ -22,3 +22,7 @@ public record UserProfileDto(
     bool HasActiveSubscription);
 
 public record GoogleUserInfoDto(string GoogleId, string Email, string? Name, bool EmailVerified);
+
+public record ProfileDto(Guid Id, string Email, string? DisplayName, string Role, bool IsEmailVerified, DateTime CreatedAtUtc);
+
+public record UpdateProfileRequestDto(string? DisplayName);

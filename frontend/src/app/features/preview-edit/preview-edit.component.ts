@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DocumentService } from '../../core/services/document.service';
 import { ToastService } from '../../core/services/toast.service';
 import { ExtractedFieldEdit } from '../../core/models/models';
@@ -9,9 +9,19 @@ import { ExtractedFieldEdit } from '../../core/models/models';
 @Component({
   selector: 'app-preview-edit',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="dm-container page">
+      @if (notFound) {
+        <div class="dm-card not-found-card">
+          <div class="icon">🔍</div>
+          <h2>Document not found</h2>
+          <p class="muted">This link doesn't point to a document we can show you — it may not exist, or it may belong to someone else's account.</p>
+          <a routerLink="/upload" class="dm-btn dm-btn-primary">Upload a new PDF</a>
+        </div>
+      } @else if (loading) {
+        <p class="muted">Loading…</p>
+      } @else {
       <div class="header">
         <div>
           <h1>{{ fileName }}</h1>
@@ -47,6 +57,7 @@ import { ExtractedFieldEdit } from '../../core/models/models';
           </div>
         </div>
       }
+      }
     </div>
   `,
   styles: [`
@@ -55,6 +66,10 @@ import { ExtractedFieldEdit } from '../../core/models/models';
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     .actions { display: flex; gap: 10px; }
     .email-box { display: flex; gap: 10px; padding: 16px; margin-bottom: 20px; }
+    .not-found-card { max-width: 460px; margin: 60px auto; padding: 40px 32px; text-align: center; }
+    .not-found-card .icon { font-size: 2.6rem; margin-bottom: 14px; }
+    .not-found-card h2 { margin-bottom: 10px; }
+    .not-found-card p { margin-bottom: 20px; }
     .page-block { padding: 20px; margin-bottom: 18px; }
     .field-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 12px; }
     .field-row { display: flex; flex-direction: column; gap: 6px; position: relative; }
@@ -73,6 +88,8 @@ export class PreviewEditComponent implements OnInit {
   showEmailBox = false;
   emailAddress = '';
   sendingEmail = false;
+  loading = true;
+  notFound = false;
 
   constructor(private route: ActivatedRoute, private documentService: DocumentService, private toast: ToastService) {}
 
@@ -87,11 +104,19 @@ export class PreviewEditComponent implements OnInit {
 
   ngOnInit() {
     this.documentId = this.route.snapshot.paramMap.get('id')!;
-    this.documentService.getDetail(this.documentId).subscribe(res => {
-      this.fileName = res.originalFileName;
-      this.pageCount = res.pageCount;
-      this.requiresOcr = res.requiresOcr;
-      this.fields = res.fields;
+    this.documentService.getDetail(this.documentId).subscribe({
+      next: res => {
+        this.fileName = res.originalFileName;
+        this.pageCount = res.pageCount;
+        this.requiresOcr = res.requiresOcr;
+        this.fields = res.fields;
+        this.loading = false;
+      },
+      // 404 here means "doesn't exist, or belongs to someone else's account" -
+      // the API deliberately doesn't distinguish the two (see backend comment
+      // on GetOwnedDocumentAsync). A 401/LOGIN_REQUIRED is handled globally by
+      // the error interceptor, which redirects to /login before this fires.
+      error: () => { this.loading = false; this.notFound = true; }
     });
   }
 

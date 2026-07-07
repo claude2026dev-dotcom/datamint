@@ -19,17 +19,30 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
         <app-google-signin-button (credential)="signUpWithGoogle($event)" />
         <div class="divider"><span>or</span></div>
 
+        @if (errorMessage) { <div class="error-banner">{{ errorMessage }}</div> }
+
         <form (ngSubmit)="submit()" #f="ngForm">
           <label>Full name</label>
-          <input class="dm-input" type="text" name="name" [(ngModel)]="displayName" />
+          <input class="dm-input" type="text" name="name" [(ngModel)]="displayName" (ngModelChange)="errorMessage = ''" />
 
           <label>Email</label>
-          <input class="dm-input" type="email" name="email" [(ngModel)]="email" required />
+          <input class="dm-input" type="email" name="email" [(ngModel)]="email" required (ngModelChange)="errorMessage = ''" />
 
           <label>Password</label>
-          <input class="dm-input" type="password" name="password" [(ngModel)]="password" required minlength="6" />
+          <input class="dm-input" type="password" name="password" [(ngModel)]="password" required
+                 (ngModelChange)="errorMessage = ''" (focus)="showChecklist = true" />
 
-          <button class="dm-btn dm-btn-primary submit" type="submit" [disabled]="f.invalid || loading">
+          @if (showChecklist && password) {
+            <ul class="checklist">
+              <li [class.met]="checks.length">{{ checks.length ? '✓' : '○' }} At least 8 characters</li>
+              <li [class.met]="checks.upper">{{ checks.upper ? '✓' : '○' }} One uppercase letter</li>
+              <li [class.met]="checks.lower">{{ checks.lower ? '✓' : '○' }} One lowercase letter</li>
+              <li [class.met]="checks.digit">{{ checks.digit ? '✓' : '○' }} One number</li>
+              <li [class.met]="checks.special">{{ checks.special ? '✓' : '○' }} One special character</li>
+            </ul>
+          }
+
+          <button class="dm-btn dm-btn-primary submit" type="submit" [disabled]="f.invalid || !allChecksPass || loading">
             {{ loading ? 'Creating account…' : 'Create account' }}
           </button>
         </form>
@@ -47,6 +60,10 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
     .submit { width: 100%; margin-top: 20px; }
     .divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: var(--dm-text-muted); font-size: 0.8rem; }
     .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--dm-border); }
+    .error-banner { background: rgba(239,68,68,0.1); border: 1px solid var(--dm-danger); color: var(--dm-danger); font-size: 0.85rem; padding: 10px 14px; border-radius: var(--dm-radius-sm); margin-bottom: 4px; }
+    .checklist { list-style: none; padding: 10px 12px; margin: 8px 0 0; display: flex; flex-direction: column; gap: 4px; background: var(--dm-surface); border-radius: var(--dm-radius-sm); border: 1px solid var(--dm-border); }
+    .checklist li { font-size: 0.78rem; color: var(--dm-text-muted); transition: color 0.15s; }
+    .checklist li.met { color: var(--dm-success); }
     .footer-link { margin-top: 18px; text-align: center; }
     .footer-link a, .terms-note a { color: var(--dm-primary-light); }
     .terms-note { margin-top: 10px; text-align: center; font-size: 0.78rem; }
@@ -57,14 +74,34 @@ export class RegisterComponent {
   email = '';
   password = '';
   loading = false;
+  errorMessage = '';
+  showChecklist = false;
 
   constructor(private auth: AuthService, private toast: ToastService) {}
 
+  get checks() {
+    const p = this.password;
+    return {
+      length: p.length >= 8,
+      upper: /[A-Z]/.test(p),
+      lower: /[a-z]/.test(p),
+      digit: /[0-9]/.test(p),
+      special: /[^A-Za-z0-9]/.test(p)
+    };
+  }
+
+  get allChecksPass(): boolean {
+    const c = this.checks;
+    return c.length && c.upper && c.lower && c.digit && c.special;
+  }
+
   submit() {
+    if (!this.allChecksPass) return;
     this.loading = true;
+    this.errorMessage = '';
     this.auth.register(this.email, this.password, this.displayName).subscribe({
       next: res => this.auth.completeLogin(res),
-      error: () => this.loading = false,
+      error: err => { this.loading = false; this.errorMessage = err?.error?.message || 'Something went wrong. Please try again.'; },
       complete: () => this.loading = false
     });
   }

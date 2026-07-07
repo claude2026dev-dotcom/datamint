@@ -1,6 +1,7 @@
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
 using Datamint.Domain.Entities;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Datamint.API.Controllers;
@@ -13,19 +14,25 @@ public class AuthController : ControllerBase
     private readonly IJwtTokenService _jwt;
     private readonly IGoogleAuthService _google;
     private readonly IAuditService _audit;
+    private readonly ICurrentUserService _currentUser;
 
-    public AuthController(IUserRepository users, IJwtTokenService jwt, IGoogleAuthService google, IAuditService audit)
+    public AuthController(IUserRepository users, IJwtTokenService jwt, IGoogleAuthService google, IAuditService audit, ICurrentUserService currentUser)
     {
         _users = users;
         _jwt = jwt;
         _google = google;
         _audit = audit;
+        _currentUser = currentUser;
     }
 
     /// <summary>Register with email + password. Password is stored as a BCrypt hash — never in plain text.</summary>
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterRequestDto dto, CancellationToken ct)
     {
+        var passwordError = ValidatePasswordStrength(dto.Password);
+        if (passwordError is not null)
+            return BadRequest(new { success = false, message = passwordError });
+
         var existing = await _users.GetByEmailAsync(dto.Email, ct);
         if (existing is not null)
             return Conflict(new { success = false, message = "An account with this email already exists." });
@@ -105,6 +112,54 @@ public class AuthController : ControllerBase
         await _audit.LogAsync("Auth.GoogleLogin", user.Id, ct: ct);
 
         return Ok(BuildAuthResponse(user));
+    }
+
+    /// <summary>Current user's minimal profile — email, display name, role, join date.</summary>
+    [HttpGet("me")]
+    [Authorize]
+    public async Task<IActionResult> Me(CancellationToken ct)
+    {
+        var user = await _users.GetByIdAsync(_currentUser.UserId!.Value, ct);
+        if (user is null) return NotFound(new { success = false, message = "User not found." });
+
+        return Ok(new { success = true, profile = ToProfileDto(user) });
+    }
+
+    /// <summary>Edit the minimal profile info a user can change themselves — just the display name for now.</summary>
+    [HttpPut("me")]
+    [Authorize]
+    public async Task<IActionResult> UpdateMe(UpdateProfileRequestDto dto, CancellationToken ct)
+    {
+        var user = await _users.GetByIdAsync(_currentUser.UserId!.Value, ct);
+        if (user is null) return NotFound(new { success = false, message = "User not found." });
+
+        user.DisplayName = string.IsNullOrWhiteSpace(dto.DisplayName) ? null : dto.DisplayName.Trim();
+        await _users.SaveChangesAsync(ct);
+        await _audit.LogAsync("Auth.ProfileUpdated", user.Id, ct: ct);
+
+        return Ok(new { success = true, profile = ToProfileDto(user) });
+    }
+
+    private static ProfileDto ToProfileDto(ApplicationUser user) =>
+        new(user.Id, user.Email, user.DisplayName, user.Role, user.IsEmailVerified, user.CreatedAtUtc);
+
+    /// <summary>
+    /// Server-side enforcement (never trust client-only validation): 8+ chars,
+    /// at least one uppercase, one lowercase, one digit, one special character.
+    /// </summary>
+    private static string? ValidatePasswordStrength(string password)
+    {
+        if (string.IsNullOrEmpty(password) || password.Length < 8)
+            return "Password must be at least 8 characters long.";
+        if (!password.Any(char.IsUpper))
+            return "Password must include at least one uppercase letter.";
+        if (!password.Any(char.IsLower))
+            return "Password must include at least one lowercase letter.";
+        if (!password.Any(char.IsDigit))
+            return "Password must include at least one number.";
+        if (!password.Any(c => !char.IsLetterOrDigit(c)))
+            return "Password must include at least one special character.";
+        return null;
     }
 
     private AuthResponseDto BuildAuthResponse(ApplicationUser user)

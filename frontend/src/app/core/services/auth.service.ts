@@ -1,6 +1,7 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
+import { tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { AuthResponse, UserProfile } from '../models/models';
 
@@ -40,6 +41,27 @@ export class AuthService {
 
   loginWithGoogle(idToken: string) {
     return this.http.post<AuthResponse>(`${environment.apiBaseUrl}/auth/google`, { idToken });
+  }
+
+  getProfile() {
+    return this.http.get<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string } }>(
+      `${environment.apiBaseUrl}/auth/me`);
+  }
+
+  updateProfile(displayName: string) {
+    return this.http.put<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string } }>(
+      `${environment.apiBaseUrl}/auth/me`, { displayName }).pipe(
+      tap(res => {
+        // Keep the cached session in sync so the navbar/anywhere else reflects
+        // the new name immediately, without forcing a re-login.
+        const current = this.userSignal();
+        if (current) {
+          const updated = { ...current, displayName: res.profile.displayName };
+          localStorage.setItem(USER_KEY, JSON.stringify(updated));
+          this.userSignal.set(updated);
+        }
+      })
+    );
   }
 
   /** Call after any successful auth HTTP response to persist the session and route the user onward. */
