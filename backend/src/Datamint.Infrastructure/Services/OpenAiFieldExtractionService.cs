@@ -40,24 +40,34 @@ public class OpenAiFieldExtractionService : IAiFieldExtractionService
         }
 
         var pageList = pages.ToList();
+        // Dynamic mode groups the requested/parsed JSON by page so same-named
+        // fields on different pages (e.g. "Tax Category" meaning something
+        // different per page) can't be silently collapsed into one entry -
+        // Formatted mode's caller-specified field list doesn't have that
+        // problem, so it keeps the simpler flat shape.
+        var isDynamicMode = requestedFields is not { Count: > 0 };
 
         var firstPassPrompt = AiExtractionPromptHelper.BuildPrompt(pageList, requestedFields);
         var (firstPassText, firstPassError) = await CallOpenAiAsync(apiKey, firstPassPrompt, ct);
         if (firstPassError is not null)
             return new AiExtractionResultDto(new List<ExtractedFieldDto>(), false, firstPassError);
 
-        var firstPassFields = AiExtractionPromptHelper.ParseFieldsJson(firstPassText!);
+        var firstPassFields = isDynamicMode
+            ? AiExtractionPromptHelper.ParsePageGroupedFieldsJson(firstPassText!)
+            : AiExtractionPromptHelper.ParseFieldsJson(firstPassText!);
 
         // Verification pass: if it fails for any reason, fall back to the
         // first-pass result rather than failing the whole extraction over it.
-        var verifyPrompt = AiExtractionPromptHelper.BuildVerificationPrompt(pageList, firstPassFields);
+        var verifyPrompt = AiExtractionPromptHelper.BuildVerificationPrompt(pageList, firstPassFields, isDynamicMode);
         var (verifyText, verifyError) = await CallOpenAiAsync(apiKey, verifyPrompt, ct);
         if (verifyError is not null || verifyText is null)
             return new AiExtractionResultDto(firstPassFields, true, null);
 
         try
         {
-            var verifiedFields = AiExtractionPromptHelper.ParseFieldsJson(verifyText);
+            var verifiedFields = isDynamicMode
+                ? AiExtractionPromptHelper.ParsePageGroupedFieldsJson(verifyText)
+                : AiExtractionPromptHelper.ParseFieldsJson(verifyText);
             return new AiExtractionResultDto(verifiedFields.Count > 0 ? verifiedFields : firstPassFields, true, null);
         }
         catch (Exception ex)

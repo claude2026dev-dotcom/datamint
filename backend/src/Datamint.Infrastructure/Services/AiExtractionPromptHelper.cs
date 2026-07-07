@@ -12,9 +12,18 @@ namespace Datamint.Infrastructure.Services;
 internal static class AiExtractionPromptHelper
 {
     /// <summary>
-    /// Dynamic mode (requestedFields null/empty): the AI decides which fields exist.
     /// Formatted mode (requestedFields set): the AI extracts ONLY those exact fields,
-    /// in that exact order, with null values for anything not found in the document.
+    /// each expected to have one canonical value, so a flat array is unambiguous - use
+    /// ParseFieldsJson on the reply.
+    ///
+    /// Dynamic mode (requestedFields null/empty): the AI decides which fields exist,
+    /// and the SAME label can legitimately repeat across pages with different values
+    /// (e.g. a multi-page invoice repeating "Tax Category" per page, each meaning
+    /// something different). A flat array with duplicate "key" values is an unusual,
+    /// ambiguous shape for a model to keep genuinely distinct - it tends to "helpfully"
+    /// deduplicate what look like repeated keys, silently dropping one page's value.
+    /// Grouping the requested output by page instead makes that conflation structurally
+    /// impossible - use ParsePageGroupedFieldsJson on the reply.
     /// </summary>
     public static string BuildPrompt(IEnumerable<PdfPageTextDto> pages, IReadOnlyList<string>? requestedFields = null)
     {
@@ -43,17 +52,17 @@ internal static class AiExtractionPromptHelper
         }
 
         return $$"""
-            Extract every meaningful key/value field from the document text below - be thorough
-            and consistent: a field that is visibly labeled in the document must always be
-            extracted, every time, never skipped or merged with another field.
+            Extract every meaningful key/value field from the document text below. Process
+            each page independently and be thorough: a field that is visibly labeled on a
+            page must always be extracted from that page, every time, never skipped.
 
             Rules:
             - Use the field's own label from the document as the "key", exactly as written (e.g. if the document says "Invoice No.", use "Invoice No.", not "Invoice Number").
             - Do not paraphrase, translate, or invent a different name for a field that already has a label in the document.
-            - Extract every labeled field on every page, including ones that repeat with different values across pages.
-            - If a field has no page-specific meaning, omit "page" or set it to null.
-            - Respond with ONLY a JSON array, no prose, no markdown fences, in this exact shape:
-            [{"key": "Invoice No.", "value": "INV-2024-001", "page": 1}, ...]
+            - The SAME field label can legitimately appear on more than one page, meaning something different each time (a multi-page document repeating a label like "Tax Category" or "Amount" per page, with a different value on each page). Report every page's occurrence under that page's own entry below - never merge, average, or drop one occurrence in favor of another just because the label repeats.
+            - If a field spans the whole document rather than belonging to one page, put it under the first page it appears on.
+            - Respond with ONLY a JSON array, no prose, no markdown fences, with exactly ONE object per page (matching the "--- Page N ---" markers below), in this exact shape:
+            [{"page": 1, "fields": [{"key": "Invoice No.", "value": "INV-2024-001"}, {"key": "Tax Category", "value": "..."}]}, {"page": 2, "fields": [{"key": "Tax Category", "value": "..."}]}]
 
             DOCUMENT TEXT:
             {{combinedText}}
@@ -68,13 +77,46 @@ internal static class AiExtractionPromptHelper
     /// from the wrong page) - it doesn't make the model infallible, but it removes
     /// a real class of errors a single pass leaves in.
     /// </summary>
-    public static string BuildVerificationPrompt(IEnumerable<PdfPageTextDto> pages, List<ExtractedFieldDto> initialFields)
+    public static string BuildVerificationPrompt(IEnumerable<PdfPageTextDto> pages, List<ExtractedFieldDto> initialFields, bool groupByPage)
     {
         var combinedText = new StringBuilder();
         foreach (var page in pages)
             combinedText.AppendLine($"--- Page {page.PageNumber} ---\n{page.Text}\n");
 
-        var fieldsJson = JsonSerializer.Serialize(initialFields.Select(f => new { key = f.Key, value = f.Value, page = f.PageNumber }));
+        if (groupByPage)
+        {
+            var grouped = initialFields
+                .GroupBy(f => f.PageNumber ?? 0)
+                .Select(g => new { page = g.Key, fields = g.Select(f => new { key = f.Key, value = f.Value }).ToList() });
+            var fieldsJson = JsonSerializer.Serialize(grouped);
+
+            return $$"""
+                You previously extracted the fields below, grouped by page, from the document
+                text that follows. Re-check every single value against the document text,
+                character by character where it matters (invoice/reference numbers, dates,
+                amounts, IDs, codes) - these are exactly the kind of value a first pass
+                sometimes gets slightly wrong (a transposed digit, a value taken from the
+                wrong line, or a value that actually belongs to a different page).
+
+                Rules:
+                - If a value is already correct, keep it exactly as-is.
+                - If a value is wrong, or belongs on a different page than where you put it, correct it using the document text.
+                - If a value is missing (null) but the field is actually present on that page, fill it in.
+                - If a field genuinely isn't on that page, leave its value null.
+                - Keep the same pages and the same keys within each page - do not add, remove, or rename any. Same-named fields on different pages are intentional and must both be kept, with their own correct values.
+
+                YOUR FIRST-PASS EXTRACTION (grouped by page):
+                {{fieldsJson}}
+
+                DOCUMENT TEXT:
+                {{combinedText}}
+
+                Respond with ONLY the corrected JSON array, no prose, no markdown fences, same shape:
+                [{"page": 1, "fields": [{"key": "Invoice No.", "value": "INV-2024-001"}]}, ...]
+                """;
+        }
+
+        var flatFieldsJson = JsonSerializer.Serialize(initialFields.Select(f => new { key = f.Key, value = f.Value, page = f.PageNumber }));
 
         return $$"""
             You previously extracted the fields below from the document text that follows.
@@ -91,7 +133,7 @@ internal static class AiExtractionPromptHelper
             - Keep the exact same set of keys, in the exact same order - do not add, remove, or rename any.
 
             YOUR FIRST-PASS EXTRACTION:
-            {{fieldsJson}}
+            {{flatFieldsJson}}
 
             DOCUMENT TEXT:
             {{combinedText}}
@@ -101,21 +143,55 @@ internal static class AiExtractionPromptHelper
             """;
     }
 
+    /// <summary>Flat-array response parser - used for Formatted mode, where every requested field has one canonical value.</summary>
     public static List<ExtractedFieldDto> ParseFieldsJson(string rawModelText)
     {
-        var cleaned = rawModelText.Trim().TrimStart('`').TrimEnd('`')
-            .Replace("json", "", StringComparison.OrdinalIgnoreCase).Trim();
-
-        var parsed = JsonSerializer.Deserialize<List<ExtractedFieldJson>>(cleaned, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-                     ?? new List<ExtractedFieldJson>();
+        var cleaned = CleanJsonText(rawModelText);
+        var parsed = JsonSerializer.Deserialize<List<FlatFieldJson>>(cleaned, JsonOptions)
+                     ?? new List<FlatFieldJson>();
 
         return parsed.Select(f => new ExtractedFieldDto(f.Key, f.Value, f.Page)).ToList();
     }
 
-    private class ExtractedFieldJson
+    /// <summary>Page-grouped response parser - used for Dynamic mode, flattened back into the same ExtractedFieldDto shape the rest of the app uses.</summary>
+    public static List<ExtractedFieldDto> ParsePageGroupedFieldsJson(string rawModelText)
+    {
+        var cleaned = CleanJsonText(rawModelText);
+        var parsed = JsonSerializer.Deserialize<List<PageGroupJson>>(cleaned, JsonOptions)
+                     ?? new List<PageGroupJson>();
+
+        var result = new List<ExtractedFieldDto>();
+        foreach (var group in parsed)
+        {
+            if (group.Fields is null) continue;
+            foreach (var field in group.Fields)
+                result.Add(new ExtractedFieldDto(field.Key, field.Value, group.Page));
+        }
+        return result;
+    }
+
+    private static string CleanJsonText(string rawModelText) =>
+        rawModelText.Trim().TrimStart('`').TrimEnd('`')
+            .Replace("json", "", StringComparison.OrdinalIgnoreCase).Trim();
+
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
+    private class FlatFieldJson
     {
         public string Key { get; set; } = default!;
         public string? Value { get; set; }
         public int? Page { get; set; }
+    }
+
+    private class PageGroupJson
+    {
+        public int? Page { get; set; }
+        public List<FieldOnlyJson>? Fields { get; set; }
+    }
+
+    private class FieldOnlyJson
+    {
+        public string Key { get; set; } = default!;
+        public string? Value { get; set; }
     }
 }
