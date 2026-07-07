@@ -28,6 +28,11 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
           <label>Password</label>
           <input class="dm-input" type="password" name="password" [(ngModel)]="password" required minlength="6" (ngModelChange)="errorMessage = ''" />
 
+          <label class="remember-row">
+            <input type="checkbox" name="rememberMe" [(ngModel)]="rememberMe" />
+            <span>Remember me for 10 days</span>
+          </label>
+
           <button class="dm-btn dm-btn-primary submit" type="submit" [disabled]="f.invalid || loading">
             {{ loading ? 'Signing in…' : 'Log in' }}
           </button>
@@ -42,6 +47,9 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
     .auth-card { width: 100%; max-width: 400px; padding: 32px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     label { display: block; margin: 14px 0 6px; font-size: 0.85rem; color: var(--dm-text-muted); }
+    .remember-row { display: flex; align-items: center; gap: 8px; margin: 16px 0 0; cursor: pointer; }
+    .remember-row input[type="checkbox"] { accent-color: var(--dm-primary); width: 16px; height: 16px; }
+    .remember-row span { margin: 0; color: var(--dm-text); font-size: 0.85rem; }
     .submit { width: 100%; margin-top: 20px; }
     .divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: var(--dm-text-muted); font-size: 0.8rem; }
     .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--dm-border); }
@@ -53,6 +61,7 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
 export class LoginComponent {
   email = '';
   password = '';
+  rememberMe = false;
   loading = false;
   errorMessage = '';
 
@@ -61,8 +70,8 @@ export class LoginComponent {
   submit() {
     this.loading = true;
     this.errorMessage = '';
-    this.auth.login(this.email, this.password).subscribe({
-      next: res => this.auth.completeLogin(res),
+    this.auth.login(this.email, this.password, this.rememberMe).subscribe({
+      next: res => this.auth.completeLogin(res, this.rememberMe),
       error: err => { this.loading = false; this.errorMessage = err?.error?.message || 'Something went wrong. Please try again.'; },
       complete: () => this.loading = false
     });
@@ -70,7 +79,7 @@ export class LoginComponent {
 
   loginWithGoogle(idToken: string) {
     this.auth.loginWithGoogle(idToken).subscribe({
-      next: res => this.auth.completeLogin(res),
+      next: res => this.auth.completeLogin(res, true),
       error: () => this.toast.error('Google sign-in failed. Please try again.')
     });
   }

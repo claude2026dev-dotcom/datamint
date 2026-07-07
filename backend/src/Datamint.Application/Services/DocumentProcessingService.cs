@@ -141,6 +141,7 @@ public class DocumentProcessingService
                 {
                     DocumentId = document.Id,
                     FieldKey = field.Key,
+                    OriginalFieldKey = field.Key,
                     FieldValue = field.Value,
                     OriginalAiValue = field.Value,
                     PageNumber = field.PageNumber,
@@ -278,6 +279,6 @@ public class DocumentProcessingService
         document.Status.ToString(),
         document.ExtractedFields
             .OrderBy(f => f.SortOrder)
-            .Select(f => new ExtractedFieldEditDto(f.Id, f.FieldKey, f.FieldValue, f.PageNumber, f.WasEditedByUser))
+            .Select(f => new ExtractedFieldEditDto(f.Id, f.FieldKey, f.OriginalFieldKey, f.FieldValue, f.PageNumber, f.WasEditedByUser))
             .ToList());
 }

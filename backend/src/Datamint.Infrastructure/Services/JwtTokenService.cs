@@ -48,4 +48,7 @@ public class JwtTokenService : IJwtTokenService
         var randomBytes = RandomNumberGenerator.GetBytes(64);
         return Convert.ToBase64String(randomBytes);
     }
+
+    public string HashToken(string token) =>
+        Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 }

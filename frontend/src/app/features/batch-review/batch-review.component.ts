@@ -59,7 +59,7 @@ interface BatchDocument {
             <thead>
               <tr>
                 <th class="file-col">File</th>
-                @for (col of columns; track col) { <th>{{ col }}</th> }
+                @for (col of columns; track col) { <th>{{ columnLabels[col] }}</th> }
               </tr>
             </thead>
             <tbody>
@@ -105,7 +105,8 @@ interface BatchDocument {
 })
 export class BatchReviewComponent implements OnInit {
   documents: BatchDocument[] = [];
-  columns: string[] = [];
+  columns: string[] = [];             // original (AI-assigned) field keys - stable across per-document renames
+  columnLabels: Record<string, string> = {}; // displayed header text - the custom name, if one was set
   loading = true;
   notFound = false;
   showEmailBox = false;
@@ -128,10 +129,17 @@ export class BatchReviewComponent implements OnInit {
       next: results => {
         this.documents = results.map(res => ({ id: res.id, fileName: res.originalFileName, fields: res.fields }));
 
+        // Group by the original AI-assigned key (stable even if the field was
+        // renamed differently on one document than another); display whichever
+        // custom name was actually set as the column header.
         const seen = new Set<string>();
         for (const doc of this.documents) {
           for (const field of doc.fields) {
-            if (!seen.has(field.fieldKey)) { seen.add(field.fieldKey); this.columns.push(field.fieldKey); }
+            if (!seen.has(field.originalFieldKey)) {
+              seen.add(field.originalFieldKey);
+              this.columns.push(field.originalFieldKey);
+              this.columnLabels[field.originalFieldKey] = field.fieldKey;
+            }
           }
         }
         this.loading = false;
@@ -140,8 +148,8 @@ export class BatchReviewComponent implements OnInit {
     });
   }
 
-  fieldFor(doc: BatchDocument, column: string): ExtractedFieldEdit | undefined {
-    return doc.fields.find(f => f.fieldKey === column);
+  fieldFor(doc: BatchDocument, originalKey: string): ExtractedFieldEdit | undefined {
+    return doc.fields.find(f => f.originalFieldKey === originalKey);
   }
 
   saveField(doc: BatchDocument, field: ExtractedFieldEdit) {

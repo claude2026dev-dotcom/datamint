@@ -16,7 +16,7 @@ public record DocumentSummaryDto(
     string Status,
     DateTime CreatedAtUtc);
 
-public record ExtractedFieldEditDto(Guid Id, string FieldKey, string? FieldValue, int? PageNumber, bool WasEditedByUser);
+public record ExtractedFieldEditDto(Guid Id, string FieldKey, string OriginalFieldKey, string? FieldValue, int? PageNumber, bool WasEditedByUser);
 
 public record DocumentDetailDto(
     Guid Id,

@@ -191,6 +191,7 @@ public class DocumentsController : ControllerBase
             {
                 f.Id,
                 f.FieldKey,
+                f.OriginalFieldKey,
                 f.FieldValue,
                 f.PageNumber,
                 f.WasEditedByUser

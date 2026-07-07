@@ -11,7 +11,8 @@ public class ExtractedField : BaseEntity
     public Document Document { get; set; } = default!;
     public int? PageNumber { get; set; }             // null = document-level field
 
-    public string FieldKey { get; set; } = default!;
+    public string FieldKey { get; set; } = default!;   // editable custom label shown/exported to the user
+    public string OriginalFieldKey { get; set; } = default!; // untouched label as the AI found it - always shown read-only for reference
     public string? FieldValue { get; set; }
     public string? OriginalAiValue { get; set; }      // untouched value as returned by Claude
     public bool WasEditedByUser { get; set; }

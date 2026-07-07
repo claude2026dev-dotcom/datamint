@@ -1,15 +1,17 @@
 namespace Datamint.Application.DTOs;
 
-public record RegisterRequestDto(string Email, string Password, string? DisplayName);
-public record LoginRequestDto(string Email, string Password);
+public record RegisterRequestDto(string Email, string Password, string? DisplayName, bool RememberMe = true);
+public record LoginRequestDto(string Email, string Password, bool RememberMe = false);
 public record GoogleLoginRequestDto(string IdToken);
-public record RefreshTokenRequestDto(string AccessToken, string RefreshToken);
+public record RefreshTokenRequestDto(string RefreshToken);
 
 public record AuthResponseDto(
     string AccessToken,
     string RefreshToken,
     DateTime AccessTokenExpiresAtUtc,
     UserProfileDto User);
+
+public record RefreshResponseDto(string AccessToken, string RefreshToken, DateTime AccessTokenExpiresAtUtc);
 
 public record UserProfileDto(
     Guid Id,

@@ -48,8 +48,9 @@ import { ExtractedFieldEdit } from '../../core/models/models';
           <div class="field-grid">
             @for (field of fieldsForPage(page); track field.id) {
               <div class="field-row">
+                <div class="original-label" [title]="'Detected label: ' + field.originalFieldKey">{{ field.originalFieldKey }}</div>
                 <input class="dm-input field-key" [(ngModel)]="field.fieldKey" (blur)="saveField(field)"
-                       title="Rename this field — the name used when exporting to Excel" />
+                       placeholder="Custom field name" title="Rename this field — used when exporting to Excel" />
                 <input class="dm-input" [(ngModel)]="field.fieldValue" (blur)="saveField(field)" />
                 @if (field.wasEditedByUser) { <span class="edited-badge">edited</span> }
               </div>
@@ -72,8 +73,9 @@ import { ExtractedFieldEdit } from '../../core/models/models';
     .not-found-card p { margin-bottom: 20px; }
     .page-block { padding: 20px; margin-bottom: 18px; }
     .field-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 12px; }
-    .field-row { display: flex; flex-direction: column; gap: 6px; position: relative; }
-    .field-key { font-size: 0.8rem; color: var(--dm-text-muted); border: none; background: transparent; padding: 2px 4px; }
+    .field-row { display: flex; flex-direction: column; gap: 4px; position: relative; }
+    .original-label { font-size: 0.72rem; color: var(--dm-text-muted); text-transform: uppercase; letter-spacing: 0.03em; padding: 0 4px; }
+    .field-key { font-size: 0.85rem; font-weight: 600; border: none; background: transparent; padding: 2px 4px; margin-bottom: 2px; }
     .field-key:hover, .field-key:focus { border: 1px solid var(--dm-border); background: var(--dm-surface); }
     .edited-badge { position: absolute; top: 0; right: 0; font-size: 0.7rem; color: var(--dm-accent); }
     @media (max-width: 700px) { .field-grid { grid-template-columns: 1fr; } .header { flex-direction: column; } }

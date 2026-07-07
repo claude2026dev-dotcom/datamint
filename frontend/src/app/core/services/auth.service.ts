@@ -1,7 +1,7 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { tap } from 'rxjs';
+import { tap, catchError, of } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { AuthResponse, UserProfile } from '../models/models';
 
@@ -19,24 +19,43 @@ export class AuthService {
 
   constructor(private http: HttpClient, private router: Router) {}
 
+  /**
+   * "Remember me" ticked -> localStorage (survives closing the browser, backend
+   * issues a ~10 day refresh token). Not ticked -> sessionStorage, which the
+   * browser itself clears when it actually closes, paired with a short-lived
+   * server-side refresh token - so an un-remembered session dies both on the
+   * client and the server at roughly the same time.
+   */
+  private activeStorage(): Storage {
+    if (localStorage.getItem(USER_KEY)) return localStorage;
+    if (sessionStorage.getItem(USER_KEY)) return sessionStorage;
+    return localStorage;
+  }
+
   private readStoredUser(): UserProfile | null {
-    const raw = localStorage.getItem(USER_KEY);
+    const raw = localStorage.getItem(USER_KEY) ?? sessionStorage.getItem(USER_KEY);
     return raw ? JSON.parse(raw) : null;
   }
 
-  private persistSession(res: AuthResponse) {
-    localStorage.setItem(ACCESS_TOKEN_KEY, res.accessToken);
-    localStorage.setItem(REFRESH_TOKEN_KEY, res.refreshToken);
-    localStorage.setItem(USER_KEY, JSON.stringify(res.user));
+  private persistSession(res: AuthResponse, rememberMe: boolean) {
+    const storage = rememberMe ? localStorage : sessionStorage;
+    // Clear the other storage first so a stale token there never wins a lookup.
+    (rememberMe ? sessionStorage : localStorage).removeItem(ACCESS_TOKEN_KEY);
+    (rememberMe ? sessionStorage : localStorage).removeItem(REFRESH_TOKEN_KEY);
+    (rememberMe ? sessionStorage : localStorage).removeItem(USER_KEY);
+
+    storage.setItem(ACCESS_TOKEN_KEY, res.accessToken);
+    storage.setItem(REFRESH_TOKEN_KEY, res.refreshToken);
+    storage.setItem(USER_KEY, JSON.stringify(res.user));
     this.userSignal.set(res.user);
   }
 
-  register(email: string, password: string, displayName?: string) {
-    return this.http.post<AuthResponse>(`${environment.apiBaseUrl}/auth/register`, { email, password, displayName });
+  register(email: string, password: string, displayName?: string, rememberMe = true) {
+    return this.http.post<AuthResponse>(`${environment.apiBaseUrl}/auth/register`, { email, password, displayName, rememberMe });
   }
 
-  login(email: string, password: string) {
-    return this.http.post<AuthResponse>(`${environment.apiBaseUrl}/auth/login`, { email, password });
+  login(email: string, password: string, rememberMe = false) {
+    return this.http.post<AuthResponse>(`${environment.apiBaseUrl}/auth/login`, { email, password, rememberMe });
   }
 
   loginWithGoogle(idToken: string) {
@@ -57,7 +76,7 @@ export class AuthService {
         const current = this.userSignal();
         if (current) {
           const updated = { ...current, displayName: res.profile.displayName };
-          localStorage.setItem(USER_KEY, JSON.stringify(updated));
+          this.activeStorage().setItem(USER_KEY, JSON.stringify(updated));
           this.userSignal.set(updated);
         }
       })
@@ -65,21 +84,57 @@ export class AuthService {
   }
 
   /** Call after any successful auth HTTP response to persist the session and route the user onward. */
-  completeLogin(res: AuthResponse, redirectTo = '/upload') {
-    this.persistSession(res);
+  completeLogin(res: AuthResponse, rememberMe: boolean, redirectTo = '/upload') {
+    this.persistSession(res, rememberMe);
     this.router.navigateByUrl(redirectTo);
   }
 
   logout() {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    this.userSignal.set(null);
-    this.router.navigateByUrl('/');
+    const refreshToken = this.getRefreshToken();
+    const clearAndRedirect = () => {
+      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+      sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+      sessionStorage.removeItem(USER_KEY);
+      this.userSignal.set(null);
+      this.router.navigateByUrl('/');
+    };
+
+    if (refreshToken) {
+      // Best-effort server-side revocation - the token must not work again
+      // even if it's copied out of storage before this finishes. Client state
+      // is cleared either way, even if the network call fails.
+      this.http.post(`${environment.apiBaseUrl}/auth/logout`, { refreshToken }).pipe(
+        catchError(() => of(null))
+      ).subscribe(() => clearAndRedirect());
+    } else {
+      clearAndRedirect();
+    }
   }
 
   getAccessToken(): string | null {
-    return localStorage.getItem(ACCESS_TOKEN_KEY);
+    return localStorage.getItem(ACCESS_TOKEN_KEY) ?? sessionStorage.getItem(ACCESS_TOKEN_KEY);
+  }
+
+  getRefreshToken(): string | null {
+    return localStorage.getItem(REFRESH_TOKEN_KEY) ?? sessionStorage.getItem(REFRESH_TOKEN_KEY);
+  }
+
+  /** Silent refresh: exchanges the stored refresh token for a new access token, keeping the same storage it came from. */
+  refreshAccessToken() {
+    const refreshToken = this.getRefreshToken();
+    const storage = this.activeStorage();
+
+    return this.http.post<{ accessToken: string; refreshToken: string; accessTokenExpiresAtUtc: string }>(
+      `${environment.apiBaseUrl}/auth/refresh`, { refreshToken }
+    ).pipe(
+      tap(res => {
+        storage.setItem(ACCESS_TOKEN_KEY, res.accessToken);
+        storage.setItem(REFRESH_TOKEN_KEY, res.refreshToken);
+      })
+    );
   }
 
   // ---- Free-tier anonymous upload counter (used before the user logs in) ----

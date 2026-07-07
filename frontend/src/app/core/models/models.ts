@@ -28,6 +28,7 @@ export interface DocumentSummary {
 export interface ExtractedFieldEdit {
   id: string;
   fieldKey: string;
+  originalFieldKey: string;
   fieldValue: string | null;
   pageNumber: number | null;
   wasEditedByUser: boolean;

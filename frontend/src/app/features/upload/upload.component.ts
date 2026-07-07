@@ -33,23 +33,30 @@ import { UploadProgressComponent, ProcessingStage } from '../../shared/component
           <label class="mode-option">
             <input type="radio" name="extractionMode" value="Dynamic" [(ngModel)]="extractionMode" />
             <div>
-              <strong>Dynamic</strong>
-              <p class="muted small">Let AI find and extract every field it can — best when you're not sure what's in the document.</p>
+              <strong>Auto-detect fields</strong>
+              <p class="muted small">AI finds and extracts every field it can — best when you're not sure exactly what's in the document.</p>
             </div>
           </label>
           <label class="mode-option">
             <input type="radio" name="extractionMode" value="Formatted" [(ngModel)]="extractionMode" />
             <div>
-              <strong>Formatted</strong>
-              <p class="muted small">Tell us exactly which fields to pull out — every file gets the same columns, ideal for uploading several similar documents together.</p>
+              <strong>Choose specific fields</strong>
+              <p class="muted small">Tell us exactly which fields you want. Every file gets the same set of columns — ideal when you're uploading several similar documents together.</p>
             </div>
           </label>
 
           @if (extractionMode === 'Formatted') {
             <div class="fields-input">
-              <label class="fields-label">Field names to extract (comma-separated)</label>
-              <input class="dm-input" [(ngModel)]="requestedFields"
-                     placeholder="e.g. Invoice No., Total Amount, Date, Customer Name" />
+              <label class="fields-label">Fields to extract</label>
+              @for (fieldName of fieldBoxes; track $index; let i = $index) {
+                <div class="field-box-row">
+                  <input class="dm-input" [(ngModel)]="fieldBoxes[i]" [name]="'field-' + i" placeholder="e.g. Invoice Number" />
+                  @if (fieldBoxes.length > 1) {
+                    <button type="button" class="remove-btn" (click)="removeFieldBox(i)" aria-label="Remove this field">✕</button>
+                  }
+                </div>
+              }
+              <button type="button" class="dm-btn dm-btn-ghost add-field-btn" (click)="addFieldBox()">+ Add another field</button>
             </div>
           }
         </div>
@@ -92,14 +99,25 @@ import { UploadProgressComponent, ProcessingStage } from '../../shared/component
     .mode-card { margin-top: 20px; padding: 20px; }
     .mode-card h4 { margin-bottom: 14px; font-size: 0.95rem; }
     .mode-option { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; cursor: pointer; }
-    .mode-option input[type="radio"] { margin-top: 4px; accent-color: var(--dm-primary); }
+    .mode-option input[type="radio"] { margin-top: 4px; accent-color: var(--dm-primary); flex-shrink: 0; }
     .mode-option strong { font-size: 0.92rem; }
-    .fields-input { margin-top: 8px; padding-left: 28px; }
-    .fields-label { display: block; font-size: 0.8rem; color: var(--dm-text-muted); margin-bottom: 6px; }
+    .fields-input { margin-top: 10px; padding-left: 28px; display: flex; flex-direction: column; gap: 8px; }
+    .fields-label { display: block; font-size: 0.8rem; color: var(--dm-text-muted); margin-bottom: 2px; }
+    .field-box-row { display: flex; gap: 8px; align-items: center; }
+    .field-box-row .dm-input { flex: 1; }
+    .remove-btn {
+      flex-shrink: 0; width: 30px; height: 30px; border-radius: var(--dm-radius-sm); border: 1px solid var(--dm-border);
+      background: transparent; color: var(--dm-text-muted); cursor: pointer; font-size: 0.85rem;
+    }
+    .remove-btn:hover { color: var(--dm-danger); border-color: var(--dm-danger); }
+    .add-field-btn { align-self: flex-start; margin-top: 2px; padding: 6px 14px; font-size: 0.85rem; }
     .file-list { margin-top: 20px; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
     .file-row { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 8px 4px; border-bottom: 1px solid var(--dm-border); }
     .go { margin-top: 10px; align-self: flex-start; }
     .processing-card { margin-top: 30px; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+    @media (max-width: 700px) {
+      .fields-input { padding-left: 0; }
+    }
   `]
 })
 export class UploadComponent {
@@ -110,7 +128,7 @@ export class UploadComponent {
   progress = 0;
   errorMessage?: string;
   extractionMode: 'Dynamic' | 'Formatted' = 'Dynamic';
-  requestedFields = '';
+  fieldBoxes: string[] = [''];
 
   private processedDocIds: string[] = [];
 
@@ -120,6 +138,13 @@ export class UploadComponent {
     private toast: ToastService,
     private router: Router
   ) {}
+
+  get requestedFieldNames(): string[] {
+    return this.fieldBoxes.map(f => f.trim()).filter(Boolean);
+  }
+
+  addFieldBox() { this.fieldBoxes.push(''); }
+  removeFieldBox(index: number) { this.fieldBoxes.splice(index, 1); }
 
   onDragOver(e: DragEvent) { e.preventDefault(); this.dragging = true; }
 
@@ -147,8 +172,8 @@ export class UploadComponent {
       return;
     }
 
-    if (this.extractionMode === 'Formatted' && !this.requestedFields.trim()) {
-      this.toast.error('List the field names to extract, or switch to Dynamic mode.');
+    if (this.extractionMode === 'Formatted' && this.requestedFieldNames.length === 0) {
+      this.toast.error('Add at least one field to extract, or switch to Auto-detect.');
       return;
     }
 
@@ -162,7 +187,7 @@ export class UploadComponent {
     setTimeout(() => { this.stage = 'reading'; this.progress = 40; }, 500);
     setTimeout(() => { this.stage = 'extracting'; this.progress = 75; }, 1300);
 
-    this.documentService.upload(this.selectedFiles, this.extractionMode, this.requestedFields).subscribe({
+    this.documentService.upload(this.selectedFiles, this.extractionMode, this.requestedFieldNames.join(',')).subscribe({
       next: res => {
         this.progress = 100;
         this.stage = 'done';

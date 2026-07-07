@@ -100,7 +100,7 @@ export class RegisterComponent {
     this.loading = true;
     this.errorMessage = '';
     this.auth.register(this.email, this.password, this.displayName).subscribe({
-      next: res => this.auth.completeLogin(res),
+      next: res => this.auth.completeLogin(res, true),
       error: err => { this.loading = false; this.errorMessage = err?.error?.message || 'Something went wrong. Please try again.'; },
       complete: () => this.loading = false
     });
@@ -108,7 +108,7 @@ export class RegisterComponent {
 
   signUpWithGoogle(idToken: string) {
     this.auth.loginWithGoogle(idToken).subscribe({
-      next: res => this.auth.completeLogin(res),
+      next: res => this.auth.completeLogin(res, true),
       error: () => this.toast.error('Google sign-up failed. Please try again.')
     });
   }

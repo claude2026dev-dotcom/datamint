@@ -11,6 +11,10 @@ bootstrapApplication(AppComponent, {
   providers: [
     provideRouter(routes),
     provideAnimations(),
-    provideHttpClient(withInterceptors([authInterceptor, errorInterceptor]))
+    // Order matters: Angular interceptors run request-side in this order but
+    // response/error-side in REVERSE - so authInterceptor (listed second) sees
+    // a raw error first and gets to try a silent token refresh before
+    // errorInterceptor's blanket "session expired" handling ever runs.
+    provideHttpClient(withInterceptors([errorInterceptor, authInterceptor]))
   ]
 }).catch(err => console.error(err));
