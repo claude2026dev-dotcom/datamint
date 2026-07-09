@@ -14,7 +14,8 @@ public record DocumentSummaryDto(
     int PageCount,
     bool RequiresOcr,
     string Status,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    string? FailureReason = null);
 
 public record ExtractedFieldEditDto(Guid Id, string FieldKey, string OriginalFieldKey, string? FieldValue, int? PageNumber, bool WasEditedByUser);
 

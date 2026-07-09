@@ -190,8 +190,23 @@ export class UploadComponent {
     this.documentService.upload(this.selectedFiles, this.extractionMode, this.requestedFieldNames.join(',')).subscribe({
       next: res => {
         this.progress = 100;
+        // The HTTP call succeeding only means the upload was accepted - each
+        // document's own status reflects whether AI extraction actually worked,
+        // so a 200 response can still carry failures that need surfacing here.
+        const failed = res.documents.filter(d => d.status === 'Failed');
+        const succeeded = res.documents.filter(d => d.status !== 'Failed');
+        this.processedDocIds = succeeded.map(d => d.id);
+
+        if (succeeded.length === 0) {
+          this.stage = 'failed';
+          this.errorMessage = failed[0]?.failureReason || 'Extraction failed. Please try again.';
+          return;
+        }
+
         this.stage = 'done';
-        this.processedDocIds = res.documents.map(d => d.id);
+        if (failed.length > 0) {
+          this.toast.error(`${failed.length} of ${res.documents.length} file(s) failed to extract: ${failed[0].failureReason || 'Unknown error'}`);
+        }
         if (!this.auth.isLoggedIn()) this.auth.incrementAnonUploadCount(this.selectedFiles.length);
       },
       error: err => {

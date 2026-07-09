@@ -17,36 +17,28 @@ export class AuthService {
   isLoggedIn = computed(() => !!this.userSignal());
   isAdmin = computed(() => this.userSignal()?.role === 'Admin');
 
-  constructor(private http: HttpClient, private router: Router) {}
-
-  /**
-   * "Remember me" ticked -> localStorage (survives closing the browser, backend
-   * issues a ~10 day refresh token). Not ticked -> sessionStorage, which the
-   * browser itself clears when it actually closes, paired with a short-lived
-   * server-side refresh token - so an un-remembered session dies both on the
-   * client and the server at roughly the same time.
-   */
-  private activeStorage(): Storage {
-    if (localStorage.getItem(USER_KEY)) return localStorage;
-    if (sessionStorage.getItem(USER_KEY)) return sessionStorage;
-    return localStorage;
+  constructor(private http: HttpClient, private router: Router) {
+    // localStorage is one shared bucket per browser (not per tab), so every
+    // open tab already reads the same session. The `storage` event is what
+    // makes that live: it fires in every OTHER tab the instant one tab logs
+    // in/out/changes profile, so two tabs can never end up showing two
+    // different signed-in users at once - the thing "remember me" used to
+    // get wrong by splitting sessions across localStorage/sessionStorage.
+    window.addEventListener('storage', (event: StorageEvent) => {
+      if (event.key !== USER_KEY) return;
+      this.userSignal.set(event.newValue ? JSON.parse(event.newValue) : null);
+    });
   }
 
   private readStoredUser(): UserProfile | null {
-    const raw = localStorage.getItem(USER_KEY) ?? sessionStorage.getItem(USER_KEY);
+    const raw = localStorage.getItem(USER_KEY);
     return raw ? JSON.parse(raw) : null;
   }
 
-  private persistSession(res: AuthResponse, rememberMe: boolean) {
-    const storage = rememberMe ? localStorage : sessionStorage;
-    // Clear the other storage first so a stale token there never wins a lookup.
-    (rememberMe ? sessionStorage : localStorage).removeItem(ACCESS_TOKEN_KEY);
-    (rememberMe ? sessionStorage : localStorage).removeItem(REFRESH_TOKEN_KEY);
-    (rememberMe ? sessionStorage : localStorage).removeItem(USER_KEY);
-
-    storage.setItem(ACCESS_TOKEN_KEY, res.accessToken);
-    storage.setItem(REFRESH_TOKEN_KEY, res.refreshToken);
-    storage.setItem(USER_KEY, JSON.stringify(res.user));
+  private persistSession(res: AuthResponse) {
+    localStorage.setItem(ACCESS_TOKEN_KEY, res.accessToken);
+    localStorage.setItem(REFRESH_TOKEN_KEY, res.refreshToken);
+    localStorage.setItem(USER_KEY, JSON.stringify(res.user));
     this.userSignal.set(res.user);
   }
 
@@ -92,7 +84,7 @@ export class AuthService {
         const current = this.userSignal();
         if (current) {
           const updated = { ...current, displayName: res.profile.displayName };
-          this.activeStorage().setItem(USER_KEY, JSON.stringify(updated));
+          localStorage.setItem(USER_KEY, JSON.stringify(updated));
           this.userSignal.set(updated);
         }
       })
@@ -101,7 +93,7 @@ export class AuthService {
 
   /** Call after any successful auth HTTP response to persist the session and route the user onward. */
   completeLogin(res: AuthResponse, rememberMe: boolean, redirectTo = '/upload') {
-    this.persistSession(res, rememberMe);
+    this.persistSession(res);
     this.router.navigateByUrl(redirectTo);
   }
 
@@ -111,9 +103,6 @@ export class AuthService {
       localStorage.removeItem(ACCESS_TOKEN_KEY);
       localStorage.removeItem(REFRESH_TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
-      sessionStorage.removeItem(ACCESS_TOKEN_KEY);
-      sessionStorage.removeItem(REFRESH_TOKEN_KEY);
-      sessionStorage.removeItem(USER_KEY);
       this.userSignal.set(null);
       this.router.navigateByUrl('/');
     };
@@ -131,24 +120,23 @@ export class AuthService {
   }
 
   getAccessToken(): string | null {
-    return localStorage.getItem(ACCESS_TOKEN_KEY) ?? sessionStorage.getItem(ACCESS_TOKEN_KEY);
+    return localStorage.getItem(ACCESS_TOKEN_KEY);
   }
 
   getRefreshToken(): string | null {
-    return localStorage.getItem(REFRESH_TOKEN_KEY) ?? sessionStorage.getItem(REFRESH_TOKEN_KEY);
+    return localStorage.getItem(REFRESH_TOKEN_KEY);
   }
 
-  /** Silent refresh: exchanges the stored refresh token for a new access token, keeping the same storage it came from. */
+  /** Silent refresh: exchanges the stored refresh token for a new access token. */
   refreshAccessToken() {
     const refreshToken = this.getRefreshToken();
-    const storage = this.activeStorage();
 
     return this.http.post<{ accessToken: string; refreshToken: string; accessTokenExpiresAtUtc: string }>(
       `${environment.apiBaseUrl}/auth/refresh`, { refreshToken }
     ).pipe(
       tap(res => {
-        storage.setItem(ACCESS_TOKEN_KEY, res.accessToken);
-        storage.setItem(REFRESH_TOKEN_KEY, res.refreshToken);
+        localStorage.setItem(ACCESS_TOKEN_KEY, res.accessToken);
+        localStorage.setItem(REFRESH_TOKEN_KEY, res.refreshToken);
       })
     );
   }

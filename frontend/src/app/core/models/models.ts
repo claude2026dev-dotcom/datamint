@@ -23,6 +23,7 @@ export interface DocumentSummary {
   requiresOcr: boolean;
   status: 'Uploaded' | 'Processing' | 'Extracted' | 'Reviewed' | 'Exported' | 'Failed';
   createdAtUtc: string;
+  failureReason?: string;
 }
 
 export interface ExtractedFieldEdit {

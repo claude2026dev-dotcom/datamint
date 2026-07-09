@@ -102,7 +102,7 @@ import { ConfirmDialogService } from '../../../core/services/confirm-dialog.serv
                       <button class="icon-btn" [disabled]="!u.hasPassword || resettingId === u.id"
                               [title]="u.hasPassword ? 'Send password reset link' : 'Signs in with Google — no password to reset'"
                               (click)="sendPasswordReset(u)">🔑</button>
-                      <button class="icon-btn" [disabled]="u.id === myId" [title]="u.isActive ? 'Disable' : 'Enable'" (click)="toggle(u)">{{ u.isActive ? '⏸' : '▶️' }}</button>
+                      <button class="icon-btn" [class.warning]="u.isActive" [disabled]="u.id === myId" [title]="u.isActive ? 'Disable this account' : 'Re-enable this account'" (click)="toggle(u)">{{ u.isActive ? '⏸' : '▶️' }}</button>
                       <button class="icon-btn danger" [disabled]="u.id === myId" title="Delete" (click)="remove(u)">🗑</button>
                     }
                   </td>
@@ -171,6 +171,7 @@ import { ConfirmDialogService } from '../../../core/services/confirm-dialog.serv
     .icon-btn:hover:not(:disabled) { background: var(--dm-bg-elevated); border-color: var(--dm-border); }
     .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
     .icon-btn.danger:hover:not(:disabled) { background: rgba(248,113,113,0.12); }
+    .icon-btn.warning:hover:not(:disabled) { background: rgba(251,191,36,0.15); border-color: rgba(251,191,36,0.4); }
     .tiny { padding: 6px 12px; font-size: 0.78rem; }
     .small-input { padding: 6px 8px; font-size: 0.82rem; min-width: 110px; }
 
@@ -270,7 +271,19 @@ export class AdminUsersComponent implements OnInit, OnDestroy {
     return this.avatarPalette[hash % this.avatarPalette.length];
   }
 
-  toggle(u: any) {
+  async toggle(u: any) {
+    if (u.isActive) {
+      // Disabling immediately blocks the user from signing in and emails them
+      // about it — worth a confirmation, unlike re-enabling which is low-risk.
+      const confirmed = await this.confirmDialog.ask({
+        title: 'Disable this user?',
+        message: `${u.email} won't be able to sign in until an admin re-enables their account. They'll be notified by email.`,
+        confirmLabel: 'Disable user',
+        danger: true
+      });
+      if (!confirmed) return;
+    }
+
     this.adminService.toggleUserActive(u.id).subscribe({
       next: res => { u.isActive = res.isActive; this.toast.success(`User ${res.isActive ? 'enabled' : 'disabled'}.`); },
       error: () => this.toast.error('Could not update that user. Please try again.')

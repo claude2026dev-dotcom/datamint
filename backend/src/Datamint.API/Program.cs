@@ -1,3 +1,5 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text;
 using Datamint.API.Json;
 using Datamint.API.Middleware;
@@ -82,6 +84,35 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Secret"]!))
+    };
+
+    // A JWT is normally only self-invalidating (it just expires) - this adds a
+    // live DB check so a password change/reset or an admin disabling/deleting
+    // the account kills every access token for that user immediately, not just
+    // at its natural ~30 min expiry.
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            // The default JWT inbound claim mapping rewrites the short "sub" claim to
+            // the long ClaimTypes.NameIdentifier URI, so it has to be looked up the
+            // same dual way CurrentUserService already does elsewhere in this app.
+            var userIdClaim = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier)
+                               ?? context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            var stampClaim = context.Principal?.FindFirstValue(JwtClaimTypes.SecurityStamp);
+
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                context.Fail("Invalid token.");
+                return;
+            }
+
+            var db = context.HttpContext.RequestServices.GetRequiredService<DatamintDbContext>();
+            var user = await db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user is null || user.IsDeleted || !user.IsActive || user.SecurityStamp != stampClaim)
+                context.Fail("This session is no longer valid. Please sign in again.");
+        }
     };
 });
 builder.Services.AddAuthorization();

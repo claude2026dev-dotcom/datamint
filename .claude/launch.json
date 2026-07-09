@@ -11,7 +11,8 @@
       "name": "backend",
       "runtimeExecutable": "dotnet",
       "runtimeArgs": ["run", "--project", "backend/src/Datamint.API", "--launch-profile", "https"],
-      "port": 5001
+      "port": 5001,
+      "autoPort": false
     }
   ]
 }

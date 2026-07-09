@@ -32,5 +32,5 @@ export const routes: Routes = [
       { path: 'subscriptions', loadComponent: () => import('./features/admin/subscriptions/admin-subscriptions.component').then(m => m.AdminSubscriptionsComponent) },
     ]
   },
-  { path: '**', redirectTo: '' }
+  { path: '**', loadComponent: () => import('./features/not-found/not-found.component').then(m => m.NotFoundComponent) }
 ];

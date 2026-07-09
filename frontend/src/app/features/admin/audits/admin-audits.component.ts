@@ -2,6 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminService } from '../../../core/services/admin.service';
+import { formatIpAddress, describeDevice } from '../../../core/utils/request-context.util';
 
 @Component({
   selector: 'app-admin-audits',
@@ -16,24 +17,41 @@ import { AdminService } from '../../../core/services/admin.service';
     </div>
 
     <div class="filter-bar dm-card">
-      <div class="search-wrap">
-        <span class="search-icon">🔍</span>
-        <input class="dm-input" placeholder="Action e.g. Auth.Login" [(ngModel)]="actionFilter" (ngModelChange)="onFilterChange()" />
-      </div>
-      <div class="search-wrap">
-        <span class="search-icon">👤</span>
-        <input class="dm-input" placeholder="User email contains…" [(ngModel)]="userEmailFilter" (ngModelChange)="onFilterChange()" />
-      </div>
-      <select class="dm-input" [(ngModel)]="isSuccess" (ngModelChange)="reload()">
-        <option [ngValue]="''">All results</option>
-        <option [ngValue]="true">Success</option>
-        <option [ngValue]="false">Failed</option>
-      </select>
-      <input class="dm-input date-input" type="date" [(ngModel)]="fromDate" (ngModelChange)="reload()" />
-      <span class="date-sep">–</span>
-      <input class="dm-input date-input" type="date" [(ngModel)]="toDate" (ngModelChange)="reload()" />
-      <button class="dm-btn dm-btn-ghost tiny" (click)="toggleSortDir()">{{ sortDir === 'desc' ? '▼ Newest' : '▲ Oldest' }}</button>
-      <button class="dm-btn dm-btn-ghost tiny" (click)="clearFilters()">Clear</button>
+      <label class="filter-field">
+        <span class="filter-label">Action</span>
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input class="dm-input" placeholder="e.g. Auth.Login" [(ngModel)]="actionFilter" (ngModelChange)="onFilterChange()" />
+        </div>
+      </label>
+      <label class="filter-field">
+        <span class="filter-label">User email</span>
+        <div class="search-wrap">
+          <span class="search-icon">👤</span>
+          <input class="dm-input" placeholder="Contains…" [(ngModel)]="userEmailFilter" (ngModelChange)="onFilterChange()" />
+        </div>
+      </label>
+      <label class="filter-field">
+        <span class="filter-label">Result</span>
+        <select class="dm-input" [(ngModel)]="isSuccess" (ngModelChange)="reload()">
+          <option [ngValue]="''">All results</option>
+          <option [ngValue]="true">Success</option>
+          <option [ngValue]="false">Failed</option>
+        </select>
+      </label>
+      <label class="filter-field">
+        <span class="filter-label">From</span>
+        <input class="dm-input date-input" type="date" [(ngModel)]="fromDate" (ngModelChange)="reload()" />
+      </label>
+      <label class="filter-field">
+        <span class="filter-label">To</span>
+        <input class="dm-input date-input" type="date" [(ngModel)]="toDate" (ngModelChange)="reload()" />
+      </label>
+      <label class="filter-field">
+        <span class="filter-label">Sort</span>
+        <button class="dm-btn dm-btn-ghost tiny" (click)="toggleSortDir()">{{ sortDir === 'desc' ? '▼ Newest' : '▲ Oldest' }}</button>
+      </label>
+      <button class="dm-btn dm-btn-ghost tiny clear-btn" (click)="clearFilters()">Clear filters</button>
     </div>
 
     <div class="category-chips">
@@ -63,11 +81,17 @@ import { AdminService } from '../../../core/services/admin.service';
                 <tr class="log-row" (click)="toggleExpand(log.id)">
                   <td class="chevron">{{ expandedId === log.id ? '▾' : '▸' }}</td>
                   <td class="nowrap">{{ log.createdAtUtc | date:'medium' }}</td>
-                  <td>{{ log.userEmail ?? 'anonymous' }}</td>
+                  <td>
+                    @if (log.userEmail) {
+                      {{ log.userEmail }}
+                    } @else {
+                      <span class="anon-badge" title="No signed-in user was attached to this event — e.g. a failed login attempt, or an action taken before signing in.">Anonymous</span>
+                    }
+                  </td>
                   <td><span class="badge" [style.background]="categoryColor(log.action).bg" [style.color]="categoryColor(log.action).fg">{{ categoryOf(log.action) }}</span></td>
                   <td>{{ log.action }}</td>
                   <td>{{ log.entityType }} {{ log.entityId ? '#' + log.entityId.substring(0,8) : '' }}</td>
-                  <td class="muted">{{ log.ipAddress ?? '—' }}</td>
+                  <td class="muted">{{ formatIp(log.ipAddress) }}</td>
                   <td><span class="badge" [class.badge-ok]="log.isSuccess" [class.badge-fail]="!log.isSuccess">{{ log.isSuccess ? 'Success' : 'Failed' }}</span></td>
                 </tr>
                 @if (expandedId === log.id) {
@@ -83,8 +107,9 @@ import { AdminService } from '../../../core/services/admin.service';
                           }
                         </div>
                         <div class="detail-item">
-                          <span class="detail-label">Device / User-Agent</span>
-                          <span class="detail-ua">{{ log.userAgent ?? 'Unknown' }}</span>
+                          <span class="detail-label">Device</span>
+                          <span class="detail-ua">{{ describeDevice(log.userAgent) }}</span>
+                          @if (log.userAgent) { <span class="detail-ua-raw">{{ log.userAgent }}</span> }
                         </div>
                       </div>
                     </td>
@@ -119,14 +144,15 @@ import { AdminService } from '../../../core/services/admin.service';
     .error-banner { padding: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-color: var(--dm-danger); }
     .error-banner p { margin: 0; color: var(--dm-danger); font-size: 0.9rem; }
 
-    .filter-bar { display: flex; gap: 10px; padding: 14px 16px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
-    .search-wrap { position: relative; flex: 1 1 190px; min-width: 150px; }
+    .filter-bar { display: flex; gap: 14px; padding: 16px; margin-bottom: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .filter-field { display: flex; flex-direction: column; gap: 5px; flex: 1 1 160px; min-width: 140px; }
+    .filter-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); font-weight: 700; }
+    .search-wrap { position: relative; }
     .search-wrap .dm-input { padding-left: 32px; }
     .search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); font-size: 0.8rem; opacity: 0.6; }
-    .filter-bar select.dm-input { flex: 0 1 140px; }
-    .date-input { flex: 0 1 145px; }
-    .date-sep { color: var(--dm-text-muted); }
-    .tiny { padding: 6px 12px; font-size: 0.8rem; white-space: nowrap; }
+    .date-input { min-width: 0; }
+    .tiny { padding: 8px 12px; font-size: 0.8rem; white-space: nowrap; }
+    .clear-btn { align-self: flex-end; }
 
     .category-chips { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
     .chip { border: 1px solid var(--dm-border); background: var(--dm-surface); color: var(--dm-text-muted); border-radius: 20px; padding: 6px 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease; }
@@ -143,6 +169,8 @@ import { AdminService } from '../../../core/services/admin.service';
     .nowrap { white-space: nowrap; }
     .empty-cell { text-align: center; color: var(--dm-text-muted); padding: 40px 12px; white-space: normal; }
 
+    .anon-badge { color: var(--dm-text-muted); border-bottom: 1px dashed var(--dm-text-muted); cursor: help; font-style: italic; }
+
     .skeleton-row td { padding: 8px 14px; }
     .skeleton { height: 32px; border-radius: 6px; background: linear-gradient(90deg, var(--dm-surface) 25%, var(--dm-surface-hover) 50%, var(--dm-surface) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
     @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
@@ -152,7 +180,8 @@ import { AdminService } from '../../../core/services/admin.service';
     .detail-item { display: flex; flex-direction: column; gap: 6px; min-width: 220px; flex: 1; }
     .detail-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); font-weight: 700; }
     .detail-json { margin: 0; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.78rem; background: var(--dm-surface); border: 1px solid var(--dm-border); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; word-break: break-word; max-width: 480px; }
-    .detail-ua { font-size: 0.8rem; color: var(--dm-text); word-break: break-word; }
+    .detail-ua { font-size: 0.85rem; color: var(--dm-text); font-weight: 600; }
+    .detail-ua-raw { display: block; font-size: 0.72rem; color: var(--dm-text-muted); word-break: break-word; margin-top: 2px; }
 
     .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.76rem; font-weight: 600; }
     .badge-ok { background: rgba(52, 211, 153, 0.15); color: var(--dm-success); }
@@ -163,7 +192,8 @@ import { AdminService } from '../../../core/services/admin.service';
     .page-size { max-width: 120px; }
     @media (max-width: 700px) {
       .filter-bar { flex-direction: column; align-items: stretch; }
-      .filter-bar select.dm-input, .date-input { flex: 1 1 auto; }
+      .filter-field { flex: 1 1 auto; }
+      .clear-btn { align-self: stretch; }
       .pagination { flex-direction: column; align-items: flex-start; }
     }
   `]
@@ -235,6 +265,9 @@ export class AdminAuditsComponent implements OnInit, OnDestroy {
     try { return JSON.stringify(JSON.parse(details), null, 2); }
     catch { return details; }
   }
+
+  formatIp(ip: string | null | undefined): string { return formatIpAddress(ip); }
+  describeDevice(userAgent: string | null | undefined): string { return describeDevice(userAgent); }
 
   clearFilters() {
     this.actionFilter = ''; this.userEmailFilter = ''; this.isSuccess = '';

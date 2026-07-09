@@ -21,10 +21,9 @@ public class AuthController : ControllerBase
     private readonly IPasswordResetService _passwordReset;
     private readonly DatamintDbContext _db;
 
-    // "Remember me" ticked: session survives a closed browser for this long.
-    // Not ticked: a much shorter server-side ceiling, and the frontend keeps
-    // the token in sessionStorage instead of localStorage, so it's gone the
-    // moment the browser actually closes either way.
+    // "Remember me" ticked: refresh token (and therefore the session) survives
+    // for this long. Not ticked: a much shorter ceiling, so an un-remembered
+    // session naturally requires signing in again well within a day.
     private const int RememberMeDays = 10;
     private const int NotRememberedDays = 1;
 
@@ -212,7 +211,7 @@ public class AuthController : ControllerBase
             return BadRequest(new { success = false, message = "This password reset link is invalid or has expired. Please request a new one." });
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
-        await RevokeAllRefreshTokensAsync(user.Id, ct);
+        await RevokeAllSessionsAsync(user, ct);
         await _db.SaveChangesAsync(ct);
 
         await _audit.LogAsync("Auth.PasswordReset", user.Id, ct: ct);
@@ -266,7 +265,7 @@ public class AuthController : ControllerBase
             return BadRequest(new { success = false, message = passwordError });
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
-        await RevokeAllRefreshTokensAsync(user.Id, ct);
+        await RevokeAllSessionsAsync(user, ct);
         await _users.SaveChangesAsync(ct);
 
         await _audit.LogAsync("Auth.PasswordChanged", user.Id, ct: ct);
@@ -298,7 +297,7 @@ public class AuthController : ControllerBase
 
         user.IsActive = false;
         user.IsDeleted = true;
-        await RevokeAllRefreshTokensAsync(user.Id, ct);
+        await RevokeAllSessionsAsync(user, ct);
         await _users.SaveChangesAsync(ct);
 
         await _audit.LogAsync("Auth.AccountDeleted", user.Id, ct: ct);
@@ -307,10 +306,17 @@ public class AuthController : ControllerBase
         return Ok(new { success = true, message = "Your account has been deleted." });
     }
 
-    private async Task RevokeAllRefreshTokensAsync(Guid userId, CancellationToken ct)
+    /// <summary>
+    /// Kills every session for this user immediately: revokes every refresh token
+    /// (so no new access token can be minted) AND rotates the security stamp (so
+    /// every access token already issued fails its per-request validity check too,
+    /// instead of quietly working until its own ~30 min expiry).
+    /// </summary>
+    private async Task RevokeAllSessionsAsync(ApplicationUser user, CancellationToken ct)
     {
-        var tokens = await _db.RefreshTokens.Where(t => t.UserId == userId && !t.Revoked).ToListAsync(ct);
+        var tokens = await _db.RefreshTokens.Where(t => t.UserId == user.Id && !t.Revoked).ToListAsync(ct);
         foreach (var token in tokens) token.Revoked = true;
+        user.SecurityStamp = Guid.NewGuid().ToString("N");
     }
 
     private static ProfileDto ToProfileDto(ApplicationUser user) =>

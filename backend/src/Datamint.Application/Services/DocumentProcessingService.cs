@@ -78,9 +78,7 @@ public class DocumentProcessingService
         await _audit.LogAsync("Document.Upload", userId, "Document", document.Id.ToString(),
             $"{{\"fileName\":\"{originalFileName}\",\"sizeBytes\":{fileSizeBytes}}}", true, ct);
 
-        return Result<DocumentSummaryDto>.Success(new DocumentSummaryDto(
-            document.Id, document.OriginalFileName, document.PageCount,
-            document.RequiresOcr, document.Status.ToString(), document.CreatedAtUtc));
+        return Result<DocumentSummaryDto>.Success(ToSummaryDto(document));
     }
 
     /// <summary>
@@ -88,11 +86,11 @@ public class DocumentProcessingService
     /// key/value extraction. Designed to be called from a background job/queue in
     /// production so the upload endpoint returns instantly - see README notes.
     /// </summary>
-    public async Task<Result> ProcessDocumentAsync(Guid documentId, CancellationToken ct = default)
+    public async Task<Result<DocumentSummaryDto>> ProcessDocumentAsync(Guid documentId, CancellationToken ct = default)
     {
         var document = await _documents.GetWithDetailsAsync(documentId, ct);
         if (document is null)
-            return Result.Failure("Document not found.", "NOT_FOUND");
+            return Result<DocumentSummaryDto>.Failure("Document not found.", "NOT_FOUND");
 
         try
         {
@@ -131,7 +129,10 @@ public class DocumentProcessingService
                 document.FailureReason = aiResult.ErrorMessage ?? "AI extraction failed.";
                 await _documents.SaveChangesAsync(ct);
                 await _audit.LogAsync("Document.Extraction", document.UserId, "Document", document.Id.ToString(), document.FailureReason, false, ct);
-                return Result.Failure(document.FailureReason, "EXTRACTION_FAILED");
+                // A failed extraction is a normal, expected outcome the caller needs to
+                // display (not an HTTP-level error) - so this is still Result.Success,
+                // just carrying a DTO whose Status/FailureReason say what happened.
+                return Result<DocumentSummaryDto>.Success(ToSummaryDto(document));
             }
 
             int order = 0;
@@ -155,7 +156,7 @@ public class DocumentProcessingService
             await _audit.LogAsync("Document.Extraction", document.UserId, "Document", document.Id.ToString(),
                 $"{{\"fieldsExtracted\":{aiResult.Fields.Count},\"usedOcr\":{textResult.RequiredOcr}}}", true, ct);
 
-            return Result.Success();
+            return Result<DocumentSummaryDto>.Success(ToSummaryDto(document));
         }
         catch (Exception ex)
         {
@@ -164,9 +165,13 @@ public class DocumentProcessingService
             document.FailureReason = "Unexpected error while processing the document. Please try again.";
             await _documents.SaveChangesAsync(ct);
             await _audit.LogAsync("Document.Extraction", document.UserId, "Document", document.Id.ToString(), ex.Message, false, ct);
-            return Result.Failure(document.FailureReason, "UNEXPECTED_ERROR");
+            return Result<DocumentSummaryDto>.Success(ToSummaryDto(document));
         }
     }
+
+    private static DocumentSummaryDto ToSummaryDto(Document document) => new(
+        document.Id, document.OriginalFileName, document.PageCount, document.RequiresOcr,
+        document.Status.ToString(), document.CreatedAtUtc, document.FailureReason);
 
     public async Task<Result> UpdateFieldAsync(Guid documentId, Guid fieldId, string? newValue, string? newKey = null, CancellationToken ct = default)
     {

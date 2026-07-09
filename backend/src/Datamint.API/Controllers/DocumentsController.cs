@@ -123,8 +123,6 @@ public class DocumentsController : ControllerBase
             if (!result.Succeeded)
                 return BadRequest(new { success = false, message = result.Error });
 
-            results.Add(result.Data!);
-
             // NOTE: for a smooth "animated processing" UX on the frontend, kick this
             // off via a background job/queue (e.g. Hangfire or a hosted service) and
             // let the frontend poll GET /api/documents/{id} for status. Calling it
@@ -134,7 +132,11 @@ public class DocumentsController : ControllerBase
             // reload, network blip, tab close) must not abort processing that's
             // already underway - the document should still finish extracting even
             // if this particular response never reaches the browser.
-            _ = await _service.ProcessDocumentAsync(result.Data!.Id, CancellationToken.None);
+            var processed = await _service.ProcessDocumentAsync(result.Data!.Id, CancellationToken.None);
+            // Add the POST-processing summary (Status reflects whether extraction actually
+            // succeeded), not the pre-processing one - otherwise a failed extraction still
+            // looks like "Uploaded" to the frontend with no explanation of what went wrong.
+            results.Add(processed.Succeeded ? processed.Data! : result.Data!);
         }
 
         if (subscription is not null)

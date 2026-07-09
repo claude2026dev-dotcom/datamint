@@ -15,6 +15,12 @@ public class ApplicationUser : BaseEntity
     public bool IsActive { get; set; } = true;
     public DateTime? LastLoginAtUtc { get; set; }
 
+    // Embedded in every access token and checked against this value on every
+    // request - regenerating it (on password change/reset) invalidates every
+    // access token issued before that point immediately, not just at their
+    // natural ~30 min expiry or when a refresh is attempted.
+    public string SecurityStamp { get; set; } = Guid.NewGuid().ToString("N");
+
     // Free-tier usage tracking (per your rule: 2 free PDF uploads before requiring login/plan)
     public int FreeUploadsUsed { get; set; } = 0;
 
