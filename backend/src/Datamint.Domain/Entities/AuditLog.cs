@@ -14,5 +14,6 @@ public class AuditLog : BaseEntity
     public string? EntityId { get; set; }
     public string? Details { get; set; }               // JSON blob of extra context
     public string? IpAddress { get; set; }
+    public string? UserAgent { get; set; }
     public bool IsSuccess { get; set; } = true;
 }

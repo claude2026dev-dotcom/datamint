@@ -1,56 +1,102 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink, RouterLinkActive } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { AdminService } from '../../../core/services/admin.service';
 
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink, RouterLinkActive],
+  imports: [CommonModule, RouterLink],
   template: `
-    <div class="dm-container page">
-      <div class="admin-tabs">
-        <a routerLink="/admin" [routerLinkActiveOptions]="{exact:true}" routerLinkActive="active">Overview</a>
-        <a routerLink="/admin/audits" routerLinkActive="active">Audit logs</a>
-        <a routerLink="/admin/users" routerLinkActive="active">Users</a>
-        <a routerLink="/admin/subscriptions" routerLinkActive="active">Plans</a>
+    <div class="page-head">
+      <h1>Overview</h1>
+      <p class="muted">Live snapshot of the platform. Timestamps across the admin area are shown in your local timezone.</p>
+    </div>
+
+    @if (error) {
+      <div class="dm-card error-banner">
+        <p>{{ error }}</p>
+        <button class="dm-btn dm-btn-ghost" (click)="load()">Retry</button>
+      </div>
+    } @else if (loading) {
+      <div class="stat-grid">
+        @for (i of [1,2,3,4,5,6]; track i) { <div class="dm-card stat skeleton"></div> }
+      </div>
+    } @else {
+      <div class="stat-grid">
+        <div class="dm-card stat">
+          <div class="stat-icon users">👥</div>
+          <div class="stat-body"><span class="label">Total users</span><span class="value">{{ stats?.totalUsers ?? '—' }}</span></div>
+        </div>
+        <div class="dm-card stat">
+          <div class="stat-icon subs">💳</div>
+          <div class="stat-body"><span class="label">Active subscriptions</span><span class="value">{{ stats?.activeSubscriptions ?? '—' }}</span></div>
+        </div>
+        <div class="dm-card stat">
+          <div class="stat-icon docs">📄</div>
+          <div class="stat-body"><span class="label">Documents processed</span><span class="value">{{ stats?.totalDocumentsProcessed ?? '—' }}</span></div>
+        </div>
+        <div class="dm-card stat">
+          <div class="stat-icon today">📥</div>
+          <div class="stat-body"><span class="label">Processed today</span><span class="value">{{ stats?.documentsProcessedToday ?? '—' }}</span></div>
+        </div>
+        <div class="dm-card stat" [class.stat-alert]="(stats?.failedExtractionsLast7Days ?? 0) > 0">
+          <div class="stat-icon fail">⚠️</div>
+          <div class="stat-body"><span class="label">Failed extractions (7d)</span><span class="value" [class.danger]="(stats?.failedExtractionsLast7Days ?? 0) > 0">{{ stats?.failedExtractionsLast7Days ?? '—' }}</span></div>
+        </div>
+        <div class="dm-card stat">
+          <div class="stat-icon rev">💰</div>
+          <div class="stat-body"><span class="label">Revenue this month</span><span class="value">{{ stats?.revenueThisMonth ?? '—' }}</span></div>
+        </div>
       </div>
 
-      <h1>Admin overview</h1>
-
-      @if (error) {
-        <div class="dm-card error-banner">
-          <p>{{ error }}</p>
-          <button class="dm-btn dm-btn-ghost" (click)="load()">Retry</button>
-        </div>
-      } @else if (loading) {
-        <p class="muted">Loading dashboard…</p>
-      } @else {
-        <div class="stat-grid">
-          <div class="dm-card stat"><span class="label">Total users</span><span class="value">{{ stats?.totalUsers ?? '—' }}</span></div>
-          <div class="dm-card stat"><span class="label">Active subscriptions</span><span class="value">{{ stats?.activeSubscriptions ?? '—' }}</span></div>
-          <div class="dm-card stat"><span class="label">Documents processed</span><span class="value">{{ stats?.totalDocumentsProcessed ?? '—' }}</span></div>
-          <div class="dm-card stat"><span class="label">Processed today</span><span class="value">{{ stats?.documentsProcessedToday ?? '—' }}</span></div>
-          <div class="dm-card stat"><span class="label">Failed extractions (7d)</span><span class="value danger">{{ stats?.failedExtractionsLast7Days ?? '—' }}</span></div>
-          <div class="dm-card stat"><span class="label">Revenue this month</span><span class="value">{{ stats?.revenueThisMonth ?? '—' }}</span></div>
-        </div>
-      }
-    </div>
+      <div class="quick-links">
+        <a routerLink="/admin/audits" class="dm-card quick-link">
+          <span class="ql-icon">📜</span>
+          <span class="ql-title">Audit trail</span>
+          <span class="ql-sub">Every login, upload, export, and admin action</span>
+        </a>
+        <a routerLink="/admin/users" class="dm-card quick-link">
+          <span class="ql-icon">👥</span>
+          <span class="ql-title">Manage users</span>
+          <span class="ql-sub">Search, edit roles, disable or delete accounts</span>
+        </a>
+        <a routerLink="/admin/subscriptions" class="dm-card quick-link">
+          <span class="ql-icon">💳</span>
+          <span class="ql-title">Manage plans</span>
+          <span class="ql-sub">Pricing, upload limits, and availability</span>
+        </a>
+      </div>
+    }
   `,
   styles: [`
-    .page { padding: 40px 0 80px; }
-    .admin-tabs { display: flex; gap: 8px; margin-bottom: 26px; border-bottom: 1px solid var(--dm-border); flex-wrap: wrap; }
-    .admin-tabs a { padding: 10px 14px; color: var(--dm-text-muted); text-decoration: none; font-size: 0.9rem; border-bottom: 2px solid transparent; }
-    .admin-tabs a.active { color: var(--dm-text); border-color: var(--dm-primary); }
-    .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
+    .page-head { margin-bottom: 24px; }
+    .muted { color: var(--dm-text-muted); font-size: 0.9rem; margin: 6px 0 0; }
     .error-banner { padding: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-color: var(--dm-danger); }
     .error-banner p { margin: 0; color: var(--dm-danger); font-size: 0.9rem; }
-    .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 10px; }
-    .stat { padding: 20px; display: flex; flex-direction: column; gap: 8px; }
-    .label { font-size: 0.8rem; color: var(--dm-text-muted); }
-    .value { font-size: 1.6rem; font-weight: 800; }
+
+    .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .stat { padding: 22px; display: flex; align-items: center; gap: 16px; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+    .stat:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+    .stat.skeleton { height: 76px; background: linear-gradient(90deg, var(--dm-surface) 25%, var(--dm-surface-hover) 50%, var(--dm-surface) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    .stat-alert { border-color: var(--dm-danger); }
+    .stat-icon { font-size: 1.4rem; line-height: 1; width: 46px; height: 46px; flex-shrink: 0; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(99,102,241,0.12); }
+    .stat-icon.fail { background: rgba(239,68,68,0.12); }
+    .stat-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .label { font-size: 0.78rem; color: var(--dm-text-muted); }
+    .value { font-size: 1.55rem; font-weight: 800; }
     .value.danger { color: var(--dm-danger); }
-    @media (max-width: 800px) { .stat-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 900px) { .stat-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 480px) { .stat-grid { grid-template-columns: 1fr; } }
+
+    .quick-links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 18px; }
+    .quick-link { padding: 20px; text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 5px; transition: transform 0.15s ease, border-color 0.15s ease; }
+    .quick-link:hover { transform: translateY(-2px); border-color: var(--dm-primary); }
+    .ql-icon { font-size: 1.2rem; margin-bottom: 2px; }
+    .ql-title { font-weight: 700; }
+    .ql-sub { font-size: 0.8rem; color: var(--dm-text-muted); }
+    @media (max-width: 900px) { .quick-links { grid-template-columns: 1fr; } }
   `]
 })
 export class AdminDashboardComponent implements OnInit {

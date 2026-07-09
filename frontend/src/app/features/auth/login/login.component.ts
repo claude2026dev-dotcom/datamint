@@ -28,10 +28,13 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
           <label>Password</label>
           <input class="dm-input" type="password" name="password" [(ngModel)]="password" required minlength="6" (ngModelChange)="errorMessage = ''" />
 
-          <label class="remember-row">
-            <input type="checkbox" name="rememberMe" [(ngModel)]="rememberMe" />
-            <span>Remember me for 10 days</span>
-          </label>
+          <div class="options-row">
+            <label class="remember-row">
+              <input type="checkbox" name="rememberMe" [(ngModel)]="rememberMe" />
+              <span>Remember me</span>
+            </label>
+            <a routerLink="/forgot-password" class="forgot-link">Forgot password?</a>
+          </div>
 
           <button class="dm-btn dm-btn-primary submit" type="submit" [disabled]="f.invalid || loading">
             {{ loading ? 'Signing in…' : 'Log in' }}
@@ -47,9 +50,12 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
     .auth-card { width: 100%; max-width: 400px; padding: 32px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     label { display: block; margin: 14px 0 6px; font-size: 0.85rem; color: var(--dm-text-muted); }
-    .remember-row { display: flex; align-items: center; gap: 8px; margin: 16px 0 0; cursor: pointer; }
+    .options-row { display: flex; align-items: center; justify-content: space-between; margin: 16px 0 0; flex-wrap: wrap; gap: 8px; }
+    .remember-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
     .remember-row input[type="checkbox"] { accent-color: var(--dm-primary); width: 16px; height: 16px; }
     .remember-row span { margin: 0; color: var(--dm-text); font-size: 0.85rem; }
+    .forgot-link { color: var(--dm-primary-light); font-size: 0.85rem; text-decoration: none; }
+    .forgot-link:hover { text-decoration: underline; }
     .submit { width: 100%; margin-top: 20px; }
     .divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: var(--dm-text-muted); font-size: 0.8rem; }
     .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--dm-border); }

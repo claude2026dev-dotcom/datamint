@@ -8,6 +8,8 @@ export const routes: Routes = [
   { path: '', loadComponent: () => import('./features/landing/landing.component').then(m => m.LandingComponent) },
   { path: 'login', loadComponent: () => import('./features/auth/login/login.component').then(m => m.LoginComponent) },
   { path: 'register', loadComponent: () => import('./features/auth/register/register.component').then(m => m.RegisterComponent) },
+  { path: 'forgot-password', loadComponent: () => import('./features/auth/forgot-password/forgot-password.component').then(m => m.ForgotPasswordComponent) },
+  { path: 'reset-password', loadComponent: () => import('./features/auth/reset-password/reset-password.component').then(m => m.ResetPasswordComponent) },
   { path: 'auth/google/callback', loadComponent: () => import('./features/auth/google-callback/google-callback.component').then(m => m.GoogleCallbackComponent) },
   { path: 'upload', loadComponent: () => import('./features/upload/upload.component').then(m => m.UploadComponent) },
   // No authGuard: anonymous users must be able to review/export their free-tier
@@ -22,6 +24,7 @@ export const routes: Routes = [
   { path: 'privacy', loadComponent: () => import('./features/legal/privacy.component').then(m => m.PrivacyComponent) },
   {
     path: 'admin', canActivate: [authGuard, adminGuard],
+    loadComponent: () => import('./features/admin/admin-shell.component').then(m => m.AdminShellComponent),
     children: [
       { path: '', loadComponent: () => import('./features/admin/dashboard/admin-dashboard.component').then(m => m.AdminDashboardComponent) },
       { path: 'audits', loadComponent: () => import('./features/admin/audits/admin-audits.component').then(m => m.AdminAuditsComponent) },

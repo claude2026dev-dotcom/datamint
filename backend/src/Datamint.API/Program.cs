@@ -1,4 +1,5 @@
 using System.Text;
+using Datamint.API.Json;
 using Datamint.API.Middleware;
 using Datamint.Application.Interfaces;
 using Datamint.Application.Services;
@@ -57,6 +58,8 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 builder.Services.AddScoped<IPaymentService, RazorpayPaymentService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<IAuthNotificationService, AuthNotificationService>();
+builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
 
 // ---------- Current user (claims wrapper) ----------
 builder.Services.AddHttpContextAccessor();
@@ -91,7 +94,12 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials());
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new UtcDateTimeConverter());
+        options.JsonSerializerOptions.Converters.Add(new UtcNullableDateTimeConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 

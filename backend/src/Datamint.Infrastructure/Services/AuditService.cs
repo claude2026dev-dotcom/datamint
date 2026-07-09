@@ -25,7 +25,8 @@ public class AuditService : IAuditService
             EntityId = entityId,
             Details = details,
             IsSuccess = isSuccess,
-            IpAddress = _currentUser.IpAddress
+            IpAddress = _currentUser.IpAddress,
+            UserAgent = _currentUser.UserAgent
         });
         await _db.SaveChangesAsync(ct);
     }

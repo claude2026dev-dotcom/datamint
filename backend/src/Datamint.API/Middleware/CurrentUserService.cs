@@ -23,4 +23,5 @@ public class CurrentUserService : ICurrentUserService
     public string? Role => _accessor.HttpContext?.User?.FindFirstValue(ClaimTypes.Role);
     public bool IsAuthenticated => _accessor.HttpContext?.User?.Identity?.IsAuthenticated ?? false;
     public string? IpAddress => _accessor.HttpContext?.Connection?.RemoteIpAddress?.ToString();
+    public string? UserAgent => _accessor.HttpContext?.Request?.Headers.UserAgent.ToString();
 }

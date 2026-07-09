@@ -63,5 +63,10 @@
 
   "Cors": {
     "AllowedOrigins": [ "https://localhost:4200" ]
+  },
+
+  "// 7": "----- APP: base URL of the Angular frontend, used to build links in emails (password reset, etc.) -----",
+  "App": {
+    "FrontendBaseUrl": "https://localhost:4200"
   }
 }

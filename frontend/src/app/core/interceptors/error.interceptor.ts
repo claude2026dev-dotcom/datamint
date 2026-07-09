@@ -10,11 +10,15 @@ import { AuthService } from '../services/auth.service';
 /// failures (like FREE_LIMIT_REACHED) still bubble up to the caller via
 /// throwError so the upload page can redirect to /plans as required.
 ///
-/// Auth endpoints (login/register/google) are deliberately excluded from the
-/// blanket 401 handling below: a wrong password IS a 401, but it's not a
-/// "your session expired" event — the component itself shows the backend's
-/// actual message (e.g. "Invalid email or password.") instead.
-const AUTH_ENDPOINT_PATTERN = /\/api\/auth\/(login|register|google)$/;
+/// A handful of auth endpoints are deliberately excluded from the blanket
+/// handling below because their own component already renders the backend's
+/// exact message inline (wrong password, expired reset link, etc.) — letting
+/// the interceptor toast the same failure too would show it twice.
+const SELF_HANDLED_REQUESTS: ReadonlyArray<{ method: string; pattern: RegExp }> = [
+  { method: 'POST', pattern: /\/api\/auth\/(login|register|google|forgot-password|reset-password)$/ },
+  { method: 'PUT', pattern: /\/api\/auth\/change-password$/ },
+  { method: 'DELETE', pattern: /\/api\/auth\/me$/ },
+];
 
 export const errorInterceptor: HttpInterceptorFn = (req, next) => {
   const toast = inject(ToastService);
@@ -24,10 +28,10 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
   return next(req).pipe(
     catchError((err: HttpErrorResponse) => {
       const message = err.error?.message || 'Something went wrong. Please try again.';
-      const isAuthEndpoint = AUTH_ENDPOINT_PATTERN.test(req.url);
+      const isSelfHandled = SELF_HANDLED_REQUESTS.some(r => r.method === req.method && r.pattern.test(req.url));
 
-      if (isAuthEndpoint) {
-        // Let the login/register/Google component show the real message itself.
+      if (isSelfHandled) {
+        // Let the calling component show the real message itself.
       } else if (err.status === 401 && err.error?.errorCode === 'LOGIN_REQUIRED') {
         // A resource that belongs to a signed-in account, viewed while logged
         // out (e.g. a shared document link) - prompt sign-in, not "expired".

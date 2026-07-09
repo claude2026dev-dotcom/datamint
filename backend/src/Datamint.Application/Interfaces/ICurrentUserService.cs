@@ -8,4 +8,5 @@ public interface ICurrentUserService
     string? Role { get; }
     bool IsAuthenticated { get; }
     string? IpAddress { get; }
+    string? UserAgent { get; }
 }

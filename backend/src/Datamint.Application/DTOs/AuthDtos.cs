@@ -25,6 +25,13 @@ public record UserProfileDto(
 
 public record GoogleUserInfoDto(string GoogleId, string Email, string? Name, bool EmailVerified);
 
-public record ProfileDto(Guid Id, string Email, string? DisplayName, string Role, bool IsEmailVerified, DateTime CreatedAtUtc);
+public record ProfileDto(Guid Id, string Email, string? DisplayName, string Role, bool IsEmailVerified, DateTime CreatedAtUtc, bool HasPassword);
 
 public record UpdateProfileRequestDto(string? DisplayName);
+
+public record ForgotPasswordRequestDto(string Email);
+public record ResetPasswordRequestDto(string Token, string NewPassword);
+public record ChangePasswordRequestDto(string CurrentPassword, string NewPassword);
+
+/// <summary>Null CurrentPassword is only valid for Google-only accounts, which have no password to verify.</summary>
+public record DeleteAccountRequestDto(string? CurrentPassword);

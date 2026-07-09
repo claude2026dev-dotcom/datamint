@@ -63,12 +63,28 @@ export class AuthService {
   }
 
   getProfile() {
-    return this.http.get<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string } }>(
+    return this.http.get<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string; hasPassword: boolean } }>(
       `${environment.apiBaseUrl}/auth/me`);
   }
 
+  forgotPassword(email: string) {
+    return this.http.post<{ success: boolean; message: string }>(`${environment.apiBaseUrl}/auth/forgot-password`, { email });
+  }
+
+  resetPassword(token: string, newPassword: string) {
+    return this.http.post<{ success: boolean; message: string }>(`${environment.apiBaseUrl}/auth/reset-password`, { token, newPassword });
+  }
+
+  changePassword(currentPassword: string, newPassword: string) {
+    return this.http.put<{ success: boolean; message: string }>(`${environment.apiBaseUrl}/auth/change-password`, { currentPassword, newPassword });
+  }
+
+  deleteAccount(currentPassword: string | null) {
+    return this.http.request<{ success: boolean; message: string }>('delete', `${environment.apiBaseUrl}/auth/me`, { body: { currentPassword } });
+  }
+
   updateProfile(displayName: string) {
-    return this.http.put<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string } }>(
+    return this.http.put<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string; hasPassword: boolean } }>(
       `${environment.apiBaseUrl}/auth/me`, { displayName }).pipe(
       tap(res => {
         // Keep the cached session in sync so the navbar/anywhere else reflects

@@ -4,6 +4,7 @@ using Datamint.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Datamint.Infrastructure.Migrations
 {
     [DbContext(typeof(DatamintDbContext))]
-    partial class DatamintDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260709061251_AddAuditLogUserAgent")]
+    partial class AddAuditLogUserAgent
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -310,41 +313,6 @@ namespace Datamint.Infrastructure.Migrations
                     b.ToTable("ExtractedFields");
                 });
 
-            modelBuilder.Entity("Datamint.Domain.Entities.PasswordResetToken", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("ExpiresAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Token")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("UpdatedAtUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("Used")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("PasswordResetTokens");
-                });
-
             modelBuilder.Entity("Datamint.Domain.Entities.PaymentTransaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -565,17 +533,6 @@ namespace Datamint.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Document");
-                });
-
-            modelBuilder.Entity("Datamint.Domain.Entities.PasswordResetToken", b =>
-                {
-                    b.HasOne("Datamint.Domain.Entities.ApplicationUser", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Datamint.Domain.Entities.PaymentTransaction", b =>

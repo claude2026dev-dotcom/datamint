@@ -17,6 +17,8 @@ public class AuthController : ControllerBase
     private readonly IGoogleAuthService _google;
     private readonly IAuditService _audit;
     private readonly ICurrentUserService _currentUser;
+    private readonly IAuthNotificationService _notify;
+    private readonly IPasswordResetService _passwordReset;
     private readonly DatamintDbContext _db;
 
     // "Remember me" ticked: session survives a closed browser for this long.
@@ -26,13 +28,15 @@ public class AuthController : ControllerBase
     private const int RememberMeDays = 10;
     private const int NotRememberedDays = 1;
 
-    public AuthController(IUserRepository users, IJwtTokenService jwt, IGoogleAuthService google, IAuditService audit, ICurrentUserService currentUser, DatamintDbContext db)
+    public AuthController(IUserRepository users, IJwtTokenService jwt, IGoogleAuthService google, IAuditService audit, ICurrentUserService currentUser, IAuthNotificationService notify, IPasswordResetService passwordReset, DatamintDbContext db)
     {
         _users = users;
         _jwt = jwt;
         _google = google;
         _audit = audit;
         _currentUser = currentUser;
+        _notify = notify;
+        _passwordReset = passwordReset;
         _db = db;
     }
 
@@ -59,6 +63,7 @@ public class AuthController : ControllerBase
         await _users.AddAsync(user, ct);
         await _users.SaveChangesAsync(ct);
         await _audit.LogAsync("Auth.Register", user.Id, ct: ct);
+        await _notify.SendWelcomeEmailAsync(user, ct);
 
         return Ok(await BuildAuthResponseAsync(user, dto.RememberMe, ct));
     }
@@ -174,6 +179,48 @@ public class AuthController : ControllerBase
         return Ok(new { success = true });
     }
 
+    /// <summary>
+    /// Always returns a generic success message, whether or not the email exists or is
+    /// Google-only — telling the caller which is true would let an attacker enumerate
+    /// registered accounts. The actual email is only sent when there's a real, resettable
+    /// account behind it.
+    /// </summary>
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordRequestDto dto, CancellationToken ct)
+    {
+        var user = await _users.GetByEmailAsync(dto.Email, ct);
+        if (user is not null && user.IsActive && user.PasswordHash is not null)
+        {
+            var rawToken = await _passwordReset.CreateResetTokenAsync(user.Id, ct);
+            await _audit.LogAsync("Auth.PasswordResetRequested", user.Id, ct: ct);
+            await _notify.SendPasswordResetEmailAsync(user, rawToken, triggeredByAdmin: false, ct);
+        }
+
+        return Ok(new { success = true, message = "If an account exists for that email, we've sent a password reset link." });
+    }
+
+    /// <summary>Completes a reset started by /forgot-password (or an admin-triggered one) — the token is single-use and short-lived.</summary>
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword(ResetPasswordRequestDto dto, CancellationToken ct)
+    {
+        var passwordError = ValidatePasswordStrength(dto.NewPassword);
+        if (passwordError is not null)
+            return BadRequest(new { success = false, message = passwordError });
+
+        var user = await _passwordReset.ValidateAndConsumeAsync(dto.Token, ct);
+        if (user is null)
+            return BadRequest(new { success = false, message = "This password reset link is invalid or has expired. Please request a new one." });
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+        await RevokeAllRefreshTokensAsync(user.Id, ct);
+        await _db.SaveChangesAsync(ct);
+
+        await _audit.LogAsync("Auth.PasswordReset", user.Id, ct: ct);
+        await _notify.SendPasswordChangedEmailAsync(user, ct);
+
+        return Ok(new { success = true, message = "Your password has been reset. Please sign in with your new password." });
+    }
+
     /// <summary>Current user's minimal profile — email, display name, role, join date.</summary>
     [HttpGet("me")]
     [Authorize]
@@ -200,8 +247,74 @@ public class AuthController : ControllerBase
         return Ok(new { success = true, profile = ToProfileDto(user) });
     }
 
+    /// <summary>Self-service password change from the profile page. Signs the user out everywhere as a precaution.</summary>
+    [HttpPut("change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword(ChangePasswordRequestDto dto, CancellationToken ct)
+    {
+        var user = await _users.GetByIdAsync(_currentUser.UserId!.Value, ct);
+        if (user is null) return NotFound(new { success = false, message = "User not found." });
+
+        if (user.PasswordHash is null)
+            return BadRequest(new { success = false, message = "This account signs in with Google and has no password to change." });
+
+        if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
+            return BadRequest(new { success = false, message = "Your current password is incorrect." });
+
+        var passwordError = ValidatePasswordStrength(dto.NewPassword);
+        if (passwordError is not null)
+            return BadRequest(new { success = false, message = passwordError });
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+        await RevokeAllRefreshTokensAsync(user.Id, ct);
+        await _users.SaveChangesAsync(ct);
+
+        await _audit.LogAsync("Auth.PasswordChanged", user.Id, ct: ct);
+        await _notify.SendPasswordChangedEmailAsync(user, ct);
+
+        return Ok(new { success = true, message = "Your password has been changed. Please sign in again." });
+    }
+
+    /// <summary>
+    /// Self-service account deletion. Email/password accounts must confirm their current
+    /// password first — the same bar as changing a password — since this is irreversible.
+    /// Google-only accounts have no password to check.
+    /// </summary>
+    [HttpDelete("me")]
+    [Authorize]
+    public async Task<IActionResult> DeleteMe(DeleteAccountRequestDto dto, CancellationToken ct)
+    {
+        var user = await _users.GetByIdAsync(_currentUser.UserId!.Value, ct);
+        if (user is null) return NotFound(new { success = false, message = "User not found." });
+
+        if (user.PasswordHash is not null)
+        {
+            if (string.IsNullOrEmpty(dto.CurrentPassword) || !BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
+                return BadRequest(new { success = false, message = "Your current password is incorrect." });
+        }
+
+        var email = user.Email;
+        var displayName = user.DisplayName;
+
+        user.IsActive = false;
+        user.IsDeleted = true;
+        await RevokeAllRefreshTokensAsync(user.Id, ct);
+        await _users.SaveChangesAsync(ct);
+
+        await _audit.LogAsync("Auth.AccountDeleted", user.Id, ct: ct);
+        await _notify.SendAccountDeletedEmailAsync(email, displayName, ct);
+
+        return Ok(new { success = true, message = "Your account has been deleted." });
+    }
+
+    private async Task RevokeAllRefreshTokensAsync(Guid userId, CancellationToken ct)
+    {
+        var tokens = await _db.RefreshTokens.Where(t => t.UserId == userId && !t.Revoked).ToListAsync(ct);
+        foreach (var token in tokens) token.Revoked = true;
+    }
+
     private static ProfileDto ToProfileDto(ApplicationUser user) =>
-        new(user.Id, user.Email, user.DisplayName, user.Role, user.IsEmailVerified, user.CreatedAtUtc);
+        new(user.Id, user.Email, user.DisplayName, user.Role, user.IsEmailVerified, user.CreatedAtUtc, user.PasswordHash is not null);
 
     /// <summary>
     /// Server-side enforcement (never trust client-only validation): 8+ chars,

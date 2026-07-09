@@ -9,6 +9,7 @@ public class DatamintDbContext : DbContext
 
     public DbSet<ApplicationUser> Users => Set<ApplicationUser>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<DocumentPage> DocumentPages => Set<DocumentPage>();
     public DbSet<ExtractedField> ExtractedFields => Set<ExtractedField>();
