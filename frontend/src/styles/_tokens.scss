@@ -2,6 +2,12 @@
 // A single indigo/violet "data intelligence" theme used across every page,
 // so nothing looks like mismatched default Bootstrap/Material components.
 :root {
+  // Tells the browser to render native form controls (date-picker icon,
+  // scrollbars, etc.) with dark-appropriate colors - without this, Chrome
+  // draws the <input type="date"> calendar icon in black, which is
+  // essentially invisible against this app's near-black inputs.
+  color-scheme: dark;
+
   --dm-bg: #0b0e17;
   --dm-bg-elevated: #12172a;
   --dm-surface: #171d33;

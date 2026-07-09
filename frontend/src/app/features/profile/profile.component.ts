@@ -29,9 +29,11 @@ import { ConfirmDialogService } from '../../core/services/confirm-dialog.service
             <label>Display name</label>
             <input class="dm-input" [(ngModel)]="displayName" placeholder="Your name" />
           </div>
-          <button class="dm-btn dm-btn-primary" (click)="save()" [disabled]="saving">
-            {{ saving ? 'Saving…' : 'Save changes' }}
-          </button>
+          <div class="card-footer">
+            <button class="dm-btn dm-btn-primary" (click)="save()" [disabled]="saving">
+              {{ saving ? 'Saving…' : 'Save changes' }}
+            </button>
+          </div>
         </div>
 
         <div class="dm-card section">
@@ -45,7 +47,9 @@ import { ConfirmDialogService } from '../../core/services/confirm-dialog.service
           } @else {
             <p class="muted">You don't have an active plan yet.</p>
           }
-          <a routerLink="/plans" class="dm-btn dm-btn-ghost">{{ planStatus?.hasActiveSubscription ? 'Change plan' : 'Choose a plan' }}</a>
+          <div class="card-footer">
+            <a routerLink="/plans" class="dm-btn dm-btn-ghost">{{ planStatus?.hasActiveSubscription ? 'Change plan' : 'Choose a plan' }}</a>
+          </div>
         </div>
 
         @if (hasPassword) {
@@ -83,11 +87,13 @@ import { ConfirmDialogService } from '../../core/services/confirm-dialog.service
               }
             </div>
 
-            <button class="dm-btn dm-btn-primary"
-                    [disabled]="changingPassword || !currentPassword || !allChecksPass || newPassword !== confirmNewPassword"
-                    (click)="changePassword()">
-              {{ changingPassword ? 'Changing…' : 'Change password' }}
-            </button>
+            <div class="card-footer">
+              <button class="dm-btn dm-btn-primary"
+                      [disabled]="changingPassword || !currentPassword || !allChecksPass || newPassword !== confirmNewPassword"
+                      (click)="changePassword()">
+                {{ changingPassword ? 'Changing…' : 'Change password' }}
+              </button>
+            </div>
           </div>
         }
 
@@ -102,16 +108,18 @@ import { ConfirmDialogService } from '../../core/services/confirm-dialog.service
             </div>
           }
 
-          @if (!showDeleteConfirm) {
-            <button class="dm-btn dm-btn-ghost danger-btn" (click)="showDeleteConfirm = true">Delete my account</button>
-          } @else {
-            <div class="delete-actions">
-              <button class="dm-btn dm-btn-ghost" (click)="showDeleteConfirm = false; deletePassword = ''">Cancel</button>
-              <button class="dm-btn danger-confirm" [disabled]="deleting || (hasPassword && !deletePassword)" (click)="deleteAccount()">
-                {{ deleting ? 'Deleting…' : 'Permanently delete account' }}
-              </button>
-            </div>
-          }
+          <div class="card-footer">
+            @if (!showDeleteConfirm) {
+              <button class="dm-btn dm-btn-ghost danger-btn" (click)="showDeleteConfirm = true">Delete my account</button>
+            } @else {
+              <div class="delete-actions">
+                <button class="dm-btn dm-btn-ghost" (click)="showDeleteConfirm = false; deletePassword = ''">Cancel</button>
+                <button class="dm-btn danger-confirm" [disabled]="deleting || (hasPassword && !deletePassword)" (click)="deleteAccount()">
+                  {{ deleting ? 'Deleting…' : 'Permanently delete account' }}
+                </button>
+              </div>
+            }
+          </div>
         </div>
       }
     </div>
@@ -141,6 +149,13 @@ import { ConfirmDialogService } from '../../core/services/confirm-dialog.service
     .delete-actions { display: flex; gap: 10px; }
     .danger-confirm { background: var(--dm-danger); color: #1a0505; }
     .danger-confirm:hover { filter: brightness(1.08); }
+
+    .card-footer { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--dm-border); display: flex; justify-content: flex-end; }
+    .card-footer .delete-actions { width: 100%; justify-content: flex-end; }
+    @media (max-width: 480px) {
+      .card-footer, .card-footer .delete-actions { flex-direction: column-reverse; align-items: stretch; }
+      .card-footer .dm-btn { width: 100%; }
+    }
   `]
 })
 export class ProfileComponent implements OnInit {

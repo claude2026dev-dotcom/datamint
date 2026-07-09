@@ -5,11 +5,12 @@ import { AdminService } from '../../../core/services/admin.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { ConfirmDialogService } from '../../../core/services/confirm-dialog.service';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-admin-users',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, IconComponent],
   template: `
     <div class="page-head">
       <div>
@@ -20,7 +21,7 @@ import { ConfirmDialogService } from '../../../core/services/confirm-dialog.serv
 
     <div class="filter-bar dm-card">
       <div class="search-wrap">
-        <span class="search-icon">🔍</span>
+        <app-icon name="search" [size]="15" class="search-icon" />
         <input class="dm-input" placeholder="Search by email or name…" [(ngModel)]="search" (ngModelChange)="onFilterChange()" />
       </div>
       <select class="dm-input" [(ngModel)]="role" (ngModelChange)="reload()">
@@ -98,12 +99,14 @@ import { ConfirmDialogService } from '../../../core/services/confirm-dialog.serv
                       <button class="dm-btn dm-btn-primary tiny" (click)="saveEdit(u)">Save</button>
                       <button class="dm-btn dm-btn-ghost tiny" (click)="cancelEdit()">Cancel</button>
                     } @else {
-                      <button class="icon-btn" title="Edit" (click)="startEdit(u)">✏️</button>
+                      <button class="icon-btn" title="Edit" (click)="startEdit(u)"><app-icon name="edit" [size]="16" /></button>
                       <button class="icon-btn" [disabled]="!u.hasPassword || resettingId === u.id"
                               [title]="u.hasPassword ? 'Send password reset link' : 'Signs in with Google — no password to reset'"
-                              (click)="sendPasswordReset(u)">🔑</button>
-                      <button class="icon-btn" [class.warning]="u.isActive" [disabled]="u.id === myId" [title]="u.isActive ? 'Disable this account' : 'Re-enable this account'" (click)="toggle(u)">{{ u.isActive ? '⏸' : '▶️' }}</button>
-                      <button class="icon-btn danger" [disabled]="u.id === myId" title="Delete" (click)="remove(u)">🗑</button>
+                              (click)="sendPasswordReset(u)"><app-icon name="key" [size]="16" /></button>
+                      <button class="icon-btn" [class.warning]="u.isActive" [disabled]="u.id === myId" [title]="u.isActive ? 'Disable this account' : 'Re-enable this account'" (click)="toggle(u)">
+                        <app-icon [name]="u.isActive ? 'pause' : 'play'" [size]="16" />
+                      </button>
+                      <button class="icon-btn danger" [disabled]="u.id === myId" title="Delete" (click)="remove(u)"><app-icon name="trash" [size]="16" /></button>
                     }
                   </td>
                 </tr>
@@ -140,7 +143,7 @@ import { ConfirmDialogService } from '../../../core/services/confirm-dialog.serv
     .filter-bar { display: flex; gap: 10px; padding: 14px 16px; margin-bottom: 18px; flex-wrap: wrap; }
     .search-wrap { position: relative; flex: 1 1 240px; min-width: 180px; }
     .search-wrap .dm-input { padding-left: 34px; }
-    .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 0.85rem; opacity: 0.6; }
+    .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--dm-text-muted); pointer-events: none; }
     .filter-bar select.dm-input { flex: 0 1 160px; }
 
     .table-wrap { overflow-x: auto; padding: 4px; }
@@ -167,11 +170,13 @@ import { ConfirmDialogService } from '../../../core/services/confirm-dialog.serv
     .badge-fail { background: rgba(248, 113, 113, 0.15); color: var(--dm-danger); }
 
     .actions-col { display: flex; gap: 4px; align-items: center; }
-    .icon-btn { background: none; border: 1px solid transparent; border-radius: 8px; padding: 6px 8px; cursor: pointer; font-size: 0.9rem; line-height: 1; transition: background 0.15s ease, border-color 0.15s ease; }
-    .icon-btn:hover:not(:disabled) { background: var(--dm-bg-elevated); border-color: var(--dm-border); }
+    .icon-btn { display: inline-flex; align-items: center; justify-content: center; background: none; border: 1px solid transparent; border-radius: 8px; padding: 7px; cursor: pointer; color: var(--dm-text-muted); transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
+    .icon-btn:hover:not(:disabled) { color: var(--dm-text); background: var(--dm-bg-elevated); border-color: var(--dm-border); }
     .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-    .icon-btn.danger:hover:not(:disabled) { background: rgba(248,113,113,0.12); }
-    .icon-btn.warning:hover:not(:disabled) { background: rgba(251,191,36,0.15); border-color: rgba(251,191,36,0.4); }
+    .icon-btn.danger { color: var(--dm-danger); opacity: 0.85; }
+    .icon-btn.danger:hover:not(:disabled) { color: var(--dm-danger); opacity: 1; background: rgba(248,113,113,0.12); border-color: rgba(248,113,113,0.3); }
+    .icon-btn.warning { color: var(--dm-warning); opacity: 0.85; }
+    .icon-btn.warning:hover:not(:disabled) { color: var(--dm-warning); opacity: 1; background: rgba(251,191,36,0.15); border-color: rgba(251,191,36,0.4); }
     .tiny { padding: 6px 12px; font-size: 0.78rem; }
     .small-input { padding: 6px 8px; font-size: 0.82rem; min-width: 110px; }
 

@@ -1,16 +1,17 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { IconComponent } from '../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-admin-shell',
   standalone: true,
-  imports: [CommonModule, RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [CommonModule, RouterLink, RouterLinkActive, RouterOutlet, IconComponent],
   template: `
     <div class="admin-shell">
       <aside class="admin-sidebar">
         <div class="sidebar-header">
-          <span class="sidebar-icon">🛠</span>
+          <span class="sidebar-icon"><app-icon name="tool" [size]="20" /></span>
           <div>
             <div class="sidebar-title">Admin</div>
             <div class="sidebar-sub">Control panel</div>
@@ -19,20 +20,20 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
         <nav class="sidebar-nav">
           <a routerLink="/admin" [routerLinkActiveOptions]="{exact:true}" routerLinkActive="active">
-            <span class="icon">📊</span> Overview
+            <app-icon name="bar-chart" [size]="17" /> Overview
           </a>
           <a routerLink="/admin/audits" routerLinkActive="active">
-            <span class="icon">📜</span> Audit logs
+            <app-icon name="file-text" [size]="17" /> Audit logs
           </a>
           <a routerLink="/admin/users" routerLinkActive="active">
-            <span class="icon">👥</span> Users
+            <app-icon name="users" [size]="17" /> Users
           </a>
           <a routerLink="/admin/subscriptions" routerLinkActive="active">
-            <span class="icon">💳</span> Plans
+            <app-icon name="credit-card" [size]="17" /> Plans
           </a>
         </nav>
 
-        <a routerLink="/" class="sidebar-footer">← Back to app</a>
+        <a routerLink="/" class="sidebar-footer"><app-icon name="chevron-left" [size]="15" /> Back to app</a>
       </aside>
 
       <main class="admin-content">
@@ -51,7 +52,7 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
       display: flex; flex-direction: column; padding: 22px 14px;
     }
     .sidebar-header { display: flex; align-items: center; gap: 10px; padding: 4px 10px 20px; }
-    .sidebar-icon { font-size: 1.3rem; }
+    .sidebar-icon { color: var(--dm-primary-light); display: flex; }
     .sidebar-title { font-weight: 700; font-size: 0.95rem; }
     .sidebar-sub { font-size: 0.72rem; color: var(--dm-text-muted); }
 
@@ -61,11 +62,12 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
       color: var(--dm-text-muted); text-decoration: none; font-size: 0.88rem; font-weight: 500;
       transition: background 0.15s ease, color 0.15s ease;
     }
-    .sidebar-nav a .icon { font-size: 1rem; width: 20px; text-align: center; }
+    .sidebar-nav a app-icon { flex-shrink: 0; }
     .sidebar-nav a:hover { background: var(--dm-surface-hover); color: var(--dm-text); }
     .sidebar-nav a.active { background: var(--dm-surface); color: var(--dm-text); box-shadow: inset 3px 0 0 var(--dm-primary); }
 
     .sidebar-footer {
+      display: flex; align-items: center; gap: 8px;
       padding: 10px 12px; color: var(--dm-text-muted); text-decoration: none; font-size: 0.82rem;
       border-top: 1px solid var(--dm-border); margin-top: 10px; padding-top: 16px;
     }

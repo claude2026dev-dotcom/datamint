@@ -6,11 +6,12 @@ import { DocumentService } from '../../core/services/document.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { UploadProgressComponent, ProcessingStage } from '../../shared/components/upload-progress/upload-progress.component';
+import { IconComponent } from '../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-upload',
   standalone: true,
-  imports: [CommonModule, FormsModule, UploadProgressComponent],
+  imports: [CommonModule, FormsModule, UploadProgressComponent, IconComponent],
   template: `
     <div class="dm-container page">
       <h1>Upload your PDFs</h1>
@@ -21,7 +22,7 @@ import { UploadProgressComponent, ProcessingStage } from '../../shared/component
              (dragover)="onDragOver($event)" (dragleave)="dragging=false" (drop)="onDrop($event)"
              (click)="fileInput.click()">
           <input #fileInput type="file" accept="application/pdf" multiple hidden (change)="onFilesPicked($event)" />
-          <div class="drop-icon">⬆️</div>
+          <div class="drop-icon"><app-icon name="upload-cloud" [size]="34" /></div>
           <p><strong>Click to browse</strong> or drag PDF files here</p>
           <p class="muted small">
             @if (!auth.isLoggedIn()) { {{ 2 - auth.getAnonUploadCount() }} free upload(s) remaining before sign-in is required }
@@ -65,7 +66,7 @@ import { UploadProgressComponent, ProcessingStage } from '../../shared/component
           <div class="file-list dm-card">
             @for (f of selectedFiles; track f.name) {
               <div class="file-row">
-                <span>📄 {{ f.name }}</span>
+                <span class="file-name"><app-icon name="file" [size]="15" /> {{ f.name }}</span>
                 <span class="muted">{{ (f.size / 1024 / 1024).toFixed(2) }} MB</span>
               </div>
             }
@@ -95,7 +96,7 @@ import { UploadProgressComponent, ProcessingStage } from '../../shared/component
       padding: 60px 20px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;
     }
     .dropzone:hover, .dropzone.dragging { border-color: var(--dm-primary); background: rgba(99,102,241,0.06); }
-    .drop-icon { font-size: 2.2rem; margin-bottom: 10px; }
+    .drop-icon { display: flex; justify-content: center; color: var(--dm-primary-light); margin-bottom: 12px; }
     .mode-card { margin-top: 20px; padding: 20px; }
     .mode-card h4 { margin-bottom: 14px; font-size: 0.95rem; }
     .mode-option { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; cursor: pointer; }
@@ -113,6 +114,8 @@ import { UploadProgressComponent, ProcessingStage } from '../../shared/component
     .add-field-btn { align-self: flex-start; margin-top: 2px; padding: 6px 14px; font-size: 0.85rem; }
     .file-list { margin-top: 20px; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
     .file-row { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 8px 4px; border-bottom: 1px solid var(--dm-border); }
+    .file-name { display: inline-flex; align-items: center; gap: 8px; }
+    .file-name app-icon { color: var(--dm-text-muted); flex-shrink: 0; }
     .go { margin-top: 10px; align-self: flex-start; }
     .processing-card { margin-top: 30px; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
     @media (max-width: 700px) {

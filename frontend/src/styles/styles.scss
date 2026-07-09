@@ -78,3 +78,13 @@ h1, h2, h3, h4 { font-weight: 700; letter-spacing: -0.02em; margin: 0; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--dm-border); border-radius: 4px; }
+
+// `color-scheme: dark` (set globally in _tokens.scss) already makes Chrome's
+// calendar-picker-indicator render in a visible light color - this just
+// gives it a bit more presence and an obvious pointer cursor on hover.
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.75;
+  cursor: pointer;
+  border-radius: 4px;
+  &:hover { opacity: 1; background: var(--dm-surface-hover); }
+}

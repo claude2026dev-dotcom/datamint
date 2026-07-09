@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminService } from '../../../core/services/admin.service';
 import { formatIpAddress, describeDevice } from '../../../core/utils/request-context.util';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-admin-audits',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, IconComponent],
   template: `
     <div class="page-head">
       <div>
@@ -20,14 +21,14 @@ import { formatIpAddress, describeDevice } from '../../../core/utils/request-con
       <label class="filter-field">
         <span class="filter-label">Action</span>
         <div class="search-wrap">
-          <span class="search-icon">🔍</span>
+          <app-icon name="search" [size]="15" class="search-icon" />
           <input class="dm-input" placeholder="e.g. Auth.Login" [(ngModel)]="actionFilter" (ngModelChange)="onFilterChange()" />
         </div>
       </label>
       <label class="filter-field">
         <span class="filter-label">User email</span>
         <div class="search-wrap">
-          <span class="search-icon">👤</span>
+          <app-icon name="user" [size]="15" class="search-icon" />
           <input class="dm-input" placeholder="Contains…" [(ngModel)]="userEmailFilter" (ngModelChange)="onFilterChange()" />
         </div>
       </label>
@@ -149,7 +150,7 @@ import { formatIpAddress, describeDevice } from '../../../core/utils/request-con
     .filter-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); font-weight: 700; }
     .search-wrap { position: relative; }
     .search-wrap .dm-input { padding-left: 32px; }
-    .search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); font-size: 0.8rem; opacity: 0.6; }
+    .search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--dm-text-muted); pointer-events: none; }
     .date-input { min-width: 0; }
     .tiny { padding: 8px 12px; font-size: 0.8rem; white-space: nowrap; }
     .clear-btn { align-self: flex-end; }

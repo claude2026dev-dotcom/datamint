@@ -1,6 +1,7 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { trigger, transition, style, animate, state } from '@angular/animations';
+import { IconComponent } from '../icon/icon.component';
 
 export type ProcessingStage = 'uploading' | 'reading' | 'ocr' | 'extracting' | 'done' | 'failed';
 
@@ -9,7 +10,7 @@ export type ProcessingStage = 'uploading' | 'reading' | 'ocr' | 'extracting' | '
 @Component({
   selector: 'app-upload-progress',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, IconComponent],
   animations: [
     trigger('pulse', [
       state('active', style({ transform: 'scale(1.06)' })),
@@ -31,7 +32,7 @@ export type ProcessingStage = 'uploading' | 'reading' | 'ocr' | 'extracting' | '
             </linearGradient>
           </defs>
         </svg>
-        <span class="doc" [@pulse]="stage !== 'done' && stage !== 'failed' ? 'active' : 'idle'">📄</span>
+        <span class="doc" [@pulse]="stage !== 'done' && stage !== 'failed' ? 'active' : 'idle'"><app-icon name="file" [size]="32" /></span>
       </div>
 
       <div class="steps">
@@ -51,7 +52,7 @@ export type ProcessingStage = 'uploading' | 'reading' | 'ocr' | 'extracting' | '
     .ring { position: relative; width: 110px; height: 110px; }
     .ring.spin svg { animation: rotate 2.4s linear infinite; }
     .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-    .doc { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 2rem; }
+    .doc { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--dm-primary-light); }
     @keyframes rotate { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
     .steps { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 320px; }
     .step { padding: 8px 12px; border-radius: var(--dm-radius-sm); color: var(--dm-text-muted); font-size: 0.88rem; border: 1px solid transparent; }

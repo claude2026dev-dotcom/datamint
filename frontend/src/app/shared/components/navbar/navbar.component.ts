@@ -2,11 +2,12 @@ import { Component, ElementRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
+import { IconComponent } from '../icon/icon.component';
 
 @Component({
   selector: 'app-navbar',
   standalone: true,
-  imports: [CommonModule, RouterLink, RouterLinkActive],
+  imports: [CommonModule, RouterLink, RouterLinkActive, IconComponent],
   template: `
     <nav class="dm-nav">
       <div class="dm-container dm-nav-inner">
@@ -36,10 +37,20 @@ import { AuthService } from '../../../core/services/auth.service';
                       <div class="email">{{ auth.currentUser()?.email }}</div>
                     </div>
                   </div>
-                  <a routerLink="/profile" class="dropdown-item" (click)="profileOpen = false">👤 My profile</a>
-                  <a routerLink="/plans" class="dropdown-item" (click)="profileOpen = false">💳 Current plan</a>
-                  @if (auth.isAdmin()) { <a routerLink="/admin" class="dropdown-item" (click)="profileOpen = false">🛠 Admin dashboard</a> }
-                  <button class="dropdown-item signout" (click)="signOut()">↪ Sign out</button>
+                  <a routerLink="/profile" class="dropdown-item" (click)="profileOpen = false">
+                    <app-icon name="user" [size]="16" /> My profile
+                  </a>
+                  <a routerLink="/plans" class="dropdown-item" (click)="profileOpen = false">
+                    <app-icon name="credit-card" [size]="16" /> Current plan
+                  </a>
+                  @if (auth.isAdmin()) {
+                    <a routerLink="/admin" class="dropdown-item" (click)="profileOpen = false">
+                      <app-icon name="tool" [size]="16" /> Admin dashboard
+                    </a>
+                  }
+                  <button class="dropdown-item signout" (click)="signOut()">
+                    <app-icon name="log-out" [size]="16" /> Sign out
+                  </button>
                 </div>
               }
             </div>
@@ -49,7 +60,9 @@ import { AuthService } from '../../../core/services/auth.service';
           }
         </div>
 
-        <button class="burger" (click)="menuOpen = !menuOpen" aria-label="Toggle menu">☰</button>
+        <button class="burger" (click)="menuOpen = !menuOpen" aria-label="Toggle menu">
+          <app-icon [name]="menuOpen ? 'close' : 'menu'" [size]="22" />
+        </button>
       </div>
     </nav>
   `,
@@ -62,7 +75,7 @@ import { AuthService } from '../../../core/services/auth.service';
     .links a { color: var(--dm-text-muted); text-decoration: none; font-weight: 500; font-size: 0.92rem; transition: color 0.15s; }
     .links a:hover, .links a.active { color: var(--dm-text); }
     .actions { display: flex; align-items: center; gap: 10px; }
-    .burger { display: none; background: none; border: none; color: var(--dm-text); font-size: 1.3rem; cursor: pointer; }
+    .burger { display: none; background: none; border: none; color: var(--dm-text); cursor: pointer; padding: 4px; }
 
     .profile-menu { position: relative; }
     .avatar-btn { background: none; border: none; padding: 0; cursor: pointer; border-radius: 50%; }
@@ -82,11 +95,13 @@ import { AuthService } from '../../../core/services/auth.service';
     .name { font-weight: 600; font-size: 0.9rem; }
     .email { color: var(--dm-text-muted); font-size: 0.78rem; word-break: break-all; }
     .dropdown-item {
-      display: block; width: 100%; text-align: left; padding: 10px; border-radius: var(--dm-radius-sm);
+      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px; border-radius: var(--dm-radius-sm);
       color: var(--dm-text); text-decoration: none; font-size: 0.88rem; background: none; border: none; cursor: pointer;
     }
+    .dropdown-item app-icon { color: var(--dm-text-muted); flex-shrink: 0; }
     .dropdown-item:hover { background: var(--dm-surface); }
     .dropdown-item.signout { color: var(--dm-danger); }
+    .dropdown-item.signout app-icon { color: var(--dm-danger); }
 
     @media (max-width: 768px) {
       .links { position: absolute; top: 64px; left: 0; right: 0; background: var(--dm-bg-elevated); flex-direction: column; padding: 12px 20px; display: none; }

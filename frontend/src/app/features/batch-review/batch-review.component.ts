@@ -6,6 +6,7 @@ import { forkJoin } from 'rxjs';
 import { DocumentService } from '../../core/services/document.service';
 import { ToastService } from '../../core/services/toast.service';
 import { ExtractedFieldEdit } from '../../core/models/models';
+import { IconComponent } from '../../shared/components/icon/icon.component';
 
 interface BatchDocument {
   id: string;
@@ -20,12 +21,12 @@ interface BatchDocument {
 @Component({
   selector: 'app-batch-review',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, IconComponent],
   template: `
     <div class="dm-container page">
       @if (notFound) {
         <div class="dm-card not-found-card">
-          <div class="icon">🔍</div>
+          <div class="icon"><app-icon name="search" [size]="28" /></div>
           <h2>Some of these documents aren't available</h2>
           <p class="muted">One or more links in this batch don't point to documents we can show you — they may not exist, or belong to someone else's account.</p>
           <a routerLink="/upload" class="dm-btn dm-btn-primary">Upload new PDFs</a>
@@ -91,7 +92,7 @@ interface BatchDocument {
     .actions { display: flex; gap: 10px; }
     .email-box { display: flex; gap: 10px; padding: 16px; margin-bottom: 20px; }
     .not-found-card { max-width: 460px; margin: 60px auto; padding: 40px 32px; text-align: center; }
-    .not-found-card .icon { font-size: 2.6rem; margin-bottom: 14px; }
+    .not-found-card .icon { color: var(--dm-text-muted); display: flex; justify-content: center; margin-bottom: 14px; }
     .not-found-card h2 { margin-bottom: 10px; }
     .not-found-card p { margin-bottom: 20px; }
     .table-wrap { padding: 0; overflow-x: auto; }
