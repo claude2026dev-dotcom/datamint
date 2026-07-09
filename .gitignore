@@ -15,6 +15,10 @@ frontend/node_modules/
 frontend/dist/
 frontend/.angular/
 
+# Local HTTPS dev cert (exported from the trusted ASP.NET Core dev cert so
+# ng serve and the API share one cert) - machine-specific, never commit.
+frontend/.certs/
+
 # Editor / OS
 .vs/
 .vscode/

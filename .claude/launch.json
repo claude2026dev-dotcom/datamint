@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start", "--prefix", "frontend"],
       "port": 4200
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "backend/src/Datamint.API", "--launch-profile", "https"],
+      "port": 5001
     }
   ]
 }

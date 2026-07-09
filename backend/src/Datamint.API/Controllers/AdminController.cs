@@ -80,8 +80,16 @@ public class AdminController : ControllerBase
     }
 
     [HttpGet("plans")]
-    public async Task<IActionResult> GetAllPlans(CancellationToken ct) =>
-        Ok(new { success = true, plans = await _db.Plans.ToListAsync(ct) });
+    public async Task<IActionResult> GetAllPlans(CancellationToken ct)
+    {
+        // Map to PlanDto rather than returning the raw entity: the raw Plan
+        // carries a Subscriptions navigation collection (unnecessary payload,
+        // and a latent circular-reference risk if that collection is ever
+        // populated), and its BillingCycle enum would serialize as a bare
+        // integer instead of "Monthly"/"Yearly".
+        var plans = await _db.Plans.ToListAsync(ct);
+        return Ok(new { success = true, plans = plans.Select(ToPlanDto) });
+    }
 
     [HttpPost("plans")]
     public async Task<IActionResult> CreatePlan(CreatePlanRequestDto dto, CancellationToken ct)
@@ -97,8 +105,11 @@ public class AdminController : ControllerBase
         };
         _db.Plans.Add(plan);
         await _db.SaveChangesAsync(ct);
-        return Ok(new { success = true, plan });
+        return Ok(new { success = true, plan = ToPlanDto(plan) });
     }
+
+    private static PlanDto ToPlanDto(Domain.Entities.Plan p) =>
+        new(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyUploadLimit, p.IsActive);
 
     [HttpPut("plans/{id:guid}/toggle-active")]
     public async Task<IActionResult> TogglePlanActive(Guid id, CancellationToken ct)

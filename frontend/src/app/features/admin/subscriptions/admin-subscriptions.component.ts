@@ -21,23 +21,32 @@ import { ToastService } from '../../../core/services/toast.service';
       <h1>Plans & pricing</h1>
       <p class="muted">Prices seeded as placeholders — edit here once real pricing is decided. Changes apply immediately to the public pricing page.</p>
 
-      <div class="dm-card table-wrap">
-        <table>
-          <thead><tr><th>Name</th><th>Price</th><th>Cycle</th><th>Upload limit</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            @for (p of plans; track p.id) {
-              <tr>
-                <td>{{ p.name }}</td>
-                <td>{{ p.currency }} {{ p.price }}</td>
-                <td>{{ p.billingCycle }}</td>
-                <td>{{ p.monthlyUploadLimit === -1 ? 'Unlimited' : p.monthlyUploadLimit }}</td>
-                <td><span [class.ok]="p.isActive" [class.fail]="!p.isActive">{{ p.isActive ? 'Active' : 'Hidden' }}</span></td>
-                <td><button class="dm-btn dm-btn-ghost small" (click)="toggle(p)">{{ p.isActive ? 'Hide' : 'Show' }}</button></td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
+      @if (error) {
+        <div class="dm-card error-banner">
+          <p>{{ error }}</p>
+          <button class="dm-btn dm-btn-ghost" (click)="load()">Retry</button>
+        </div>
+      } @else if (loading) {
+        <p class="muted">Loading plans…</p>
+      } @else {
+        <div class="dm-card table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Price</th><th>Cycle</th><th>Upload limit</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              @for (p of plans; track p.id) {
+                <tr>
+                  <td>{{ p.name }}</td>
+                  <td>{{ p.currency }} {{ p.price }}</td>
+                  <td>{{ p.billingCycle }}</td>
+                  <td>{{ p.monthlyUploadLimit === -1 ? 'Unlimited' : p.monthlyUploadLimit }}</td>
+                  <td><span [class.ok]="p.isActive" [class.fail]="!p.isActive">{{ p.isActive ? 'Active' : 'Hidden' }}</span></td>
+                  <td><button class="dm-btn dm-btn-ghost small" (click)="toggle(p)">{{ p.isActive ? 'Hide' : 'Show' }}</button></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
 
       <div class="dm-card new-plan">
         <h3>Add a new plan</h3>
@@ -61,6 +70,8 @@ import { ToastService } from '../../../core/services/toast.service';
     .admin-tabs a { padding: 10px 14px; color: var(--dm-text-muted); text-decoration: none; font-size: 0.9rem; border-bottom: 2px solid transparent; }
     .admin-tabs a.active { color: var(--dm-text); border-color: var(--dm-primary); }
     .muted { color: var(--dm-text-muted); font-size: 0.88rem; margin-bottom: 20px; }
+    .error-banner { padding: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-color: var(--dm-danger); margin-bottom: 24px; }
+    .error-banner p { margin: 0; color: var(--dm-danger); font-size: 0.9rem; }
     .table-wrap { overflow-x: auto; padding: 8px; margin-bottom: 24px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--dm-border); white-space: nowrap; }
@@ -75,19 +86,32 @@ import { ToastService } from '../../../core/services/toast.service';
 export class AdminSubscriptionsComponent implements OnInit {
   plans: any[] = [];
   newPlan = { name: '', price: 0, currency: 'INR', billingCycle: 'Monthly', monthlyUploadLimit: 50 };
+  loading = true;
+  error = '';
 
   constructor(private adminService: AdminService, private toast: ToastService) {}
   ngOnInit() { this.load(); }
-  load() { this.adminService.getPlans().subscribe(res => this.plans = res.plans); }
+
+  load() {
+    this.loading = true;
+    this.error = '';
+    this.adminService.getPlans().subscribe({
+      next: res => { this.plans = res.plans; this.loading = false; },
+      error: () => { this.loading = false; this.error = 'Could not load plans. Please try again.'; }
+    });
+  }
 
   toggle(p: any) {
-    this.adminService.togglePlanActive(p.id).subscribe(res => { p.isActive = res.isActive; });
+    this.adminService.togglePlanActive(p.id).subscribe({
+      next: res => { p.isActive = res.isActive; },
+      error: () => this.toast.error('Could not update that plan. Please try again.')
+    });
   }
 
   create() {
-    this.adminService.createPlan(this.newPlan).subscribe(() => {
-      this.toast.success('Plan created.');
-      this.load();
+    this.adminService.createPlan(this.newPlan).subscribe({
+      next: () => { this.toast.success('Plan created.'); this.load(); },
+      error: () => this.toast.error('Could not create that plan. Please check the values and try again.')
     });
   }
 }

@@ -30,7 +30,9 @@
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
           "options": {
-            "ssl": true
+            "ssl": true,
+            "sslCert": ".certs/localhost.crt",
+            "sslKey": ".certs/localhost.key"
           },
           "configurations": {
             "production": { "buildTarget": "datamint:build:production" },
