@@ -103,10 +103,10 @@ import { IconComponent } from '../icon/icon.component';
     .links a:hover, .links a.active { color: var(--dm-text); }
     .actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
     .desktop-auth-links { display: flex; align-items: center; gap: 10px; }
-    // Only ever rendered when logged out; kept hidden until the mobile
-    // breakpoint below, where it replaces .desktop-auth-links instead of
-    // sitting alongside it (two full buttons never fit next to the brand
-    // and burger at narrow widths - see .mobile-auth-links below).
+    /* Only ever rendered when logged out; kept hidden until the mobile
+       breakpoint below, where it replaces .desktop-auth-links instead of
+       sitting alongside it (two full buttons never fit next to the brand
+       and burger at narrow widths - see .mobile-auth-links below). */
     .mobile-auth-links { display: none; }
     .burger { display: none; background: none; border: none; color: var(--dm-text); cursor: pointer; padding: 4px; }
 
