@@ -428,7 +428,7 @@ export class AdminUsersComponent implements OnInit, OnDestroy {
   async remove(u: any) {
     const confirmed = await this.confirmDialog.ask({
       title: 'Deactivate this user?',
-      message: `${u.email} will be signed out everywhere, their subscription cancelled, and their account deactivated. ` +
+      message: `${u.email} will be signed out everywhere, any paid subscription cancelled (their free trial, if any, is untouched), and their account deactivated. ` +
         `Their data is kept for ${this.graceDays} days - you (or they) can reactivate it from the Deactivated tab within that window. After that it's permanently erased.`,
       confirmLabel: 'Deactivate user',
       danger: true

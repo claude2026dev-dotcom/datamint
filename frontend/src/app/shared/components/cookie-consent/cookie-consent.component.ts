@@ -14,12 +14,15 @@ import { CookieConsentService } from '../../../core/services/cookie-consent.serv
     @if (cookieConsent.consent() === null) {
       <div class="dm-card cookie-banner" role="dialog" aria-label="Cookie consent">
         <p>
-          We use a couple of essential and functional cookies - things like keeping you signed in, plus
-          third-party widgets for Google Sign-In and Razorpay Checkout. See our <a routerLink="/privacy">Privacy Policy</a> for details.
+          Signing in and using Datamint only needs a session token - no cookie banner would even be required for that alone.
+          We're asking because two <em>optional</em> features load third-party scripts that set their own cookies:
+          <strong>Google Sign-In</strong> and <strong>Razorpay Checkout</strong>. Accept to enable both; reject and everything
+          else - email/password login, uploads, editing, exports - still works exactly the same. See our
+          <a routerLink="/privacy">Privacy Policy</a> for details.
         </p>
         <div class="cookie-actions">
           <button class="dm-btn dm-btn-ghost" (click)="cookieConsent.reject()">Reject non-essential</button>
-          <button class="dm-btn dm-btn-primary" (click)="cookieConsent.accept()">Accept</button>
+          <button class="dm-btn dm-btn-ghost accept-btn" (click)="cookieConsent.accept()">Accept</button>
         </div>
       </div>
     }
@@ -33,6 +36,11 @@ import { CookieConsentService } from '../../../core/services/cookie-consent.serv
     .cookie-banner p { margin: 0; font-size: 0.86rem; color: var(--dm-text-muted); line-height: 1.5; }
     .cookie-banner a { color: var(--dm-primary-light); }
     .cookie-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    /* Both buttons are deliberately the same size/weight - only the border color tells
+       Accept apart from Reject. A brighter, bigger "Accept" next to a dim "Reject" link
+       is the exact "dark pattern" EU regulators (CNIL, the ICO) have fined sites over:
+       nudging people toward accepting instead of presenting a genuine, equal choice. */
+    .accept-btn { border-color: var(--dm-primary); color: var(--dm-primary-light); }
     @media (max-width: 480px) {
       .cookie-actions { flex-direction: column-reverse; }
       .cookie-actions .dm-btn { width: 100%; }

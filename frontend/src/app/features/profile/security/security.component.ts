@@ -87,16 +87,17 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           </p>
         } @else {
         <p class="muted hint-block">
-          Deactivate your account and cancel any subscription. Your documents are kept for {{ graceDays }} days in case
-          you change your mind — just sign in again within that window to reactivate. After that, everything is permanently erased.
+          Deactivate your account and cancel any paid subscription (your free trial, if you're on one, isn't affected).
+          Your documents are kept for {{ graceDays }} days in case you change your mind — just sign in again within that window
+          to reactivate, with your free trial and remaining pages exactly as you left them. After that, everything is permanently erased.
         </p>
 
         @if (showDeactivateConfirm) {
           <div class="delete-warning">
             <app-icon name="alert-triangle" [size]="16" />
             <span>
-              This signs you out everywhere and cancels any active subscription right away. Your account and documents
-              stay recoverable for {{ graceDays }} days by signing back in - after that they're permanently erased and can't be undone.
+              This signs you out everywhere and cancels any paid subscription right away (your free trial carries over untouched).
+              Your account and documents stay recoverable for {{ graceDays }} days by signing back in - after that they're permanently erased and can't be undone.
             </span>
           </div>
 

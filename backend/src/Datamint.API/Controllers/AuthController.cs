@@ -292,11 +292,18 @@ public class AuthController : ControllerBase
     /// Deactivating stops billing immediately rather than letting a subscription ride
     /// out its current period or sit frozen for reactivation - an account the user
     /// believes is gone should never keep getting charged in the background.
+    ///
+    /// The free trial is deliberately excluded: there's no billing to stop (it's not a
+    /// paid plan), and reactivating should hand the user back exactly the same trial -
+    /// same remaining page quota - they left with, not a cancelled one that forces them
+    /// to pick a plan just to use the app again. Only real (paid) subscriptions get
+    /// cancelled here.
     /// </summary>
     internal static async Task CancelActiveSubscriptionsAsync(DatamintDbContext db, Guid userId, CancellationToken ct)
     {
         var activeSubs = await db.Subscriptions
-            .Where(s => s.UserId == userId && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.PastDue))
+            .Where(s => s.UserId == userId && !s.Plan.IsFreeTrial
+                && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.PastDue))
             .ToListAsync(ct);
 
         if (activeSubs.Count == 0) return;
