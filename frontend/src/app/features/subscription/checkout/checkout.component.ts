@@ -6,7 +6,7 @@ import { ToastService } from '../../../core/services/toast.service';
 import { environment } from '../../../../environments/environment';
 import { BackButtonComponent } from '../../../shared/components/back-button/back-button.component';
 
-declare const Razorpay: any; // loaded via https://checkout.razorpay.com/v1/checkout.js in index.html
+declare const Razorpay: any; // injected by CookieConsentService once cookies are accepted
 
 @Component({
   selector: 'app-checkout',
@@ -39,12 +39,19 @@ export class CheckoutComponent implements OnInit {
   ngOnInit() { this.planId = this.route.snapshot.paramMap.get('planId')!; }
 
   pay() {
+    // Razorpay's script only exists once the cookie-consent banner has been accepted
+    // (see CookieConsentService) - check before even creating an order server-side,
+    // rather than discovering it's missing only after that call already succeeded.
+    if (typeof Razorpay === 'undefined') {
+      this.toast.error('Please accept cookies (see the banner at the bottom of the page) to enable checkout.');
+      return;
+    }
+
     this.loading = true;
     this.subscriptionService.createOrder(this.planId).subscribe({
       next: res => {
         this.loading = false;
-        // >>> Requires <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-        // added to src/index.html. Public Razorpay Key ID comes from environment.ts. <<<
+        // Public Razorpay Key ID comes from environment.ts.
         const options = {
           key: res.order.keyId || environment.razorpayKeyId,
           amount: res.order.amount * 100,

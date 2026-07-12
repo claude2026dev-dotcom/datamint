@@ -19,6 +19,13 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
       </div>
     </div>
 
+    <div class="view-tabs">
+      <button class="view-tab" [class.active]="viewMode === 'active'" (click)="setViewMode('active')">Users</button>
+      <button class="view-tab" [class.active]="viewMode === 'deactivated'" (click)="setViewMode('deactivated')">
+        Deactivated <span class="tab-hint">reactivate within {{ graceDays }} days</span>
+      </button>
+    </div>
+
     <div class="filter-bar dm-card">
       <div class="search-wrap">
         <app-icon name="search" [size]="15" class="search-icon" />
@@ -29,11 +36,13 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
         <option value="User">User</option>
         <option value="Admin">Admin</option>
       </select>
-      <select class="dm-input" [(ngModel)]="isActive" (ngModelChange)="reload()">
-        <option [ngValue]="''">All statuses</option>
-        <option [ngValue]="true">Active</option>
-        <option [ngValue]="false">Disabled</option>
-      </select>
+      @if (viewMode === 'active') {
+        <select class="dm-input" [(ngModel)]="isActive" (ngModelChange)="reload()">
+          <option [ngValue]="''">All statuses</option>
+          <option [ngValue]="true">Active</option>
+          <option [ngValue]="false">Disabled</option>
+        </select>
+      }
     </div>
 
     @if (error) {
@@ -45,25 +54,38 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
       <div class="dm-card table-wrap">
         <table>
           <thead>
-            <tr>
-              <th (click)="setSort('email')" class="sortable">Email {{ sortArrow('email') }}</th>
-              <th (click)="setSort('displayName')" class="sortable">Name {{ sortArrow('displayName') }}</th>
-              <th (click)="setSort('role')" class="sortable">Role {{ sortArrow('role') }}</th>
-              <th>Plan</th>
-              <th>Status</th>
-              <th (click)="setSort('')" class="sortable">Joined {{ sortArrow('') }}</th>
-              <th (click)="setSort('lastLogin')" class="sortable">Last login {{ sortArrow('lastLogin') }}</th>
-              <th class="actions-col">Actions</th>
-            </tr>
+            @if (viewMode === 'active') {
+              <tr>
+                <th (click)="setSort('email')" class="sortable">Email {{ sortArrow('email') }}</th>
+                <th (click)="setSort('displayName')" class="sortable">Name {{ sortArrow('displayName') }}</th>
+                <th (click)="setSort('role')" class="sortable">Role {{ sortArrow('role') }}</th>
+                <th>Plan</th>
+                <th>Status</th>
+                <th (click)="setSort('')" class="sortable">Joined {{ sortArrow('') }}</th>
+                <th (click)="setSort('lastLogin')" class="sortable">Last login {{ sortArrow('lastLogin') }}</th>
+                <th class="actions-col">Actions</th>
+              </tr>
+            } @else {
+              <tr>
+                <th>Email</th>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Deactivated on</th>
+                <th>Time left</th>
+                <th class="actions-col">Actions</th>
+              </tr>
+            }
           </thead>
           <tbody>
             @if (loading) {
               @for (i of [1,2,3,4,5]; track i) {
-                <tr class="skeleton-row"><td colspan="8"><div class="skeleton"></div></td></tr>
+                <tr class="skeleton-row"><td [attr.colspan]="viewMode === 'active' ? 8 : 6"><div class="skeleton"></div></td></tr>
               }
             } @else if (users.length === 0) {
-              <tr><td colspan="8" class="empty-cell">No users match these filters.</td></tr>
-            } @else {
+              <tr><td [attr.colspan]="viewMode === 'active' ? 8 : 6" class="empty-cell">
+                {{ viewMode === 'active' ? 'No users match these filters.' : 'No deactivated accounts right now.' }}
+              </td></tr>
+            } @else if (viewMode === 'active') {
               @for (u of users; track u.id) {
                 <tr>
                   <td data-label="Email">
@@ -109,8 +131,36 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
                         <app-icon [name]="u.isActive ? 'pause' : 'play'" [size]="16" />
                       </button>
                       <button class="icon-btn danger" [disabled]="u.id === myId || u.isSuperAdmin"
-                              [title]="u.isSuperAdmin ? 'The super admin account cannot be deleted' : 'Delete'" (click)="remove(u)"><app-icon name="trash" [size]="16" /></button>
+                              [title]="u.isSuperAdmin ? 'The super admin account cannot be deleted' : 'Deactivate'" (click)="remove(u)"><app-icon name="trash" [size]="16" /></button>
                     }
+                  </td>
+                </tr>
+              }
+            } @else {
+              @for (u of users; track u.id) {
+                <tr>
+                  <td data-label="Email">
+                    <div class="user-cell">
+                      <span class="avatar" [style.background]="avatarColor(u)">{{ initials(u) }}</span>
+                      <span>{{ u.email }}</span>
+                    </div>
+                  </td>
+                  <td data-label="Name">{{ u.displayName || '—' }}</td>
+                  <td data-label="Role"><span class="badge" [class.badge-admin]="u.role === 'Admin'">{{ u.role }}</span></td>
+                  <td class="nowrap" data-label="Deactivated on">{{ u.deactivatedAtUtc ? (u.deactivatedAtUtc | date:'mediumDate') : '—' }}</td>
+                  <td class="nowrap" data-label="Time left">
+                    @if (u.daysUntilPurge === null || u.daysUntilPurge === undefined) {
+                      —
+                    } @else if (u.daysUntilPurge <= 0) {
+                      <span class="badge badge-fail">Purging soon</span>
+                    } @else {
+                      <span class="badge" [class.badge-fail]="u.daysUntilPurge <= 5">{{ u.daysUntilPurge }} day{{ u.daysUntilPurge === 1 ? '' : 's' }} left</span>
+                    }
+                  </td>
+                  <td class="actions-col" data-label="Actions">
+                    <button class="dm-btn dm-btn-primary tiny" [disabled]="reactivatingId === u.id" (click)="reactivate(u)">
+                      {{ reactivatingId === u.id ? 'Reactivating…' : 'Reactivate' }}
+                    </button>
                   </td>
                 </tr>
               }
@@ -140,6 +190,14 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
   styles: [`
     .page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
     .muted { color: var(--dm-text-muted); font-size: 0.88rem; margin: 2px 0 0; }
+
+    .view-tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--dm-border); }
+    .view-tab {
+      background: none; border: none; padding: 10px 4px; margin-right: 20px; font-size: 0.88rem; font-weight: 600;
+      color: var(--dm-text-muted); cursor: pointer; border-bottom: 2px solid transparent; display: flex; align-items: center; gap: 8px;
+    }
+    .view-tab.active { color: var(--dm-text); border-bottom-color: var(--dm-primary); }
+    .tab-hint { font-size: 0.72rem; font-weight: 500; color: var(--dm-text-muted); }
     .error-banner { padding: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-color: var(--dm-danger); margin-bottom: 24px; }
     .error-banner p { margin: 0; color: var(--dm-danger); font-size: 0.9rem; }
 
@@ -227,6 +285,9 @@ export class AdminUsersComponent implements OnInit, OnDestroy {
   loading = true;
   error = '';
 
+  viewMode: 'active' | 'deactivated' = 'active';
+  graceDays = 30;
+
   search = '';
   role = '';
   isActive: '' | boolean = '';
@@ -241,6 +302,7 @@ export class AdminUsersComponent implements OnInit, OnDestroy {
   editDisplayName = '';
   editRole = 'User';
   resettingId: string | null = null;
+  reactivatingId: string | null = null;
 
   private searchDebounce: ReturnType<typeof setTimeout> | undefined;
   private readonly avatarPalette = ['#6366f1', '#22c55e', '#f97316', '#ec4899', '#06b6d4', '#a855f7', '#eab308'];
@@ -284,13 +346,21 @@ export class AdminUsersComponent implements OnInit, OnDestroy {
     this.reload();
   }
 
+  setViewMode(mode: 'active' | 'deactivated') {
+    if (this.viewMode === mode) return;
+    this.viewMode = mode;
+    this.page = 1;
+    this.sortBy = '';
+    this.reload();
+  }
+
   reload() {
     this.loading = true;
     this.error = '';
     this.adminService.getUsers({
       page: this.page, pageSize: this.pageSize, search: this.search,
-      role: this.role, isActive: this.isActive === '' ? undefined : this.isActive,
-      sortBy: this.sortBy, sortDir: this.sortDir
+      role: this.role, isActive: this.viewMode === 'active' && this.isActive !== '' ? this.isActive : undefined,
+      sortBy: this.sortBy, sortDir: this.sortDir, includeDeactivated: this.viewMode === 'deactivated'
     }).subscribe({
       next: res => { this.users = res.items; this.total = res.total; this.loading = false; },
       error: () => { this.loading = false; this.error = 'Could not load users. Please try again.'; }
@@ -357,9 +427,10 @@ export class AdminUsersComponent implements OnInit, OnDestroy {
 
   async remove(u: any) {
     const confirmed = await this.confirmDialog.ask({
-      title: 'Delete this user?',
-      message: `${u.email} will be permanently removed from the active user list. This can't be undone from here.`,
-      confirmLabel: 'Delete user',
+      title: 'Deactivate this user?',
+      message: `${u.email} will be signed out everywhere, their subscription cancelled, and their account deactivated. ` +
+        `Their data is kept for ${this.graceDays} days - you (or they) can reactivate it from the Deactivated tab within that window. After that it's permanently erased.`,
+      confirmLabel: 'Deactivate user',
       danger: true
     });
     if (!confirmed) return;
@@ -368,10 +439,24 @@ export class AdminUsersComponent implements OnInit, OnDestroy {
       next: () => {
         this.users = this.users.filter(x => x.id !== u.id);
         this.total--;
-        this.toast.success('User deleted.');
+        this.toast.success('User deactivated.');
         if (this.users.length === 0 && this.page > 1) { this.page--; this.reload(); }
       },
-      error: err => this.toast.error(err?.error?.message || 'Could not delete that user.')
+      error: err => this.toast.error(err?.error?.message || 'Could not deactivate that user.')
+    });
+  }
+
+  reactivate(u: any) {
+    this.reactivatingId = u.id;
+    this.adminService.reactivateUser(u.id).subscribe({
+      next: () => {
+        this.reactivatingId = null;
+        this.users = this.users.filter(x => x.id !== u.id);
+        this.total--;
+        this.toast.success(`${u.email} has been reactivated.`);
+        if (this.users.length === 0 && this.page > 1) { this.page--; this.reload(); }
+      },
+      error: err => { this.reactivatingId = null; this.toast.error(err?.error?.message || 'Could not reactivate that user.'); }
     });
   }
 }

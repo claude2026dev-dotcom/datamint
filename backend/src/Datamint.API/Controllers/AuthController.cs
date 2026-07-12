@@ -283,8 +283,34 @@ public class AuthController : ControllerBase
         var result = await _authService.DeleteAccountAsync(user, dto.CurrentPassword, ct);
         if (!result.Succeeded) return AuthError(result.ErrorCode!, result.Error!);
 
-        return Ok(new { success = true, message = "Your account has been deleted." });
+        await CancelActiveSubscriptionsAsync(user.Id, ct);
+
+        return Ok(new { success = true, message = "Your account has been deactivated." });
     }
+
+    /// <summary>
+    /// Deactivating stops billing immediately rather than letting a subscription ride
+    /// out its current period or sit frozen for reactivation - an account the user
+    /// believes is gone should never keep getting charged in the background.
+    /// </summary>
+    internal static async Task CancelActiveSubscriptionsAsync(DatamintDbContext db, Guid userId, CancellationToken ct)
+    {
+        var activeSubs = await db.Subscriptions
+            .Where(s => s.UserId == userId && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.PastDue))
+            .ToListAsync(ct);
+
+        if (activeSubs.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        foreach (var sub in activeSubs)
+        {
+            sub.Status = SubscriptionStatus.Cancelled;
+            sub.EndAtUtc = now;
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
+    private Task CancelActiveSubscriptionsAsync(Guid userId, CancellationToken ct) => CancelActiveSubscriptionsAsync(_db, userId, ct);
 
     private static ProfileDto ToProfileDto(ApplicationUser user) =>
         new(user.Id, user.Email, user.DisplayName, user.Role, user.IsEmailVerified, user.CreatedAtUtc, user.PasswordHash is not null, user.IsSuperAdmin);

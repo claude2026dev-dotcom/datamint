@@ -82,16 +82,22 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
 
         @if (isSuperAdmin) {
           <p class="muted hint-block">
-            <app-icon name="shield" [size]="14" /> This is the super admin account — it can't be deleted, disabled,
+            <app-icon name="shield" [size]="14" /> This is the super admin account — it can't be deactivated, disabled,
             or demoted, by itself or any other admin, so there's always a way back in.
           </p>
         } @else {
-        <p class="muted hint-block">Permanently delete your account and all of its documents. This can't be undone.</p>
+        <p class="muted hint-block">
+          Deactivate your account and cancel any subscription. Your documents are kept for {{ graceDays }} days in case
+          you change your mind — just sign in again within that window to reactivate. After that, everything is permanently erased.
+        </p>
 
-        @if (showDeleteConfirm) {
+        @if (showDeactivateConfirm) {
           <div class="delete-warning">
             <app-icon name="alert-triangle" [size]="16" />
-            <span>This permanently deletes your account, every uploaded document, and all extracted data. There's no way to undo this.</span>
+            <span>
+              This signs you out everywhere and cancels any active subscription right away. Your account and documents
+              stay recoverable for {{ graceDays }} days by signing back in - after that they're permanently erased and can't be undone.
+            </span>
           </div>
 
           @if (hasPassword) {
@@ -106,20 +112,20 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
             </div>
           } @else {
             <div class="field">
-              <label>Type <strong>DELETE</strong> to confirm — your account doesn't have a password, since you signed in with Google</label>
-              <input class="dm-input" type="text" [(ngModel)]="deleteConfirmText" placeholder="DELETE" />
+              <label>Type <strong>DEACTIVATE</strong> to confirm — your account doesn't have a password, since you signed in with Google</label>
+              <input class="dm-input" type="text" [(ngModel)]="deleteConfirmText" placeholder="DEACTIVATE" />
             </div>
           }
         }
 
         <div class="card-footer">
-          @if (!showDeleteConfirm) {
-            <button class="dm-btn dm-btn-ghost danger-btn" (click)="showDeleteConfirm = true">Delete my account</button>
+          @if (!showDeactivateConfirm) {
+            <button class="dm-btn dm-btn-ghost danger-btn" (click)="showDeactivateConfirm = true">Deactivate my account</button>
           } @else {
             <div class="delete-actions">
-              <button class="dm-btn dm-btn-ghost" (click)="cancelDelete()">Cancel</button>
-              <button class="dm-btn danger-confirm" [disabled]="deleting || !canConfirmDelete()" (click)="deleteAccount()">
-                {{ deleting ? 'Deleting…' : 'Permanently delete account' }}
+              <button class="dm-btn dm-btn-ghost" (click)="cancelDeactivate()">Cancel</button>
+              <button class="dm-btn danger-confirm" [disabled]="deactivating || !canConfirmDeactivate()" (click)="deactivateAccount()">
+                {{ deactivating ? 'Deactivating…' : 'Deactivate account' }}
               </button>
             </div>
           }
@@ -176,6 +182,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
 export class SecurityComponent {
   hasPassword = true;
   isSuperAdmin = false;
+  graceDays = 30;
 
   currentPassword = '';
   newPassword = '';
@@ -187,11 +194,11 @@ export class SecurityComponent {
   changingPassword = false;
   passwordError = '';
 
-  showDeleteConfirm = false;
+  showDeactivateConfirm = false;
   deletePassword = '';
   deleteConfirmText = '';
   showDeletePassword = false;
-  deleting = false;
+  deactivating = false;
 
   constructor(
     private auth: AuthService,
@@ -234,35 +241,35 @@ export class SecurityComponent {
     });
   }
 
-  // A password-holding account confirms deletion by re-entering that password -
+  // A password-holding account confirms deactivation by re-entering that password -
   // the same "prove you're really you" gate real apps use for destructive actions.
   // A Google-only account has no password to re-enter, so it confirms by typing
-  // DELETE instead - still a deliberate, hard-to-do-by-accident action, not the
+  // DEACTIVATE instead - still a deliberate, hard-to-do-by-accident action, not the
   // free pass a plain "click one button" flow would otherwise leave it as.
-  canConfirmDelete(): boolean {
-    return this.hasPassword ? !!this.deletePassword : this.deleteConfirmText.trim().toUpperCase() === 'DELETE';
+  canConfirmDeactivate(): boolean {
+    return this.hasPassword ? !!this.deletePassword : this.deleteConfirmText.trim().toUpperCase() === 'DEACTIVATE';
   }
 
-  cancelDelete() {
-    this.showDeleteConfirm = false;
+  cancelDeactivate() {
+    this.showDeactivateConfirm = false;
     this.deletePassword = '';
     this.deleteConfirmText = '';
   }
 
-  // Revealing this section (clicking "Delete my account") together with typing
-  // the password/DELETE confirmation IS the confirmation step - there is
+  // Revealing this section (clicking "Deactivate my account") together with typing
+  // the password/DEACTIVATE confirmation IS the confirmation step - there is
   // deliberately no second "are you sure?" popup stacked on top of it, which
   // used to make the exact same question get asked twice in a row.
-  deleteAccount() {
-    this.deleting = true;
+  deactivateAccount() {
+    this.deactivating = true;
     this.auth.deleteAccount(this.hasPassword ? this.deletePassword : null).subscribe({
       next: () => {
-        this.toast.success('Your account has been deleted.');
+        this.toast.success(`Your account has been deactivated. Sign in within ${this.graceDays} days to reactivate it.`);
         this.auth.logout();
       },
       error: err => {
-        this.deleting = false;
-        this.toast.error(err?.error?.message || 'Could not delete your account. Please try again.');
+        this.deactivating = false;
+        this.toast.error(err?.error?.message || 'Could not deactivate your account. Please try again.');
       }
     });
   }

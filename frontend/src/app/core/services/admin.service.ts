@@ -22,7 +22,7 @@ export class AdminService {
 
   getUsers(params: {
     page?: number; pageSize?: number; search?: string; role?: string;
-    isActive?: boolean; sortBy?: string; sortDir?: string;
+    isActive?: boolean; sortBy?: string; sortDir?: string; includeDeactivated?: boolean;
   } = {}) {
     const cleaned = this.stripEmpty(params);
     return this.http.get<{ success: boolean; items: any[]; total: number; page: number; pageSize: number }>(
@@ -40,6 +40,10 @@ export class AdminService {
 
   deleteUser(id: string) {
     return this.http.delete<{ success: boolean }>(`${environment.apiBaseUrl}/admin/users/${id}`);
+  }
+
+  reactivateUser(id: string) {
+    return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/admin/users/${id}/reactivate`, {});
   }
 
   sendPasswordReset(id: string) {

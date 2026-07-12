@@ -30,7 +30,10 @@ public record AdminUserListItemDto(
     DateTime CreatedAtUtc,
     DateTime? LastLoginAtUtc,
     bool HasPassword,
-    bool IsSuperAdmin);
+    bool IsSuperAdmin,
+    bool IsDeactivated,
+    DateTime? DeactivatedAtUtc,
+    int? DaysUntilPurge);
 
 public record AuditLogFilterDto(
     string? Action,
@@ -49,6 +52,7 @@ public record AdminUserFilterDto(
     bool? IsActive,
     string? SortBy,
     string? SortDir,
+    bool IncludeDeactivated = false,
     int Page = 1,
     int PageSize = 25);
 

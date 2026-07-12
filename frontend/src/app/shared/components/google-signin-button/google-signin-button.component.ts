@@ -1,7 +1,8 @@
 import { Component, AfterViewInit, ElementRef, EventEmitter, NgZone, Output, ViewChild } from '@angular/core';
 import { environment } from '../../../../environments/environment';
+import { CookieConsentService } from '../../../core/services/cookie-consent.service';
 
-declare const google: any; // loaded via https://accounts.google.com/gsi/client in index.html
+declare const google: any; // injected by CookieConsentService once cookies are accepted
 
 /// Renders the real Google-hosted sign-in button (more reliable across browsers
 /// than a custom button + prompt()) and emits the ID token credential on success.
@@ -10,14 +11,24 @@ declare const google: any; // loaded via https://accounts.google.com/gsi/client 
 @Component({
   selector: 'app-google-signin-button',
   standalone: true,
-  template: `<div #btnContainer class="google-btn-slot"></div>`,
-  styles: [`.google-btn-slot { display: flex; justify-content: center; }`]
+  template: `
+    <div #btnContainer class="google-btn-slot"></div>
+    @if (cookiesRejected) {
+      <p class="cookie-note">Accept cookies (see the banner below) to enable Google Sign-In.</p>
+    }
+  `,
+  styles: [`
+    .google-btn-slot { display: flex; justify-content: center; }
+    .cookie-note { margin: 8px 0 0; font-size: 0.78rem; color: var(--dm-text-muted); text-align: center; }
+  `]
 })
 export class GoogleSigninButtonComponent implements AfterViewInit {
   @ViewChild('btnContainer', { static: true }) btnContainer!: ElementRef<HTMLDivElement>;
   @Output() credential = new EventEmitter<string>();
 
-  constructor(private zone: NgZone) {}
+  cookiesRejected = false;
+
+  constructor(private zone: NgZone, private cookieConsent: CookieConsentService) {}
 
   ngAfterViewInit() {
     this.renderWhenReady();
@@ -25,9 +36,11 @@ export class GoogleSigninButtonComponent implements AfterViewInit {
 
   private renderWhenReady(retriesLeft = 20) {
     if (typeof google === 'undefined' || !google.accounts?.id) {
-      // The GSI script tag is `async defer`, so it may not have executed yet
-      // on first render — poll briefly rather than requiring load-order luck.
-      if (retriesLeft > 0) setTimeout(() => this.renderWhenReady(retriesLeft - 1), 150);
+      // The GSI script only exists once CookieConsentService has injected it
+      // (after Accept), and even then loads async - poll briefly rather than
+      // requiring load-order luck.
+      if (retriesLeft > 0) { setTimeout(() => this.renderWhenReady(retriesLeft - 1), 150); return; }
+      this.cookiesRejected = this.cookieConsent.consent() !== 'accepted';
       return;
     }
 

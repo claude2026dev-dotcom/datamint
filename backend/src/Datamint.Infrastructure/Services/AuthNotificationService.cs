@@ -110,13 +110,17 @@ public class AuthNotificationService : IAuthNotificationService
     public Task SendAccountDeletedEmailAsync(string toAddress, string? displayName, CancellationToken ct = default)
     {
         var body = Wrap(
-            title: "Your account has been deleted",
+            title: "Your account has been deactivated",
             greeting: string.IsNullOrWhiteSpace(displayName) ? "Hi," : $"Hi {displayName},",
-            bodyHtml: "<p>Your Datamint account and its data have been deleted. If this wasn't you, please contact support right away.</p>",
-            ctaLabel: null,
-            ctaPath: null
+            bodyHtml: $"<p>Your Datamint account has been deactivated and any paid subscription has been cancelled. " +
+                      $"Your documents are kept for {ApplicationUser.DeactivationGraceDays} days in case this wasn't intentional — " +
+                      $"simply sign in again within that window to reactivate your account exactly as it was.</p>" +
+                      $"<p style=\"color:#767b93;font-size:13px;\">After {ApplicationUser.DeactivationGraceDays} days, your account and documents are permanently erased and can't be recovered. " +
+                      "If this wasn't you, please contact support right away.</p>",
+            ctaLabel: "Sign in to reactivate",
+            ctaPath: "/login"
         );
-        return SendAndLog(null, toAddress, "Your Datamint account has been deleted", body, ct);
+        return SendAndLog(null, toAddress, "Your Datamint account has been deactivated", body, ct);
     }
 
     private static string Greeting(ApplicationUser user) =>

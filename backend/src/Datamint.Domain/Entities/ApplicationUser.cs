@@ -19,6 +19,23 @@ public class ApplicationUser : BaseEntity
     public bool IsActive { get; set; } = true;
     public DateTime? LastLoginAtUtc { get; set; }
 
+    // Set the moment a user deactivates their own account (or an admin deletes one) -
+    // null while active, and cleared back to null on reactivation. Drives the
+    // DeactivationGraceDays window: logging back in (or an admin reactivating) before
+    // this + DeactivationGraceDays restores the account; AccountPurgeService hard-deletes
+    // the user's documents and anonymizes this row once that window has passed.
+    public DateTime? DeactivatedAtUtc { get; set; }
+
+    // Null until AccountPurgeService actually anonymizes this row - lets the purge job's
+    // query tell "deactivated, still in the grace window or already reactivated" apart
+    // from "already purged, don't touch again" without having to string-match the
+    // (by-then-anonymized) Email column.
+    public DateTime? PurgedAtUtc { get; set; }
+
+    // Single source of truth for how long a deactivated account can still be reactivated
+    // (by the user logging back in, or an admin) before AccountPurgeService erases it.
+    public const int DeactivationGraceDays = 30;
+
     // Embedded in every access token and checked against this value on every
     // request - regenerating it (on password change/reset) invalidates every
     // access token issued before that point immediately, not just at their

@@ -42,11 +42,12 @@ public class AuthService : IAuthService
         {
             deletedAccount.IsDeleted = false;
             deletedAccount.IsActive = true;
+            deletedAccount.DeactivatedAtUtc = null;
             deletedAccount.DisplayName = displayName;
             deletedAccount.PasswordHash = BCrypt.Net.BCrypt.HashPassword(password);
             deletedAccount.SecurityStamp = Guid.NewGuid().ToString("N");
             await _users.SaveChangesAsync(ct);
-            await _audit.LogAsync("Auth.Register", deletedAccount.Id, details: "Reactivated a previously-deleted account.", ct: ct);
+            await _audit.LogAsync("Auth.Register", deletedAccount.Id, details: "Reactivated a previously-deactivated account.", ct: ct);
             await _notify.SendWelcomeEmailAsync(deletedAccount, ct);
             return Result<ApplicationUser>.Success(deletedAccount);
         }
@@ -70,7 +71,36 @@ public class AuthService : IAuthService
     public async Task<Result<ApplicationUser>> LoginAsync(string email, string password, CancellationToken ct = default)
     {
         var user = await _users.GetByEmailAsync(email, ct);
-        if (user is null || user.PasswordHash is null || !BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
+
+        // Not among active accounts - see if it's a deactivated one still inside its
+        // reactivation grace window (AccountPurgeService hasn't erased it yet), so a
+        // returning user can just log back in instead of hitting a dead end. Only a
+        // matching password reactivates it - this must stay as hard to get into as a
+        // normal login, not a free pass into someone else's deactivated account.
+        if (user is null)
+        {
+            var deactivated = await _users.GetByEmailIncludingDeletedAsync(email, ct);
+            var withinGrace = deactivated?.DeactivatedAtUtc is not null
+                && deactivated.DeactivatedAtUtc.Value.AddDays(ApplicationUser.DeactivationGraceDays) > DateTime.UtcNow;
+
+            if (deactivated is not null && withinGrace && deactivated.PasswordHash is not null
+                && BCrypt.Net.BCrypt.Verify(password, deactivated.PasswordHash))
+            {
+                deactivated.IsDeleted = false;
+                deactivated.IsActive = true;
+                deactivated.DeactivatedAtUtc = null;
+                deactivated.SecurityStamp = Guid.NewGuid().ToString("N");
+                deactivated.LastLoginAtUtc = DateTime.UtcNow;
+                await _users.SaveChangesAsync(ct);
+                await _audit.LogAsync("Auth.Login", deactivated.Id, details: "Reactivated a previously-deactivated account.", ct: ct);
+                return Result<ApplicationUser>.Success(deactivated);
+            }
+
+            await _audit.LogAsync("Auth.Login", null, details: $"{{\"email\":\"{email}\"}}", isSuccess: false, ct: ct);
+            return Result<ApplicationUser>.Failure("Invalid email or password.", "INVALID_CREDENTIALS");
+        }
+
+        if (user.PasswordHash is null || !BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
         {
             await _audit.LogAsync("Auth.Login", null, details: $"{{\"email\":\"{email}\"}}", isSuccess: false, ct: ct);
             return Result<ApplicationUser>.Failure("Invalid email or password.", "INVALID_CREDENTIALS");
@@ -125,10 +155,11 @@ public class AuthService : IAuthService
 
         user.IsActive = false;
         user.IsDeleted = true;
+        user.DeactivatedAtUtc = DateTime.UtcNow;
         await _sessions.RevokeAllSessionsAsync(user, ct);
         await _users.SaveChangesAsync(ct);
 
-        await _audit.LogAsync("Auth.AccountDeleted", user.Id, ct: ct);
+        await _audit.LogAsync("Auth.AccountDeactivated", user.Id, ct: ct);
         await _notify.SendAccountDeletedEmailAsync(email, displayName, ct);
 
         return Result.Success();

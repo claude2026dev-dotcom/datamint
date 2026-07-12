@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
+using Datamint.Domain.Entities;
 using Datamint.Domain.Enums;
 using Datamint.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -87,7 +88,14 @@ public class AdminController : ControllerBase
     [HttpGet("users")]
     public async Task<IActionResult> GetUsers([FromQuery] AdminUserFilterDto filter, CancellationToken ct)
     {
-        var query = _db.Users.AsQueryable();
+        // Deactivated accounts are excluded from every other listing/report by the global
+        // soft-delete filter - IncludeDeactivated deliberately switches to a *separate*
+        // deactivated-only view (via IgnoreQueryFilters) rather than mixing them into the
+        // normal list, so "how many active users do we have" never accidentally counts
+        // someone mid-way through their erasure grace period.
+        var query = filter.IncludeDeactivated
+            ? _db.Users.IgnoreQueryFilters().Where(u => u.IsDeleted)
+            : _db.Users.AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
@@ -104,16 +112,36 @@ public class AdminController : ControllerBase
             "displayname" => desc ? query.OrderByDescending(u => u.DisplayName) : query.OrderBy(u => u.DisplayName),
             "lastlogin" => desc ? query.OrderByDescending(u => u.LastLoginAtUtc) : query.OrderBy(u => u.LastLoginAtUtc),
             "role" => desc ? query.OrderByDescending(u => u.Role) : query.OrderBy(u => u.Role),
-            _ => desc ? query.OrderByDescending(u => u.CreatedAtUtc) : query.OrderBy(u => u.CreatedAtUtc),
+            _ => filter.IncludeDeactivated
+                ? (desc ? query.OrderByDescending(u => u.DeactivatedAtUtc) : query.OrderBy(u => u.DeactivatedAtUtc))
+                : (desc ? query.OrderByDescending(u => u.CreatedAtUtc) : query.OrderBy(u => u.CreatedAtUtc)),
         };
 
         var total = await query.CountAsync(ct);
-        var items = await query.Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize)
-            .Select(u => new AdminUserListItemDto(u.Id, u.Email, u.DisplayName, u.Role, u.IsActive,
-                _db.Subscriptions.Where(s => s.UserId == u.Id && s.Status == SubscriptionStatus.Active)
+        var rows = await query.Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize)
+            .Select(u => new
+            {
+                u.Id, u.Email, u.DisplayName, u.Role, u.IsActive,
+                // Deliberately NOT .IgnoreQueryFilters() here - mixing a filtered and an
+                // unfiltered query root in the same projection/subquery made EF Core drop
+                // the outer Users query's own soft-delete filter too (verified: CountAsync
+                // on `query` alone correctly excluded deactivated users, but this combined
+                // Select did not) - so a deactivated account leaked into the default,
+                // non-"deactivated view" user list. Subscriptions are never soft-deleted in
+                // practice anyway, so the plain filtered query is equivalent here.
+                CurrentPlan = _db.Subscriptions.Where(s => s.UserId == u.Id && s.Status == SubscriptionStatus.Active)
                     .OrderByDescending(s => s.StartAtUtc).Select(s => s.Plan.Name).FirstOrDefault(),
-                u.CreatedAtUtc, u.LastLoginAtUtc, u.PasswordHash != null, u.IsSuperAdmin))
+                u.CreatedAtUtc, u.LastLoginAtUtc, HasPassword = u.PasswordHash != null, u.IsSuperAdmin,
+                u.IsDeleted, u.DeactivatedAtUtc
+            })
             .ToListAsync(ct);
+
+        // Computed client-side (not in the SQL projection above) - DateTime arithmetic like
+        // this doesn't reliably translate to SQL across providers, and this is cheap once
+        // the page of rows is already in memory.
+        var items = rows.Select(r => new AdminUserListItemDto(r.Id, r.Email, r.DisplayName, r.Role, r.IsActive,
+            r.CurrentPlan, r.CreatedAtUtc, r.LastLoginAtUtc, r.HasPassword, r.IsSuperAdmin, r.IsDeleted, r.DeactivatedAtUtc,
+            r.DeactivatedAtUtc is null ? null : Math.Max(0, ApplicationUser.DeactivationGraceDays - (int)(DateTime.UtcNow - r.DeactivatedAtUtc.Value).TotalDays)));
 
         return Ok(new { success = true, items, total, filter.Page, filter.PageSize });
     }
@@ -195,10 +223,36 @@ public class AdminController : ControllerBase
 
         user.IsActive = false;
         user.IsDeleted = true;
+        user.DeactivatedAtUtc = DateTime.UtcNow;
         await _sessions.RevokeAllSessionsAsync(user, ct);
         await _db.SaveChangesAsync(ct);
-        await _audit.LogAsync("Admin.UserDeleted", _currentUser.UserId, "User", user.Id.ToString(), snapshot, ct: ct);
+        await AuthController.CancelActiveSubscriptionsAsync(_db, user.Id, ct);
+        await _audit.LogAsync("Admin.UserDeactivated", _currentUser.UserId, "User", user.Id.ToString(), snapshot, ct: ct);
         await _notify.SendAccountDeletedEmailAsync(email, displayName, ct);
+        return Ok(new { success = true });
+    }
+
+    /// <summary>
+    /// Admin override of the self-service "log back in to reactivate" path - useful when
+    /// the deactivated account is Google-only and the person asks support for help, or an
+    /// admin deactivated the wrong account by mistake. Only works inside the same
+    /// DeactivationGraceDays window as self-reactivation - once AccountPurgeService has
+    /// anonymized the row there's nothing left to restore.
+    /// </summary>
+    [HttpPut("users/{id:guid}/reactivate")]
+    public async Task<IActionResult> ReactivateUser(Guid id, CancellationToken ct)
+    {
+        var user = await _db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == id, ct);
+        if (user is null || !user.IsDeleted) return NotFound(new { success = false, message = "Deactivated user not found." });
+        if (user.PurgedAtUtc is not null) return BadRequest(new { success = false, message = "This account was already permanently erased and can't be recovered." });
+
+        user.IsDeleted = false;
+        user.IsActive = true;
+        user.DeactivatedAtUtc = null;
+        user.SecurityStamp = Guid.NewGuid().ToString("N");
+        await _db.SaveChangesAsync(ct);
+
+        await _audit.LogAsync("Admin.UserReactivated", _currentUser.UserId, "User", user.Id.ToString(), ct: ct);
         return Ok(new { success = true });
     }
 
