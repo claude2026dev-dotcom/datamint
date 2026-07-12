@@ -65,7 +65,7 @@
     "AllowedOrigins": [ "https://localhost:4200" ]
   },
 
-  "// 7": "----- APP: base URL of the Angular frontend, used to build links in emails (password reset, etc.) -----",
+  "// 7": "----- APP: fallback frontend URL for emails, only used when a request has no Origin/Referer (e.g. a background job) - normal requests build the link from the browser's own Origin/Referer header, so this never goes stale behind a tunnel or a real domain -----",
   "App": {
     "FrontendBaseUrl": "https://localhost:4200"
   }
