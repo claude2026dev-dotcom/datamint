@@ -77,6 +77,28 @@ public class OpenAiFieldExtractionService : IAiFieldExtractionService
         }
     }
 
+    public async Task<Dictionary<string, string>> HarmonizeFieldKeysAsync(IReadOnlyList<string> distinctKeys, CancellationToken ct = default)
+    {
+        if (distinctKeys.Count < 2) return new Dictionary<string, string>();
+
+        var apiKey = _config["OpenAI:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey)) return new Dictionary<string, string>();
+
+        var prompt = AiExtractionPromptHelper.BuildHarmonizationPrompt(distinctKeys);
+        var (text, error) = await CallOpenAiAsync(apiKey, prompt, ct);
+        if (error is not null || text is null) return new Dictionary<string, string>();
+
+        try
+        {
+            return AiExtractionPromptHelper.ParseHarmonizationMapping(text);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "OpenAI field-key harmonization returned unparseable JSON; skipping harmonization for this batch");
+            return new Dictionary<string, string>();
+        }
+    }
+
     private Task<(string? text, string? error)> CallOpenAiAsync(string apiKey, string prompt, CancellationToken ct) =>
         CallOpenAiAsync(apiKey, prompt, includeTemperature: true, ct);
 

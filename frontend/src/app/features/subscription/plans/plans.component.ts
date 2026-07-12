@@ -1,15 +1,15 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { SubscriptionService } from '../../../core/services/subscription.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
-import { Plan } from '../../../core/models/models';
+import { Plan, SubscriptionStatus } from '../../../core/models/models';
 
 @Component({
   selector: 'app-plans',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterLink],
   template: `
     <div class="dm-container page">
       <div class="head">
@@ -20,8 +20,9 @@ import { Plan } from '../../../core/models/models';
 
       <div class="plan-grid">
         @for (plan of plans; track plan.id) {
-          <div class="dm-card plan-card" [class.featured]="plan.name === 'Pro'">
-            @if (plan.name === 'Pro') { <span class="ribbon">Most popular</span> }
+          <div class="dm-card plan-card" [class.featured]="plan.name === 'Pro'" [class.current]="plan.id === currentPlanId">
+            @if (plan.name === 'Pro' && plan.id !== currentPlanId) { <span class="ribbon">Most popular</span> }
+            @if (plan.id === currentPlanId) { <span class="ribbon current-ribbon">Your current plan</span> }
             <h3>{{ plan.name }}</h3>
             <div class="price">
               <span class="amount">{{ plan.price === 0 ? 'Free' : (plan.currency + ' ' + plan.price) }}</span>
@@ -29,27 +30,33 @@ import { Plan } from '../../../core/models/models';
             </div>
             <p class="desc">{{ plan.description }}</p>
             <ul>
-              <li>{{ plan.monthlyUploadLimit === -1 ? 'Unlimited' : plan.monthlyUploadLimit }} PDF extractions / month</li>
+              <li>{{ plan.monthlyPageLimit === -1 ? 'Unlimited' : plan.monthlyPageLimit }} pages / month</li>
               <li>AI-powered key/value extraction</li>
               <li>Excel export & email delivery</li>
             </ul>
-            <button class="dm-btn" [class.dm-btn-primary]="plan.name !== 'Free'" [class.dm-btn-ghost]="plan.name === 'Free'"
-                    [disabled]="activating" (click)="choosePlan(plan)">
-              {{ activating ? 'Activating…' : (plan.price === 0 ? 'Start free' : 'Choose ' + plan.name) }}
-            </button>
+            @if (plan.id === currentPlanId) {
+              <a routerLink="/profile/plan" class="dm-btn dm-btn-ghost">Manage plan</a>
+            } @else {
+              <button class="dm-btn" [class.dm-btn-primary]="plan.name !== 'Free'" [class.dm-btn-ghost]="plan.name === 'Free'"
+                      [disabled]="activating" (click)="choosePlan(plan)">
+                {{ activating ? 'Activating…' : (hasAnyPlan ? 'Switch to ' + plan.name : (plan.price === 0 ? 'Start free' : 'Choose ' + plan.name)) }}
+              </button>
+            }
           </div>
         }
       </div>
     </div>
   `,
   styles: [`
-    .page { padding: 50px 0 90px; }
+    .page { padding-top: 50px; padding-bottom: 90px; }
     .head { text-align: center; margin-bottom: 40px; }
     .muted { color: var(--dm-text-muted); }
     .plan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
     .plan-card { padding: 28px; position: relative; display: flex; flex-direction: column; gap: 14px; }
     .plan-card.featured { border-color: var(--dm-primary); box-shadow: 0 0 0 1px var(--dm-primary), var(--dm-shadow); }
+    .plan-card.current { border-color: var(--dm-success); box-shadow: 0 0 0 1px var(--dm-success), var(--dm-shadow); }
     .ribbon { position: absolute; top: -10px; right: 20px; background: var(--dm-gradient-primary); color: white; font-size: 0.72rem; padding: 4px 10px; border-radius: 999px; }
+    .ribbon.current-ribbon { background: var(--dm-success); left: 20px; right: auto; }
     .price { display: flex; align-items: baseline; gap: 6px; }
     .amount { font-size: 1.8rem; font-weight: 800; }
     .cycle { color: var(--dm-text-muted); font-size: 0.85rem; }
@@ -62,6 +69,8 @@ import { Plan } from '../../../core/models/models';
 export class PlansComponent implements OnInit {
   plans: Plan[] = [];
   activating = false;
+  currentPlanId: string | null = null;
+  hasAnyPlan = false;
 
   constructor(
     private subscriptionService: SubscriptionService,
@@ -72,6 +81,17 @@ export class PlansComponent implements OnInit {
 
   ngOnInit() {
     this.subscriptionService.getPlans().subscribe(res => this.plans = res.plans);
+
+    // Only logged-in users have anything to compare against - this is the public
+    // pricing page too, so it must work fine for a signed-out visitor as well.
+    if (this.auth.isLoggedIn()) {
+      this.subscriptionService.getStatus().subscribe(res => {
+        if (res.status.hasActiveSubscription) {
+          this.currentPlanId = res.status.planId ?? null;
+          this.hasAnyPlan = true;
+        }
+      });
+    }
   }
 
   choosePlan(plan: Plan) {

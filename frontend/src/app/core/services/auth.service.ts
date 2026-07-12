@@ -8,7 +8,6 @@ import { AuthResponse, UserProfile } from '../models/models';
 const ACCESS_TOKEN_KEY = 'dm_access_token';
 const REFRESH_TOKEN_KEY = 'dm_refresh_token';
 const USER_KEY = 'dm_user';
-const ANON_UPLOAD_COUNT_KEY = 'dm_anon_upload_count';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -55,7 +54,7 @@ export class AuthService {
   }
 
   getProfile() {
-    return this.http.get<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string; hasPassword: boolean } }>(
+    return this.http.get<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string; hasPassword: boolean; isSuperAdmin: boolean } }>(
       `${environment.apiBaseUrl}/auth/me`);
   }
 
@@ -76,7 +75,7 @@ export class AuthService {
   }
 
   updateProfile(displayName: string) {
-    return this.http.put<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string; hasPassword: boolean } }>(
+    return this.http.put<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string; hasPassword: boolean; isSuperAdmin: boolean } }>(
       `${environment.apiBaseUrl}/auth/me`, { displayName }).pipe(
       tap(res => {
         // Keep the cached session in sync so the navbar/anywhere else reflects
@@ -92,7 +91,7 @@ export class AuthService {
   }
 
   /** Call after any successful auth HTTP response to persist the session and route the user onward. */
-  completeLogin(res: AuthResponse, rememberMe: boolean, redirectTo = '/upload') {
+  completeLogin(res: AuthResponse, rememberMe: boolean, redirectTo = '/home') {
     this.persistSession(res);
     this.router.navigateByUrl(redirectTo);
   }
@@ -141,16 +140,4 @@ export class AuthService {
     );
   }
 
-  // ---- Free-tier anonymous upload counter (used before the user logs in) ----
-  getAnonUploadCount(): number {
-    return Number(localStorage.getItem(ANON_UPLOAD_COUNT_KEY) ?? '0');
-  }
-
-  incrementAnonUploadCount(by: number) {
-    localStorage.setItem(ANON_UPLOAD_COUNT_KEY, String(this.getAnonUploadCount() + by));
-  }
-
-  hasReachedFreeLimit(): boolean {
-    return !this.isLoggedIn() && this.getAnonUploadCount() >= environment.freeUploadLimit;
-  }
 }

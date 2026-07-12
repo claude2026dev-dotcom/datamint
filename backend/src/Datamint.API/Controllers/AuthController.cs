@@ -1,6 +1,7 @@
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
 using Datamint.Domain.Entities;
+using Datamint.Domain.Enums;
 using Datamint.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -19,6 +20,8 @@ public class AuthController : ControllerBase
     private readonly ICurrentUserService _currentUser;
     private readonly IAuthNotificationService _notify;
     private readonly IPasswordResetService _passwordReset;
+    private readonly ISessionService _sessions;
+    private readonly IAuthService _authService;
     private readonly DatamintDbContext _db;
 
     // "Remember me" ticked: refresh token (and therefore the session) survives
@@ -27,7 +30,7 @@ public class AuthController : ControllerBase
     private const int RememberMeDays = 10;
     private const int NotRememberedDays = 1;
 
-    public AuthController(IUserRepository users, IJwtTokenService jwt, IGoogleAuthService google, IAuditService audit, ICurrentUserService currentUser, IAuthNotificationService notify, IPasswordResetService passwordReset, DatamintDbContext db)
+    public AuthController(IUserRepository users, IJwtTokenService jwt, IGoogleAuthService google, IAuditService audit, ICurrentUserService currentUser, IAuthNotificationService notify, IPasswordResetService passwordReset, ISessionService sessions, IAuthService authService, DatamintDbContext db)
     {
         _users = users;
         _jwt = jwt;
@@ -36,6 +39,8 @@ public class AuthController : ControllerBase
         _currentUser = currentUser;
         _notify = notify;
         _passwordReset = passwordReset;
+        _sessions = sessions;
+        _authService = authService;
         _db = db;
     }
 
@@ -43,49 +48,19 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterRequestDto dto, CancellationToken ct)
     {
-        var passwordError = ValidatePasswordStrength(dto.Password);
-        if (passwordError is not null)
-            return BadRequest(new { success = false, message = passwordError });
+        var result = await _authService.RegisterAsync(dto.Email, dto.Password, dto.DisplayName, ct);
+        if (!result.Succeeded) return AuthError(result.ErrorCode!, result.Error!);
 
-        var existing = await _users.GetByEmailAsync(dto.Email, ct);
-        if (existing is not null)
-            return Conflict(new { success = false, message = "An account with this email already exists." });
-
-        var user = new ApplicationUser
-        {
-            Email = dto.Email,
-            DisplayName = dto.DisplayName,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
-            Role = "User"
-        };
-
-        await _users.AddAsync(user, ct);
-        await _users.SaveChangesAsync(ct);
-        await _audit.LogAsync("Auth.Register", user.Id, ct: ct);
-        await _notify.SendWelcomeEmailAsync(user, ct);
-
-        return Ok(await BuildAuthResponseAsync(user, dto.RememberMe, ct));
+        return Ok(await BuildAuthResponseAsync(result.Data!, dto.RememberMe, ct));
     }
 
     [HttpPost("login")]
     public async Task<IActionResult> Login(LoginRequestDto dto, CancellationToken ct)
     {
-        var user = await _users.GetByEmailAsync(dto.Email, ct);
-        if (user is null || user.PasswordHash is null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
-        {
-            await _audit.LogAsync("Auth.Login", null, details: $"{{\"email\":\"{dto.Email}\"}}", isSuccess: false, ct: ct);
-            return Unauthorized(new { success = false, message = "Invalid email or password." });
-        }
+        var result = await _authService.LoginAsync(dto.Email, dto.Password, ct);
+        if (!result.Succeeded) return AuthError(result.ErrorCode!, result.Error!);
 
-        if (!user.IsActive)
-            return Unauthorized(new { success = false, message = "This account has been disabled. Contact support." });
-
-        user.LastLoginAtUtc = DateTime.UtcNow;
-        _users.Update(user);
-        await _users.SaveChangesAsync(ct);
-        await _audit.LogAsync("Auth.Login", user.Id, ct: ct);
-
-        return Ok(await BuildAuthResponseAsync(user, dto.RememberMe, ct));
+        return Ok(await BuildAuthResponseAsync(result.Data!, dto.RememberMe, ct));
     }
 
     /// <summary>Frontend uses Google Identity Services to get an ID token, then posts it here.</summary>
@@ -99,20 +74,42 @@ public class AuthController : ControllerBase
 
         if (user is null)
         {
-            // New entity: only AddAsync it. Calling Update() on it afterward would
-            // force its EF Core tracking state from Added to Modified, making
-            // SaveChangesAsync emit an UPDATE for a row that doesn't exist yet
-            // (0 rows affected -> DbUpdateConcurrencyException).
-            user = new ApplicationUser
+            // A soft-deleted account's row is still in the table (deletion is a status
+            // flag, not a real row removal), and Email/GoogleId both stay unique at the
+            // DB level even for it - so blindly inserting a new row here for someone who
+            // previously deleted their Google-linked account hits that same unique index
+            // and throws, which is exactly the "why won't it let me back in" bug this
+            // guards against. Reactivate that row instead, mirroring what
+            // AuthService.RegisterAsync already does for the password sign-up path.
+            var deletedAccount = await _users.GetByEmailIncludingDeletedAsync(googleUser.Email, ct);
+            if (deletedAccount is not null)
             {
-                Email = googleUser.Email,
-                DisplayName = googleUser.Name,
-                GoogleId = googleUser.GoogleId,
-                IsEmailVerified = googleUser.EmailVerified,
-                Role = "User",
-                LastLoginAtUtc = DateTime.UtcNow
-            };
-            await _users.AddAsync(user, ct);
+                deletedAccount.IsDeleted = false;
+                deletedAccount.IsActive = true;
+                deletedAccount.GoogleId ??= googleUser.GoogleId;
+                deletedAccount.IsEmailVerified = googleUser.EmailVerified;
+                deletedAccount.SecurityStamp = Guid.NewGuid().ToString("N");
+                deletedAccount.LastLoginAtUtc = DateTime.UtcNow;
+                user = deletedAccount;
+                await _audit.LogAsync("Auth.GoogleLogin", user.Id, details: "Reactivated a previously-deleted account.", ct: ct);
+            }
+            else
+            {
+                // New entity: only AddAsync it. Calling Update() on it afterward would
+                // force its EF Core tracking state from Added to Modified, making
+                // SaveChangesAsync emit an UPDATE for a row that doesn't exist yet
+                // (0 rows affected -> DbUpdateConcurrencyException).
+                user = new ApplicationUser
+                {
+                    Email = googleUser.Email,
+                    DisplayName = googleUser.Name,
+                    GoogleId = googleUser.GoogleId,
+                    IsEmailVerified = googleUser.EmailVerified,
+                    Role = "User",
+                    LastLoginAtUtc = DateTime.UtcNow
+                };
+                await _users.AddAsync(user, ct);
+            }
         }
         else
         {
@@ -146,6 +143,16 @@ public class AuthController : ControllerBase
         if (stored is null || stored.Revoked || stored.ExpiresAtUtc < DateTime.UtcNow)
             return Unauthorized(new { success = false, message = "Your session has expired. Please sign in again.", errorCode = "REFRESH_INVALID" });
 
+        // A refresh token minted before an admin disabled/deleted this account (or before
+        // a password change) must not be able to mint a fresh access token afterward - the
+        // access-token-side check (OnTokenValidated) only catches tokens already issued.
+        if (stored.User.IsDeleted || !stored.User.IsActive)
+        {
+            stored.Revoked = true;
+            await _db.SaveChangesAsync(ct);
+            return Unauthorized(new { success = false, message = "Your session has expired. Please sign in again.", errorCode = "REFRESH_INVALID" });
+        }
+
         stored.Revoked = true;
 
         var remainingLifetime = stored.ExpiresAtUtc - DateTime.UtcNow;
@@ -157,6 +164,7 @@ public class AuthController : ControllerBase
             ExpiresAtUtc = DateTime.UtcNow.Add(remainingLifetime > TimeSpan.Zero ? remainingLifetime : TimeSpan.FromDays(NotRememberedDays))
         });
         await _db.SaveChangesAsync(ct);
+        await _audit.LogAsync("Auth.TokenRefreshed", stored.UserId, ct: ct);
 
         var access = _jwt.GenerateAccessToken(stored.User);
         return Ok(new RefreshResponseDto(access, newRawToken, DateTime.UtcNow.AddMinutes(30)));
@@ -211,7 +219,7 @@ public class AuthController : ControllerBase
             return BadRequest(new { success = false, message = "This password reset link is invalid or has expired. Please request a new one." });
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
-        await RevokeAllSessionsAsync(user, ct);
+        await _sessions.RevokeAllSessionsAsync(user, ct);
         await _db.SaveChangesAsync(ct);
 
         await _audit.LogAsync("Auth.PasswordReset", user.Id, ct: ct);
@@ -254,22 +262,8 @@ public class AuthController : ControllerBase
         var user = await _users.GetByIdAsync(_currentUser.UserId!.Value, ct);
         if (user is null) return NotFound(new { success = false, message = "User not found." });
 
-        if (user.PasswordHash is null)
-            return BadRequest(new { success = false, message = "This account signs in with Google and has no password to change." });
-
-        if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
-            return BadRequest(new { success = false, message = "Your current password is incorrect." });
-
-        var passwordError = ValidatePasswordStrength(dto.NewPassword);
-        if (passwordError is not null)
-            return BadRequest(new { success = false, message = passwordError });
-
-        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
-        await RevokeAllSessionsAsync(user, ct);
-        await _users.SaveChangesAsync(ct);
-
-        await _audit.LogAsync("Auth.PasswordChanged", user.Id, ct: ct);
-        await _notify.SendPasswordChangedEmailAsync(user, ct);
+        var result = await _authService.ChangePasswordAsync(user, dto.CurrentPassword, dto.NewPassword, ct);
+        if (!result.Succeeded) return AuthError(result.ErrorCode!, result.Error!);
 
         return Ok(new { success = true, message = "Your password has been changed. Please sign in again." });
     }
@@ -286,46 +280,26 @@ public class AuthController : ControllerBase
         var user = await _users.GetByIdAsync(_currentUser.UserId!.Value, ct);
         if (user is null) return NotFound(new { success = false, message = "User not found." });
 
-        if (user.PasswordHash is not null)
-        {
-            if (string.IsNullOrEmpty(dto.CurrentPassword) || !BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
-                return BadRequest(new { success = false, message = "Your current password is incorrect." });
-        }
-
-        var email = user.Email;
-        var displayName = user.DisplayName;
-
-        user.IsActive = false;
-        user.IsDeleted = true;
-        await RevokeAllSessionsAsync(user, ct);
-        await _users.SaveChangesAsync(ct);
-
-        await _audit.LogAsync("Auth.AccountDeleted", user.Id, ct: ct);
-        await _notify.SendAccountDeletedEmailAsync(email, displayName, ct);
+        var result = await _authService.DeleteAccountAsync(user, dto.CurrentPassword, ct);
+        if (!result.Succeeded) return AuthError(result.ErrorCode!, result.Error!);
 
         return Ok(new { success = true, message = "Your account has been deleted." });
     }
 
-    /// <summary>
-    /// Kills every session for this user immediately: revokes every refresh token
-    /// (so no new access token can be minted) AND rotates the security stamp (so
-    /// every access token already issued fails its per-request validity check too,
-    /// instead of quietly working until its own ~30 min expiry).
-    /// </summary>
-    private async Task RevokeAllSessionsAsync(ApplicationUser user, CancellationToken ct)
-    {
-        var tokens = await _db.RefreshTokens.Where(t => t.UserId == user.Id && !t.Revoked).ToListAsync(ct);
-        foreach (var token in tokens) token.Revoked = true;
-        user.SecurityStamp = Guid.NewGuid().ToString("N");
-    }
-
     private static ProfileDto ToProfileDto(ApplicationUser user) =>
-        new(user.Id, user.Email, user.DisplayName, user.Role, user.IsEmailVerified, user.CreatedAtUtc, user.PasswordHash is not null);
+        new(user.Id, user.Email, user.DisplayName, user.Role, user.IsEmailVerified, user.CreatedAtUtc, user.PasswordHash is not null, user.IsSuperAdmin);
 
-    /// <summary>
-    /// Server-side enforcement (never trust client-only validation): 8+ chars,
-    /// at least one uppercase, one lowercase, one digit, one special character.
-    /// </summary>
+    /// <summary>Maps an IAuthService failure's error code to the HTTP status the frontend already expects.</summary>
+    private IActionResult AuthError(string errorCode, string message) => errorCode switch
+    {
+        "EMAIL_TAKEN" => Conflict(new { success = false, message }),
+        "INVALID_CREDENTIALS" or "ACCOUNT_DISABLED" => Unauthorized(new { success = false, message }),
+        _ => BadRequest(new { success = false, message }), // WEAK_PASSWORD, WRONG_PASSWORD, GOOGLE_ONLY_ACCOUNT
+    };
+
+    /// <summary>Server-side enforcement (never trust client-only validation): 8+ chars,
+    /// at least one uppercase, one lowercase, one digit, one special character. Also
+    /// used by /reset-password, which doesn't go through IAuthService.</summary>
     private static string? ValidatePasswordStrength(string password)
     {
         if (string.IsNullOrEmpty(password) || password.Length < 8)
@@ -352,12 +326,52 @@ public class AuthController : ControllerBase
             Token = _jwt.HashToken(rawRefresh),
             ExpiresAtUtc = DateTime.UtcNow.AddDays(rememberMe ? RememberMeDays : NotRememberedDays)
         });
+
+        var hasActiveSubscription = await EnsureFreePlanActivatedAsync(user.Id, ct);
         await _db.SaveChangesAsync(ct);
 
         var profile = new UserProfileDto(user.Id, user.Email, user.DisplayName, user.Role,
-            user.IsEmailVerified, user.FreeUploadsUsed, Application.Services.DocumentProcessingService.FreeUploadLimit,
-            HasActiveSubscription: false); // hydrate real value once SubscriptionService is called in production
+            user.IsEmailVerified, hasActiveSubscription, user.IsSuperAdmin);
 
         return new AuthResponseDto(access, rawRefresh, DateTime.UtcNow.AddMinutes(30), profile);
+    }
+
+    /// <summary>
+    /// Every account should have at least the Free plan active the moment they sign in -
+    /// no separate "activate free plan" click required. Returns whether the user now has
+    /// (or already had) an active subscription of any kind. Doesn't call SaveChangesAsync
+    /// itself - the caller (BuildAuthResponseAsync) saves once for the whole login/register flow.
+    /// </summary>
+    private async Task<bool> EnsureFreePlanActivatedAsync(Guid userId, CancellationToken ct)
+    {
+        // A cancelled-but-not-yet-ended subscription is still usable, not just Status == Active -
+        // checking Active alone here would silently create a duplicate Free subscription
+        // every time a user with a still-in-grace-period cancellation logs back in.
+        var hasUsable = await _db.Subscriptions.AnyAsync(s => s.UserId == userId
+            && (s.Status == SubscriptionStatus.Active || (s.Status == SubscriptionStatus.Cancelled && s.EndAtUtc > DateTime.UtcNow)), ct);
+        if (hasUsable) return true;
+
+        // The Free plan is a one-time lifetime allowance (Plan.IsRecurring = false), not a monthly
+        // grant - so it's only auto-activated the first time this UserId has EVER had a subscription
+        // of any kind. Without this, deleting and re-registering the same email (which reactivates
+        // the same account row - see AuthService.RegisterAsync) would otherwise hand out a fresh
+        // free trial every time, since the account currently has no *usable* subscription above.
+        var everHadAny = await _db.Subscriptions.AnyAsync(s => s.UserId == userId, ct);
+        if (everHadAny) return false;
+
+        var freePlan = await _db.Plans.FirstOrDefaultAsync(p => p.IsFreeTrial && p.IsActive, ct);
+        if (freePlan is null) return false; // no free trial plan configured - nothing to auto-activate
+
+        var startAt = DateTime.UtcNow;
+        _db.Subscriptions.Add(new Subscription
+        {
+            UserId = userId,
+            PlanId = freePlan.Id,
+            Status = SubscriptionStatus.Active,
+            StartAtUtc = startAt,
+            EndAtUtc = freePlan.ComputeSubscriptionEndAt(startAt)
+        });
+        await _audit.LogAsync("Subscription.Activated", userId, ct: ct, details: "Free plan auto-activated on sign-in.");
+        return true;
     }
 }

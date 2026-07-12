@@ -1,15 +1,16 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { GoogleSigninButtonComponent } from '../../../shared/components/google-signin-button/google-signin-button.component';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-register',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, GoogleSigninButtonComponent],
+  imports: [CommonModule, FormsModule, RouterLink, GoogleSigninButtonComponent, IconComponent],
   template: `
     <div class="auth-wrap">
       <div class="dm-card auth-card">
@@ -29,8 +30,13 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
           <input class="dm-input" type="email" name="email" [(ngModel)]="email" required (ngModelChange)="errorMessage = ''" />
 
           <label>Password</label>
-          <input class="dm-input" type="password" name="password" [(ngModel)]="password" required
-                 (ngModelChange)="errorMessage = ''" (focus)="showChecklist = true" />
+          <div class="password-field">
+            <input class="dm-input" [type]="showPassword ? 'text' : 'password'" name="password" [(ngModel)]="password" required
+                   (ngModelChange)="errorMessage = ''" (focus)="showChecklist = true" />
+            <button type="button" class="toggle-visibility" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'">
+              <app-icon [name]="showPassword ? 'eye-off' : 'eye'" [size]="18" />
+            </button>
+          </div>
 
           @if (showChecklist && password) {
             <ul class="checklist">
@@ -57,6 +63,14 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
     .auth-card { width: 100%; max-width: 400px; padding: 32px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     label { display: block; margin: 14px 0 6px; font-size: 0.85rem; color: var(--dm-text-muted); }
+    .password-field { position: relative; display: flex; }
+    .password-field .dm-input { padding-right: 42px; }
+    .toggle-visibility {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; padding: 6px; cursor: pointer; color: var(--dm-text-muted);
+      display: flex; align-items: center; border-radius: var(--dm-radius-sm);
+    }
+    .toggle-visibility:hover { color: var(--dm-text); background: var(--dm-surface-hover); }
     .submit { width: 100%; margin-top: 20px; }
     .divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: var(--dm-text-muted); font-size: 0.8rem; }
     .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--dm-border); }
@@ -73,11 +87,16 @@ export class RegisterComponent {
   displayName = '';
   email = '';
   password = '';
+  showPassword = false;
   loading = false;
   errorMessage = '';
   showChecklist = false;
 
-  constructor(private auth: AuthService, private toast: ToastService) {}
+  constructor(private auth: AuthService, private toast: ToastService, private route: ActivatedRoute) {}
+
+  private get returnUrl(): string | undefined {
+    return this.route.snapshot.queryParamMap.get('returnUrl') ?? undefined;
+  }
 
   get checks() {
     const p = this.password;
@@ -100,7 +119,7 @@ export class RegisterComponent {
     this.loading = true;
     this.errorMessage = '';
     this.auth.register(this.email, this.password, this.displayName).subscribe({
-      next: res => this.auth.completeLogin(res, true),
+      next: res => this.auth.completeLogin(res, true, this.returnUrl),
       error: err => { this.loading = false; this.errorMessage = err?.error?.message || 'Something went wrong. Please try again.'; },
       complete: () => this.loading = false
     });
@@ -108,7 +127,7 @@ export class RegisterComponent {
 
   signUpWithGoogle(idToken: string) {
     this.auth.loginWithGoogle(idToken).subscribe({
-      next: res => this.auth.completeLogin(res, true),
+      next: res => this.auth.completeLogin(res, true, this.returnUrl),
       error: () => this.toast.error('Google sign-up failed. Please try again.')
     });
   }

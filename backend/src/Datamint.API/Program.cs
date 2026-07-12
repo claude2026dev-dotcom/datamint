@@ -62,6 +62,8 @@ builder.Services.AddScoped<IPaymentService, RazorpayPaymentService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IAuthNotificationService, AuthNotificationService>();
 builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
+builder.Services.AddScoped<ISessionService, SessionService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
 
 // ---------- Current user (claims wrapper) ----------
 builder.Services.AddHttpContextAccessor();

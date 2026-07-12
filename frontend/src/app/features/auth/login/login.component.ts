@@ -1,15 +1,16 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { GoogleSigninButtonComponent } from '../../../shared/components/google-signin-button/google-signin-button.component';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, GoogleSigninButtonComponent],
+  imports: [CommonModule, FormsModule, RouterLink, GoogleSigninButtonComponent, IconComponent],
   template: `
     <div class="auth-wrap">
       <div class="dm-card auth-card">
@@ -26,7 +27,12 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
           <input class="dm-input" type="email" name="email" [(ngModel)]="email" required (ngModelChange)="errorMessage = ''" />
 
           <label>Password</label>
-          <input class="dm-input" type="password" name="password" [(ngModel)]="password" required minlength="6" (ngModelChange)="errorMessage = ''" />
+          <div class="password-field">
+            <input class="dm-input" [type]="showPassword ? 'text' : 'password'" name="password" [(ngModel)]="password" required minlength="6" (ngModelChange)="errorMessage = ''" />
+            <button type="button" class="toggle-visibility" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'">
+              <app-icon [name]="showPassword ? 'eye-off' : 'eye'" [size]="18" />
+            </button>
+          </div>
 
           <div class="options-row">
             <label class="remember-row">
@@ -50,6 +56,14 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
     .auth-card { width: 100%; max-width: 400px; padding: 32px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     label { display: block; margin: 14px 0 6px; font-size: 0.85rem; color: var(--dm-text-muted); }
+    .password-field { position: relative; display: flex; }
+    .password-field .dm-input { padding-right: 42px; }
+    .toggle-visibility {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; padding: 6px; cursor: pointer; color: var(--dm-text-muted);
+      display: flex; align-items: center; border-radius: var(--dm-radius-sm);
+    }
+    .toggle-visibility:hover { color: var(--dm-text); background: var(--dm-surface-hover); }
     .options-row { display: flex; align-items: center; justify-content: space-between; margin: 16px 0 0; flex-wrap: wrap; gap: 8px; }
     .remember-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
     .remember-row input[type="checkbox"] { accent-color: var(--dm-primary); width: 16px; height: 16px; }
@@ -67,17 +81,22 @@ import { GoogleSigninButtonComponent } from '../../../shared/components/google-s
 export class LoginComponent {
   email = '';
   password = '';
+  showPassword = false;
   rememberMe = false;
   loading = false;
   errorMessage = '';
 
-  constructor(private auth: AuthService, private toast: ToastService) {}
+  constructor(private auth: AuthService, private toast: ToastService, private route: ActivatedRoute) {}
+
+  private get returnUrl(): string | undefined {
+    return this.route.snapshot.queryParamMap.get('returnUrl') ?? undefined;
+  }
 
   submit() {
     this.loading = true;
     this.errorMessage = '';
     this.auth.login(this.email, this.password, this.rememberMe).subscribe({
-      next: res => this.auth.completeLogin(res, this.rememberMe),
+      next: res => this.auth.completeLogin(res, this.rememberMe, this.returnUrl),
       error: err => { this.loading = false; this.errorMessage = err?.error?.message || 'Something went wrong. Please try again.'; },
       complete: () => this.loading = false
     });
@@ -85,7 +104,7 @@ export class LoginComponent {
 
   loginWithGoogle(idToken: string) {
     this.auth.loginWithGoogle(idToken).subscribe({
-      next: res => this.auth.completeLogin(res, true),
+      next: res => this.auth.completeLogin(res, true, this.returnUrl),
       error: () => this.toast.error('Google sign-in failed. Please try again.')
     });
   }

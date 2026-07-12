@@ -4,15 +4,17 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { SubscriptionService } from '../../../core/services/subscription.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { environment } from '../../../../environments/environment';
+import { BackButtonComponent } from '../../../shared/components/back-button/back-button.component';
 
 declare const Razorpay: any; // loaded via https://checkout.razorpay.com/v1/checkout.js in index.html
 
 @Component({
   selector: 'app-checkout',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, BackButtonComponent],
   template: `
     <div class="dm-container page">
+      <app-back-button fallbackUrl="/plans" />
       <div class="dm-card box">
         <h2>Confirm your subscription</h2>
         <p class="muted">You'll be redirected to Razorpay's secure checkout to complete payment.</p>
@@ -23,8 +25,8 @@ declare const Razorpay: any; // loaded via https://checkout.razorpay.com/v1/chec
     </div>
   `,
   styles: [`
-    .page { padding: 60px 0; display: flex; justify-content: center; }
-    .box { max-width: 420px; padding: 32px; text-align: center; }
+    .page { padding-top: 60px; padding-bottom: 60px; }
+    .box { max-width: 420px; margin: 0 auto; padding: 32px; text-align: center; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; margin: 10px 0 24px; }
   `]
 })

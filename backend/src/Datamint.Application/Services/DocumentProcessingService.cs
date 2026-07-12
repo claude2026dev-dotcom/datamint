@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Datamint.Application.Common;
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
@@ -23,10 +24,6 @@ public class DocumentProcessingService
     private readonly IAuditService _audit;
     private readonly ILogger<DocumentProcessingService> _logger;
 
-    // Business rule: 2 free uploads before login is required. Kept as a constant
-    // here (not magic-numbered in controllers) so it's one place to change.
-    public const int FreeUploadLimit = 2;
-
     public DocumentProcessingService(
         IDocumentRepository documents,
         IUserRepository users,
@@ -48,17 +45,13 @@ public class DocumentProcessingService
     }
 
     public async Task<Result<DocumentSummaryDto>> UploadAndQueueAsync(
-        Guid? userId, string originalFileName, string storedFilePath, long fileSizeBytes, string? uploaderIp,
-        string extractionMode = "Dynamic", string? requestedFields = null, CancellationToken ct = default)
+        Guid userId, string originalFileName, string storedFilePath, long fileSizeBytes, string? uploaderIp,
+        string extractionMode = "Dynamic", string? requestedFields = null, Guid? uploadBatchId = null, CancellationToken ct = default)
     {
-        // Free-tier / plan limit gate is enforced server-side in DocumentsController
-        // before this method is called (anonymous: by IP, logged-in: by subscription).
-        if (userId is not null)
-        {
-            var user = await _users.GetByIdAsync(userId.Value, ct);
-            if (user is null)
-                return Result<DocumentSummaryDto>.Failure("User not found.", "USER_NOT_FOUND");
-        }
+        // Plan limit gate is enforced server-side in DocumentsController before this method is called.
+        var user = await _users.GetByIdAsync(userId, ct);
+        if (user is null)
+            return Result<DocumentSummaryDto>.Failure("User not found.", "USER_NOT_FOUND");
 
         var document = new Document
         {
@@ -66,11 +59,12 @@ public class DocumentProcessingService
             OriginalFileName = originalFileName,
             StoredFilePath = storedFilePath,
             FileSizeBytes = fileSizeBytes,
-            UploaderIpAddress = userId is null ? uploaderIp : null,
+            UploaderIpAddress = uploaderIp,
             Status = DocumentStatus.Uploaded,
             ExtractionMode = extractionMode == "Formatted" ? "Formatted" : "Dynamic",
             RequestedFields = extractionMode == "Formatted" ? requestedFields : null
         };
+        if (uploadBatchId is not null) document.UploadBatchId = uploadBatchId.Value;
 
         await _documents.AddAsync(document, ct);
         await _documents.SaveChangesAsync(ct);
@@ -86,7 +80,15 @@ public class DocumentProcessingService
     /// key/value extraction. Designed to be called from a background job/queue in
     /// production so the upload endpoint returns instantly - see README notes.
     /// </summary>
-    public async Task<Result<DocumentSummaryDto>> ProcessDocumentAsync(Guid documentId, CancellationToken ct = default)
+    /// <param name="preExtractedText">
+    /// The caller (DocumentsController.Upload) now has to know every file's page count
+    /// BEFORE running AI extraction, to gate the whole batch against remaining plan quota
+    /// up front rather than charging for pages after the fact. That means it already ran
+    /// PdfPig text extraction once during that pre-check - passing the result through here
+    /// avoids parsing (and re-running OCR on scanned pages via) the same PDF a second time.
+    /// </param>
+    public async Task<Result<DocumentSummaryDto>> ProcessDocumentAsync(
+        Guid documentId, PdfTextExtractionResultDto? preExtractedText = null, CancellationToken ct = default)
     {
         var document = await _documents.GetWithDetailsAsync(documentId, ct);
         if (document is null)
@@ -103,7 +105,7 @@ public class DocumentProcessingService
             document.Status = DocumentStatus.Processing;
             await _documents.SaveChangesAsync(ct);
 
-            var textResult = await _textExtraction.ExtractTextAsync(document.StoredFilePath, ct);
+            var textResult = preExtractedText ?? await _textExtraction.ExtractTextAsync(document.StoredFilePath, ct);
             document.PageCount = textResult.PageCount;
             document.RequiresOcr = textResult.RequiredOcr;
 
@@ -171,23 +173,90 @@ public class DocumentProcessingService
 
     private static DocumentSummaryDto ToSummaryDto(Document document) => new(
         document.Id, document.OriginalFileName, document.PageCount, document.RequiresOcr,
-        document.Status.ToString(), document.CreatedAtUtc, document.FailureReason);
+        document.Status.ToString(), document.CreatedAtUtc, document.FailureReason, document.FileSizeBytes,
+        document.UploadBatchId);
 
-    public async Task<Result> UpdateFieldAsync(Guid documentId, Guid fieldId, string? newValue, string? newKey = null, CancellationToken ct = default)
+    /// <summary>
+    /// Runs once per bulk upload, after every document in the batch has already been
+    /// extracted independently: reconciles field labels across the whole batch (e.g. one
+    /// document's "Invoice No" and another's "Invoice Number" become the same canonical
+    /// "Invoice Number") so the combined batch view/export puts them in the same column
+    /// instead of splitting them into separate ones. A no-op for single-document uploads,
+    /// and any failure here (AI call, parsing) just leaves field keys as originally
+    /// extracted rather than blocking or failing the upload that triggered it.
+    /// </summary>
+    public async Task HarmonizeBatchFieldKeysAsync(List<Guid> documentIds, CancellationToken ct = default)
+    {
+        if (documentIds.Count < 2) return;
+
+        var documents = new List<Document>();
+        foreach (var id in documentIds)
+        {
+            var doc = await _documents.GetWithDetailsAsync(id, ct);
+            if (doc is not null && doc.ExtractedFields.Count > 0) documents.Add(doc);
+        }
+        if (documents.Count < 2) return;
+
+        var distinctKeys = documents.SelectMany(d => d.ExtractedFields.Select(f => f.FieldKey)).Distinct().ToList();
+        if (distinctKeys.Count < 2) return;
+
+        var mapping = await _aiExtraction.HarmonizeFieldKeysAsync(distinctKeys, ct);
+        if (mapping.Count == 0) return;
+
+        var renamedCount = 0;
+        foreach (var doc in documents)
+        {
+            foreach (var field in doc.ExtractedFields)
+            {
+                if (mapping.TryGetValue(field.FieldKey, out var canonical)
+                    && !string.IsNullOrWhiteSpace(canonical) && canonical != field.FieldKey)
+                {
+                    field.FieldKey = canonical;
+                    renamedCount++;
+                }
+            }
+        }
+
+        if (renamedCount > 0)
+        {
+            await _documents.SaveChangesAsync(ct);
+            await _audit.LogAsync("Document.BatchFieldsHarmonized", documents[0].UserId, ct: ct,
+                details: $"{{\"documentCount\":{documents.Count},\"fieldsRenamed\":{renamedCount}}}");
+        }
+    }
+
+    public async Task<Result<ExtractedFieldEditDto>> UpdateFieldAsync(Guid documentId, Guid fieldId, string? newValue, string? newKey = null, CancellationToken ct = default)
     {
         var document = await _documents.GetWithDetailsAsync(documentId, ct);
-        if (document is null) return Result.Failure("Document not found.", "NOT_FOUND");
+        if (document is null) return Result<ExtractedFieldEditDto>.Failure("Document not found.", "NOT_FOUND");
 
         var field = document.ExtractedFields.FirstOrDefault(f => f.Id == fieldId);
-        if (field is null) return Result.Failure("Field not found.", "NOT_FOUND");
+        if (field is null) return Result<ExtractedFieldEditDto>.Failure("Field not found.", "NOT_FOUND");
+
+        var previousValue = field.FieldValue;
+        var previousKey = field.FieldKey;
 
         field.FieldValue = newValue;
-        field.WasEditedByUser = field.OriginalAiValue != newValue;
         if (!string.IsNullOrWhiteSpace(newKey))
             field.FieldKey = newKey.Trim();
+        // "Edited" means the user actually changed something from what the AI produced -
+        // either the value or the label - not just that a save request was sent (the
+        // frontend used to mark every field "edited" on blur regardless of any real
+        // change, which is exactly the false-positive this recomputation fixes).
+        field.WasEditedByUser = field.OriginalAiValue != field.FieldValue || field.OriginalFieldKey != field.FieldKey;
 
         await _documents.SaveChangesAsync(ct);
-        return Result.Success();
+
+        var diff = JsonSerializer.Serialize(new
+        {
+            fieldId,
+            key = new { from = previousKey, to = field.FieldKey },
+            value = new { from = previousValue, to = field.FieldValue }
+        });
+        await _audit.LogAsync("Document.FieldUpdated", document.UserId, "Document", documentId.ToString(), diff, ct: ct);
+
+        return Result<ExtractedFieldEditDto>.Success(new ExtractedFieldEditDto(
+            field.Id, field.FieldKey, field.OriginalFieldKey, field.FieldValue, field.PageNumber, field.WasEditedByUser));
     }
 
     public async Task<Result<byte[]>> ExportToExcelAsync(Guid documentId, CancellationToken ct = default)
@@ -206,47 +275,68 @@ public class DocumentProcessingService
     }
 
     /// <summary>
-    /// One combined workbook for several documents at once (rows=documents,
-    /// columns=field keys) - the ownership check for each id already happened in
+    /// Several documents at once - the ownership check for each id already happened in
     /// the controller before these tracked entities were fetched, so this trusts the list.
+    /// exportMode picks the shape: "SingleSheet" (default - one combined sheet, rows=documents,
+    /// columns=field keys), "MultipleSheets" (one .xlsx, one tab per document), or
+    /// "SeparateFiles" (a .zip with one standalone .xlsx per document).
     /// </summary>
-    public async Task<Result<byte[]>> ExportBatchToExcelAsync(List<Document> documents, CancellationToken ct = default)
+    public async Task<Result<byte[]>> ExportBatchToExcelAsync(List<Document> documents, string exportMode = "SingleSheet", CancellationToken ct = default)
     {
         if (documents.Count == 0) return Result<byte[]>.Failure("No documents to export.", "NOT_FOUND");
 
         var dtos = documents.Select(MapToDetailDto).ToList();
-        var bytes = await _excel.GenerateBatchExcelAsync(dtos, ct);
+        var bytes = exportMode switch
+        {
+            "MultipleSheets" => await _excel.GenerateMultiSheetExcelAsync(dtos, ct),
+            "SeparateFiles" => await _excel.GenerateSeparateFilesZipAsync(dtos, ct),
+            _ => await _excel.GenerateBatchExcelAsync(dtos, ct)
+        };
 
         foreach (var document in documents)
             document.Status = DocumentStatus.Exported;
         await _documents.SaveChangesAsync(ct);
 
         foreach (var document in documents)
-            await _audit.LogAsync("Document.BatchExport", document.UserId, "Document", document.Id.ToString(), null, true, ct);
+            await _audit.LogAsync("Document.BatchExport", document.UserId, "Document", document.Id.ToString(), $"{{\"exportMode\":\"{exportMode}\"}}", true, ct);
 
         return Result<byte[]>.Success(bytes);
     }
 
-    public async Task<Result> EmailBatchExportAsync(List<Document> documents, string toAddress, CancellationToken ct = default)
+    public async Task<Result> EmailBatchExportAsync(List<Document> documents, string toAddress, string exportMode = "SingleSheet", CancellationToken ct = default)
     {
-        var exportResult = await ExportBatchToExcelAsync(documents, ct);
+        var exportResult = await ExportBatchToExcelAsync(documents, exportMode, ct);
         if (!exportResult.Succeeded) return Result.Failure(exportResult.Error!, exportResult.ErrorCode!);
 
-        var tempPath = Path.Combine(Path.GetTempPath(), $"datamint-batch-export-{Guid.NewGuid()}.xlsx");
+        var isZip = exportMode == "SeparateFiles";
+        var extension = isZip ? "zip" : "xlsx";
+        var attachmentName = $"datamint-batch-export.{extension}";
+        var tempPath = Path.Combine(Path.GetTempPath(), $"datamint-batch-export-{Guid.NewGuid()}.{extension}");
         await File.WriteAllBytesAsync(tempPath, exportResult.Data!, ct);
+
+        var bodyDescription = exportMode switch
+        {
+            "MultipleSheets" => $"Please find attached one workbook with a separate sheet for each of the {documents.Count} document(s) from Datamint.",
+            "SeparateFiles" => $"Please find attached a zip file with a separate spreadsheet for each of the {documents.Count} document(s) from Datamint.",
+            _ => $"Please find attached the combined extracted data for {documents.Count} document(s) from Datamint."
+        };
+        var body = EmailTemplateHelper.Wrap(
+            title: "Your export is ready",
+            greeting: "Hi,",
+            bodyHtml: $"<p>{bodyDescription}</p>");
 
         var sent = await _email.SendAsync(
             toAddress,
             "Your Datamint extracted data export",
-            $"<p>Hi,</p><p>Please find attached the combined extracted data for {documents.Count} document(s) from Datamint.</p><p>— Datamint</p>",
+            body,
             tempPath,
-            "datamint-batch-export.xlsx",
+            attachmentName,
             ct);
 
         if (File.Exists(tempPath)) File.Delete(tempPath);
 
         foreach (var document in documents)
-            await _audit.LogAsync("Document.BatchEmailSent", document.UserId, "Document", document.Id.ToString(), $"{{\"to\":\"{toAddress}\"}}", sent, ct);
+            await _audit.LogAsync("Document.BatchEmailSent", document.UserId, "Document", document.Id.ToString(), $"{{\"to\":\"{toAddress}\",\"exportMode\":\"{exportMode}\"}}", sent, ct);
 
         return sent ? Result.Success() : Result.Failure("Failed to send email. Please check email service configuration.", "EMAIL_FAILED");
     }
@@ -259,10 +349,15 @@ public class DocumentProcessingService
         var tempPath = Path.Combine(Path.GetTempPath(), $"datamint-export-{documentId}.xlsx");
         await File.WriteAllBytesAsync(tempPath, exportResult.Data!, ct);
 
+        var body = EmailTemplateHelper.Wrap(
+            title: "Your export is ready",
+            greeting: "Hi,",
+            bodyHtml: "<p>Please find attached the extracted data exported from Datamint.</p>");
+
         var sent = await _email.SendAsync(
             toAddress,
             "Your Datamint extracted data export",
-            "<p>Hi,</p><p>Please find attached the extracted data exported from Datamint.</p><p>— Datamint</p>",
+            body,
             tempPath,
             "datamint-export.xlsx",
             ct);

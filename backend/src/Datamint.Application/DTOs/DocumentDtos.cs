@@ -15,7 +15,9 @@ public record DocumentSummaryDto(
     bool RequiresOcr,
     string Status,
     DateTime CreatedAtUtc,
-    string? FailureReason = null);
+    string? FailureReason = null,
+    long FileSizeBytes = 0,
+    Guid UploadBatchId = default);
 
 public record ExtractedFieldEditDto(Guid Id, string FieldKey, string OriginalFieldKey, string? FieldValue, int? PageNumber, bool WasEditedByUser);
 
@@ -31,6 +33,8 @@ public record UpdateFieldRequestDto(Guid FieldId, string? NewValue, string? NewK
 
 public record SendEmailRequestDto(Guid DocumentId, string ToAddress, string? Message);
 
-public record BatchDocumentIdsRequestDto(List<Guid> DocumentIds);
+// ExportMode: "SingleSheet" (default - one combined sheet, rows=documents), "MultipleSheets"
+// (one .xlsx, one tab per document), or "SeparateFiles" (a .zip with one .xlsx per document).
+public record BatchDocumentIdsRequestDto(List<Guid> DocumentIds, string ExportMode = "SingleSheet");
 
-public record BatchSendEmailRequestDto(List<Guid> DocumentIds, string ToAddress);
+public record BatchSendEmailRequestDto(List<Guid> DocumentIds, string ToAddress, string ExportMode = "SingleSheet");

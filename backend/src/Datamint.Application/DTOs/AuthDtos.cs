@@ -19,13 +19,12 @@ public record UserProfileDto(
     string? DisplayName,
     string Role,
     bool IsEmailVerified,
-    int FreeUploadsUsed,
-    int FreeUploadLimit,
-    bool HasActiveSubscription);
+    bool HasActiveSubscription,
+    bool IsSuperAdmin);
 
 public record GoogleUserInfoDto(string GoogleId, string Email, string? Name, bool EmailVerified);
 
-public record ProfileDto(Guid Id, string Email, string? DisplayName, string Role, bool IsEmailVerified, DateTime CreatedAtUtc, bool HasPassword);
+public record ProfileDto(Guid Id, string Email, string? DisplayName, string Role, bool IsEmailVerified, DateTime CreatedAtUtc, bool HasPassword, bool IsSuperAdmin);
 
 public record UpdateProfileRequestDto(string? DisplayName);
 

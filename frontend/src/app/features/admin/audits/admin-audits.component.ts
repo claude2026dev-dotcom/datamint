@@ -81,19 +81,19 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
               @for (log of visibleLogs; track log.id) {
                 <tr class="log-row" (click)="toggleExpand(log.id)">
                   <td class="chevron">{{ expandedId === log.id ? '▾' : '▸' }}</td>
-                  <td class="nowrap">{{ log.createdAtUtc | date:'medium' }}</td>
-                  <td>
+                  <td class="nowrap" data-label="When">{{ log.createdAtUtc | date:'medium' }}</td>
+                  <td data-label="User">
                     @if (log.userEmail) {
                       {{ log.userEmail }}
                     } @else {
                       <span class="anon-badge" title="No signed-in user was attached to this event — e.g. a failed login attempt, or an action taken before signing in.">Anonymous</span>
                     }
                   </td>
-                  <td><span class="badge" [style.background]="categoryColor(log.action).bg" [style.color]="categoryColor(log.action).fg">{{ categoryOf(log.action) }}</span></td>
-                  <td>{{ log.action }}</td>
-                  <td>{{ log.entityType }} {{ log.entityId ? '#' + log.entityId.substring(0,8) : '' }}</td>
-                  <td class="muted">{{ formatIp(log.ipAddress) }}</td>
-                  <td><span class="badge" [class.badge-ok]="log.isSuccess" [class.badge-fail]="!log.isSuccess">{{ log.isSuccess ? 'Success' : 'Failed' }}</span></td>
+                  <td data-label="Category"><span class="badge" [style.background]="categoryColor(log.action).bg" [style.color]="categoryColor(log.action).fg">{{ categoryOf(log.action) }}</span></td>
+                  <td data-label="Action">{{ log.action }}</td>
+                  <td data-label="Entity">{{ log.entityType }} {{ log.entityId ? '#' + log.entityId.substring(0,8) : '' }}</td>
+                  <td class="muted" data-label="IP">{{ formatIp(log.ipAddress) }}</td>
+                  <td data-label="Result"><span class="badge" [class.badge-ok]="log.isSuccess" [class.badge-fail]="!log.isSuccess">{{ log.isSuccess ? 'Success' : 'Failed' }}</span></td>
                 </tr>
                 @if (expandedId === log.id) {
                   <tr class="detail-row">
@@ -196,6 +196,31 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
       .filter-field { flex: 1 1 auto; }
       .clear-btn { align-self: stretch; }
       .pagination { flex-direction: column; align-items: flex-start; }
+
+      /* Same responsive-table-to-cards pattern as Admin > Users: every <td> with a
+         data-label becomes a labeled line; the chevron and detail/expand rows are
+         left alone since they're not part of that per-field grid. */
+      .table-wrap { overflow-x: visible; padding: 0; }
+      table, thead, tbody, th, tr, td { display: block; width: 100%; }
+      thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+      tr.log-row {
+        border: 1px solid var(--dm-border); border-radius: var(--dm-radius-sm);
+        margin-bottom: 10px; padding: 6px 0; background: var(--dm-bg-elevated);
+      }
+      tr.skeleton-row, tr.detail-row { border: none; background: none; }
+      td[data-label] {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 8px 14px; border-bottom: 1px solid var(--dm-border); white-space: normal; text-align: right;
+      }
+      td[data-label]:last-of-type { border-bottom: none; }
+      td[data-label]::before {
+        content: attr(data-label); font-weight: 600; font-size: 0.72rem; color: var(--dm-text-muted);
+        text-transform: uppercase; letter-spacing: 0.04em; text-align: left; flex-shrink: 0;
+      }
+      .chevron { position: absolute; top: 10px; right: 14px; padding: 0; border: none; }
+      .log-row { position: relative; }
+      .detail-panel { flex-direction: column; gap: 16px; }
+      .detail-json { max-width: 100%; }
     }
   `]
 })

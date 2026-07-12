@@ -32,7 +32,8 @@
           "options": {
             "ssl": true,
             "sslCert": ".certs/localhost.crt",
-            "sslKey": ".certs/localhost.key"
+            "sslKey": ".certs/localhost.key",
+            "proxyConfig": "proxy.conf.json"
           },
           "configurations": {
             "production": { "buildTarget": "datamint:build:production" },

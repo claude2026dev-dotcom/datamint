@@ -143,6 +143,53 @@ internal static class AiExtractionPromptHelper
             """;
     }
 
+    /// <summary>
+    /// Reconciles field labels across an entire batch of independently-extracted documents.
+    /// Deliberately conservative in tone ("only merge if confident") - a wrong merge that
+    /// conflates two genuinely different fields into one column is worse than leaving two
+    /// near-duplicate labels unmerged, so the prompt explicitly trades recall for precision.
+    /// </summary>
+    public static string BuildHarmonizationPrompt(IReadOnlyList<string> distinctKeys)
+    {
+        var keysJson = JsonSerializer.Serialize(distinctKeys);
+        return $$"""
+            You are an expert at analyzing structured business documents (invoices, receipts,
+            forms, contracts). The field labels below were extracted independently from
+            SEVERAL documents that were uploaded together as one batch. Some labels refer to
+            the exact same real-world piece of information but are worded differently purely
+            because each document phrases its own label differently - for example "Invoice
+            Number", "Invoice No", "Inv #", and "Invoice #" would all refer to the same field.
+
+            Your task: group together every label you are confident refers to the same
+            real-world field, and choose ONE clear, professional, standard name for each group
+            (Title Case, no abbreviations - e.g. "Invoice Number", not "Inv #" or
+            "invoice_number"). Every label in a group must map to that same chosen name,
+            including whichever label was itself picked as the canonical one.
+
+            Be conservative: only merge labels you are genuinely confident mean the same
+            thing. Two labels that merely sound similar but could plausibly refer to
+            different real-world concepts (e.g. "Customer Name" vs "Vendor Name", "Subtotal"
+            vs "Total Amount") must NOT be merged - keep each as its own canonical name
+            instead. A wrong merge that conflates two different fields is worse than leaving
+            two similar-looking labels unmerged.
+
+            LABELS (JSON array, exactly as extracted - do not alter their spelling when using them as object keys below):
+            {{keysJson}}
+
+            Respond with ONLY a JSON object mapping every single label above (as the object
+            key, character-for-character identical to the input) to its chosen canonical name
+            (as the value) - one entry per input label, no extra prose, no markdown fences.
+            Example shape:
+            {"Invoice No": "Invoice Number", "Invoice Number": "Invoice Number", "Inv #": "Invoice Number", "Customer Name": "Customer Name"}
+            """;
+    }
+
+    public static Dictionary<string, string> ParseHarmonizationMapping(string rawModelText)
+    {
+        var cleaned = CleanJsonText(rawModelText);
+        return JsonSerializer.Deserialize<Dictionary<string, string>>(cleaned, JsonOptions) ?? new Dictionary<string, string>();
+    }
+
     /// <summary>Flat-array response parser - used for Formatted mode, where every requested field has one canonical value.</summary>
     public static List<ExtractedFieldDto> ParseFieldsJson(string rawModelText)
     {

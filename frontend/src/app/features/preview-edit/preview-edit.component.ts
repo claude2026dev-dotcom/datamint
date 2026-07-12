@@ -6,19 +6,22 @@ import { DocumentService } from '../../core/services/document.service';
 import { ToastService } from '../../core/services/toast.service';
 import { ExtractedFieldEdit } from '../../core/models/models';
 import { IconComponent } from '../../shared/components/icon/icon.component';
+import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
+import { AutoGrowDirective } from '../../shared/directives/auto-grow.directive';
 
 @Component({
   selector: 'app-preview-edit',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, IconComponent],
+  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, AutoGrowDirective],
   template: `
     <div class="dm-container page">
+      <app-back-button fallbackUrl="/documents" />
       @if (notFound) {
         <div class="dm-card not-found-card">
           <div class="icon"><app-icon name="search" [size]="28" /></div>
           <h2>Document not found</h2>
-          <p class="muted">This link doesn't point to a document we can show you — it may not exist, or it may belong to someone else's account.</p>
-          <a routerLink="/upload" class="dm-btn dm-btn-primary">Upload a new PDF</a>
+          <p class="muted">We couldn't find that document. It may have been removed, or the link may be incorrect.</p>
+          <a routerLink="/" class="dm-btn dm-btn-primary">Back to home</a>
         </div>
       } @else if (loading) {
         <p class="muted">Loading…</p>
@@ -52,7 +55,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
                 <div class="original-label" [title]="'Detected label: ' + field.originalFieldKey">{{ field.originalFieldKey }}</div>
                 <input class="dm-input field-key" [(ngModel)]="field.fieldKey" (blur)="saveField(field)"
                        placeholder="Custom field name" title="Rename this field — used when exporting to Excel" />
-                <input class="dm-input" [(ngModel)]="field.fieldValue" (blur)="saveField(field)" />
+                <textarea class="dm-input field-value" rows="1" appAutoGrow [(ngModel)]="field.fieldValue" (blur)="saveField(field)"></textarea>
                 @if (field.wasEditedByUser) { <span class="edited-badge">edited</span> }
               </div>
             }
@@ -63,7 +66,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     </div>
   `,
   styles: [`
-    .page { padding: 40px 0 80px; }
+    .page { padding-top: 40px; padding-bottom: 80px; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     .actions { display: flex; gap: 10px; }
@@ -78,6 +81,10 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     .original-label { font-size: 0.72rem; color: var(--dm-text-muted); text-transform: uppercase; letter-spacing: 0.03em; padding: 0 4px; }
     .field-key { font-size: 0.85rem; font-weight: 600; border: none; background: transparent; padding: 2px 4px; margin-bottom: 2px; }
     .field-key:hover, .field-key:focus { border: 1px solid var(--dm-border); background: var(--dm-surface); }
+    /* A long value (an address, a description) needs to wrap and stay readable
+       instead of scrolling off inside a single-line box - resize: vertical lets
+       the user grow it further if two lines still aren't enough. */
+    .field-value { resize: vertical; min-height: 42px; line-height: 1.4; font-family: inherit; overflow-wrap: break-word; }
     .edited-badge { position: absolute; top: 0; right: 0; font-size: 0.7rem; color: var(--dm-accent); }
     @media (max-width: 700px) { .field-grid { grid-template-columns: 1fr; } .header { flex-direction: column; } }
   `]
@@ -105,6 +112,11 @@ export class PreviewEditComponent implements OnInit {
     return this.fields.filter(f => (f.pageNumber ?? 0) === page);
   }
 
+  // Snapshot of each field's key/value as last saved (or as loaded) - lets saveField
+  // tell "the user actually changed this" apart from "this input was merely clicked
+  // into and blurred", which used to save (and mark "edited") on every blur regardless.
+  private lastSaved: Record<string, { key: string; value: string | null }> = {};
+
   ngOnInit() {
     this.documentId = this.route.snapshot.paramMap.get('id')!;
     this.documentService.getDetail(this.documentId).subscribe({
@@ -113,6 +125,7 @@ export class PreviewEditComponent implements OnInit {
         this.pageCount = res.pageCount;
         this.requiresOcr = res.requiresOcr;
         this.fields = res.fields;
+        for (const f of this.fields) this.lastSaved[f.id] = { key: f.fieldKey, value: f.fieldValue };
         this.loading = false;
       },
       // 404 here means "doesn't exist, or belongs to someone else's account" -
@@ -124,8 +137,16 @@ export class PreviewEditComponent implements OnInit {
   }
 
   saveField(field: ExtractedFieldEdit) {
+    const previous = this.lastSaved[field.id];
+    if (previous && previous.key === field.fieldKey && previous.value === field.fieldValue) return;
+
     this.documentService.updateField(this.documentId, field.id, field.fieldValue ?? '', field.fieldKey).subscribe({
-      next: () => { field.wasEditedByUser = true; },
+      next: res => {
+        field.wasEditedByUser = res.field.wasEditedByUser;
+        field.fieldKey = res.field.fieldKey;
+        field.fieldValue = res.field.fieldValue;
+        this.lastSaved[field.id] = { key: field.fieldKey, value: field.fieldValue };
+      },
       error: () => this.toast.error('Could not save that change. Please try again.')
     });
   }

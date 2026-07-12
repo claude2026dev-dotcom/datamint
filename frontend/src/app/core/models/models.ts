@@ -4,9 +4,8 @@ export interface UserProfile {
   displayName?: string;
   role: 'User' | 'Admin';
   isEmailVerified: boolean;
-  freeUploadsUsed: number;
-  freeUploadLimit: number;
   hasActiveSubscription: boolean;
+  isSuperAdmin: boolean;
 }
 
 export interface AuthResponse {
@@ -24,7 +23,11 @@ export interface DocumentSummary {
   status: 'Uploaded' | 'Processing' | 'Extracted' | 'Reviewed' | 'Exported' | 'Failed';
   createdAtUtc: string;
   failureReason?: string;
+  fileSizeBytes: number;
+  uploadBatchId: string;
 }
+
+export type BatchExportMode = 'SingleSheet' | 'MultipleSheets' | 'SeparateFiles';
 
 export interface ExtractedFieldEdit {
   id: string;
@@ -42,6 +45,24 @@ export interface Plan {
   price: number;
   currency: string;
   billingCycle: 'Monthly' | 'Yearly';
-  monthlyUploadLimit: number;
+  monthlyPageLimit: number;
+  isRecurring: boolean;
   isActive: boolean;
+  isFreeTrial: boolean;
+}
+
+export interface SubscriptionStatus {
+  hasActiveSubscription: boolean;
+  planId?: string;
+  planName?: string;
+  price?: number;
+  currency?: string;
+  billingCycle?: 'Monthly' | 'Yearly';
+  status?: 'Active' | 'Cancelled' | 'PastDue' | 'Expired';
+  startAtUtc?: string;
+  endAtUtc?: string;
+  pagesUsedThisCycle: number;
+  monthlyPageLimit: number;
+  isRecurring: boolean;
+  cancelAtPeriodEnd: boolean;
 }

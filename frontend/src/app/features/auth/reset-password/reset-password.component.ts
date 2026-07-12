@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-reset-password',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, IconComponent],
   template: `
     <div class="auth-wrap">
       <div class="dm-card auth-card">
@@ -27,8 +28,13 @@ import { AuthService } from '../../../core/services/auth.service';
 
           <form (ngSubmit)="submit()" #f="ngForm">
             <label>New password</label>
-            <input class="dm-input" type="password" name="password" [(ngModel)]="password"
-                   required (ngModelChange)="errorMessage = ''" (focus)="showChecklist = true" />
+            <div class="password-field">
+              <input class="dm-input" [type]="showPassword ? 'text' : 'password'" name="password" [(ngModel)]="password"
+                     required (ngModelChange)="errorMessage = ''" (focus)="showChecklist = true" />
+              <button type="button" class="toggle-visibility" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'">
+                <app-icon [name]="showPassword ? 'eye-off' : 'eye'" [size]="18" />
+              </button>
+            </div>
 
             @if (showChecklist && password) {
               <ul class="checklist">
@@ -41,8 +47,13 @@ import { AuthService } from '../../../core/services/auth.service';
             }
 
             <label>Confirm new password</label>
-            <input class="dm-input" type="password" name="confirmPassword" [(ngModel)]="confirmPassword"
-                   required (ngModelChange)="errorMessage = ''" />
+            <div class="password-field">
+              <input class="dm-input" [type]="showConfirmPassword ? 'text' : 'password'" name="confirmPassword" [(ngModel)]="confirmPassword"
+                     required (ngModelChange)="errorMessage = ''" />
+              <button type="button" class="toggle-visibility" (click)="showConfirmPassword = !showConfirmPassword" [attr.aria-label]="showConfirmPassword ? 'Hide password' : 'Show password'">
+                <app-icon [name]="showConfirmPassword ? 'eye-off' : 'eye'" [size]="18" />
+              </button>
+            </div>
             @if (confirmPassword && confirmPassword !== password) {
               <p class="mismatch">Passwords don't match.</p>
             }
@@ -61,6 +72,14 @@ import { AuthService } from '../../../core/services/auth.service';
     .auth-card { width: 100%; max-width: 400px; padding: 32px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     label { display: block; margin: 14px 0 6px; font-size: 0.85rem; color: var(--dm-text-muted); }
+    .password-field { position: relative; display: flex; }
+    .password-field .dm-input { padding-right: 42px; }
+    .toggle-visibility {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; padding: 6px; cursor: pointer; color: var(--dm-text-muted);
+      display: flex; align-items: center; border-radius: var(--dm-radius-sm);
+    }
+    .toggle-visibility:hover { color: var(--dm-text); background: var(--dm-surface-hover); }
     .submit { width: 100%; margin-top: 20px; display: block; text-align: center; }
     .error-banner { background: rgba(239,68,68,0.1); border: 1px solid var(--dm-danger); color: var(--dm-danger); font-size: 0.85rem; padding: 10px 14px; border-radius: var(--dm-radius-sm); margin-bottom: 4px; }
     .checklist { list-style: none; padding: 10px 12px; margin: 8px 0 0; display: flex; flex-direction: column; gap: 4px; background: var(--dm-surface); border-radius: var(--dm-radius-sm); border: 1px solid var(--dm-border); }
@@ -73,6 +92,8 @@ export class ResetPasswordComponent implements OnInit {
   token = '';
   password = '';
   confirmPassword = '';
+  showPassword = false;
+  showConfirmPassword = false;
   loading = false;
   success = false;
   showChecklist = false;

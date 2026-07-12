@@ -14,4 +14,7 @@ public class UserRepository : GenericRepository<ApplicationUser>, IUserRepositor
 
     public Task<ApplicationUser?> GetByGoogleIdAsync(string googleId, CancellationToken ct = default) =>
         Set.FirstOrDefaultAsync(u => u.GoogleId == googleId, ct);
+
+    public Task<ApplicationUser?> GetByEmailIncludingDeletedAsync(string email, CancellationToken ct = default) =>
+        Set.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Email == email, ct);
 }

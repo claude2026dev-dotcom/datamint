@@ -15,9 +15,6 @@ public class DocumentRepository : GenericRepository<Document>, IDocumentReposito
     public Task<Document?> GetWithDetailsAsync(Guid id, CancellationToken ct = default) =>
         Set.Include(d => d.Pages).Include(d => d.ExtractedFields).FirstOrDefaultAsync(d => d.Id == id, ct);
 
-    public Task<int> CountAnonymousUploadsByIpAsync(string ipAddress, CancellationToken ct = default) =>
-        Set.CountAsync(d => d.UserId == null && d.UploaderIpAddress == ipAddress, ct);
-
     public void AddPage(DocumentPage page) => Db.Set<DocumentPage>().Add(page);
     public void AddExtractedField(ExtractedField field) => Db.Set<ExtractedField>().Add(field);
 }

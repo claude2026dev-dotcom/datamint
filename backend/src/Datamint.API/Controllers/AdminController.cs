@@ -20,14 +20,16 @@ public class AdminController : ControllerBase
     private readonly ICurrentUserService _currentUser;
     private readonly IAuthNotificationService _notify;
     private readonly IPasswordResetService _passwordReset;
+    private readonly ISessionService _sessions;
 
-    public AdminController(DatamintDbContext db, IAuditService audit, ICurrentUserService currentUser, IAuthNotificationService notify, IPasswordResetService passwordReset)
+    public AdminController(DatamintDbContext db, IAuditService audit, ICurrentUserService currentUser, IAuthNotificationService notify, IPasswordResetService passwordReset, ISessionService sessions)
     {
         _db = db;
         _audit = audit;
         _currentUser = currentUser;
         _notify = notify;
         _passwordReset = passwordReset;
+        _sessions = sessions;
     }
 
     [HttpGet("dashboard")]
@@ -50,23 +52,33 @@ public class AdminController : ControllerBase
     [HttpGet("audit-logs")]
     public async Task<IActionResult> GetAuditLogs([FromQuery] AuditLogFilterDto filter, CancellationToken ct)
     {
-        var query = _db.AuditLogs.Include(a => a.User).AsQueryable();
+        // Manual join against IgnoreQueryFilters() Users, not .Include(a => a.User): the global
+        // soft-delete filter would otherwise silently drop the join for any action performed by
+        // an account that has since been deleted, making a perfectly attributable audit entry
+        // (AuditLog.UserId is populated) display as "Anonymous" - misleading for a historical record
+        // that exists specifically to show who did what.
+        var query =
+            from a in _db.AuditLogs.AsQueryable()
+            join u in _db.Users.IgnoreQueryFilters() on a.UserId equals u.Id into users
+            from u in users.DefaultIfEmpty()
+            select new { AuditLog = a, User = u };
 
-        if (!string.IsNullOrWhiteSpace(filter.Action)) query = query.Where(a => a.Action.Contains(filter.Action));
-        if (filter.UserId is not null) query = query.Where(a => a.UserId == filter.UserId);
-        if (!string.IsNullOrWhiteSpace(filter.UserEmail)) query = query.Where(a => a.User != null && a.User.Email.Contains(filter.UserEmail));
-        if (filter.FromUtc is not null) query = query.Where(a => a.CreatedAtUtc >= filter.FromUtc);
-        if (filter.ToUtc is not null) query = query.Where(a => a.CreatedAtUtc <= filter.ToUtc);
-        if (filter.IsSuccess is not null) query = query.Where(a => a.IsSuccess == filter.IsSuccess);
+        if (!string.IsNullOrWhiteSpace(filter.Action)) query = query.Where(x => x.AuditLog.Action.Contains(filter.Action));
+        if (filter.UserId is not null) query = query.Where(x => x.AuditLog.UserId == filter.UserId);
+        if (!string.IsNullOrWhiteSpace(filter.UserEmail)) query = query.Where(x => x.User != null && x.User.Email.Contains(filter.UserEmail));
+        if (filter.FromUtc is not null) query = query.Where(x => x.AuditLog.CreatedAtUtc >= filter.FromUtc);
+        if (filter.ToUtc is not null) query = query.Where(x => x.AuditLog.CreatedAtUtc <= filter.ToUtc);
+        if (filter.IsSuccess is not null) query = query.Where(x => x.AuditLog.IsSuccess == filter.IsSuccess);
 
         var total = await query.CountAsync(ct);
         var asc = string.Equals(filter.SortDir, "asc", StringComparison.OrdinalIgnoreCase);
-        query = asc ? query.OrderBy(a => a.CreatedAtUtc) : query.OrderByDescending(a => a.CreatedAtUtc);
+        query = asc ? query.OrderBy(x => x.AuditLog.CreatedAtUtc) : query.OrderByDescending(x => x.AuditLog.CreatedAtUtc);
 
         var items = await query
             .Skip((filter.Page - 1) * filter.PageSize)
             .Take(filter.PageSize)
-            .Select(a => new AuditLogDto(a.Id, a.User != null ? a.User.Email : null, a.Action, a.EntityType, a.EntityId, a.Details, a.IpAddress, a.UserAgent, a.IsSuccess, a.CreatedAtUtc))
+            .Select(x => new AuditLogDto(x.AuditLog.Id, x.User != null ? x.User.Email : null, x.AuditLog.Action, x.AuditLog.EntityType,
+                x.AuditLog.EntityId, x.AuditLog.Details, x.AuditLog.IpAddress, x.AuditLog.UserAgent, x.AuditLog.IsSuccess, x.AuditLog.CreatedAtUtc))
             .ToListAsync(ct);
 
         return Ok(new { success = true, items, total, filter.Page, filter.PageSize });
@@ -100,7 +112,7 @@ public class AdminController : ControllerBase
             .Select(u => new AdminUserListItemDto(u.Id, u.Email, u.DisplayName, u.Role, u.IsActive,
                 _db.Subscriptions.Where(s => s.UserId == u.Id && s.Status == SubscriptionStatus.Active)
                     .OrderByDescending(s => s.StartAtUtc).Select(s => s.Plan.Name).FirstOrDefault(),
-                u.CreatedAtUtc, u.LastLoginAtUtc, u.PasswordHash != null))
+                u.CreatedAtUtc, u.LastLoginAtUtc, u.PasswordHash != null, u.IsSuperAdmin))
             .ToListAsync(ct);
 
         return Ok(new { success = true, items, total, filter.Page, filter.PageSize });
@@ -113,8 +125,11 @@ public class AdminController : ControllerBase
 
         var user = await _db.Users.FindAsync(new object[] { id }, ct);
         if (user is null) return NotFound(new { success = false, message = "User not found." });
+        if (user.IsSuperAdmin) return BadRequest(new { success = false, message = "The super admin account can't be disabled." });
         var wasActive = user.IsActive;
         user.IsActive = !user.IsActive;
+        if (!user.IsActive)
+            await _sessions.RevokeAllSessionsAsync(user, ct); // disabling: kill every existing session immediately, not just at next token expiry
         await _db.SaveChangesAsync(ct);
         await _audit.LogAsync(user.IsActive ? "Admin.UserEnabled" : "Admin.UserDisabled", _currentUser.UserId, "User", user.Id.ToString(),
             BuildDiff(("isActive", wasActive, user.IsActive)), ct: ct);
@@ -154,6 +169,7 @@ public class AdminController : ControllerBase
         {
             if (dto.Role != "Admin" && dto.Role != "User") return BadRequest(new { success = false, message = "Role must be 'Admin' or 'User'." });
             if (id == _currentUser.UserId && dto.Role != "Admin") return BadRequest(new { success = false, message = "You can't remove your own admin role." });
+            if (user.IsSuperAdmin && dto.Role != "Admin") return BadRequest(new { success = false, message = "The super admin account's role can't be changed." });
             user.Role = dto.Role;
         }
         if (dto.DisplayName is not null) user.DisplayName = dto.DisplayName.Trim();
@@ -171,6 +187,7 @@ public class AdminController : ControllerBase
 
         var user = await _db.Users.FindAsync(new object[] { id }, ct);
         if (user is null) return NotFound(new { success = false, message = "User not found." });
+        if (user.IsSuperAdmin) return BadRequest(new { success = false, message = "The super admin account can't be deleted." });
 
         var snapshot = JsonSerializer.Serialize(new { user.Email, user.DisplayName, user.Role });
         var email = user.Email;
@@ -178,6 +195,7 @@ public class AdminController : ControllerBase
 
         user.IsActive = false;
         user.IsDeleted = true;
+        await _sessions.RevokeAllSessionsAsync(user, ct);
         await _db.SaveChangesAsync(ct);
         await _audit.LogAsync("Admin.UserDeleted", _currentUser.UserId, "User", user.Id.ToString(), snapshot, ct: ct);
         await _notify.SendAccountDeletedEmailAsync(email, displayName, ct);
@@ -192,8 +210,8 @@ public class AdminController : ControllerBase
         // instead of a bare integer, and so admins can see how many active
         // subscribers a plan has before deciding to hide/delete it.
         var plans = await _db.Plans
-            .Select(p => new AdminPlanDto(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyUploadLimit, p.IsActive,
-                _db.Subscriptions.Count(s => s.PlanId == p.Id && s.Status == SubscriptionStatus.Active)))
+            .Select(p => new AdminPlanDto(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyPageLimit, p.IsRecurring, p.IsActive,
+                _db.Subscriptions.Count(s => s.PlanId == p.Id && s.Status == SubscriptionStatus.Active), p.IsFreeTrial))
             .ToListAsync(ct);
         return Ok(new { success = true, plans });
     }
@@ -208,11 +226,20 @@ public class AdminController : ControllerBase
             Price = dto.Price,
             Currency = dto.Currency,
             BillingCycle = Enum.Parse<PlanBillingCycle>(dto.BillingCycle),
-            MonthlyUploadLimit = dto.MonthlyUploadLimit
+            MonthlyPageLimit = dto.MonthlyPageLimit,
+            IsRecurring = dto.IsRecurring,
+            IsFreeTrial = dto.IsFreeTrial
         };
         _db.Plans.Add(plan);
+
+        // Only one plan can ever be THE free trial - flagging a new one un-flags
+        // whichever plan held it before, rather than leaving two plans both claiming
+        // to be it (which would make EnsureFreePlanActivatedAsync's lookup ambiguous).
+        if (dto.IsFreeTrial)
+            await UnflagOtherFreeTrialPlansAsync(plan.Id, ct);
+
         await _db.SaveChangesAsync(ct);
-        var snapshot = JsonSerializer.Serialize(new { plan.Name, plan.Price, plan.Currency, BillingCycle = plan.BillingCycle.ToString(), plan.MonthlyUploadLimit });
+        var snapshot = JsonSerializer.Serialize(new { plan.Name, plan.Price, plan.Currency, BillingCycle = plan.BillingCycle.ToString(), plan.MonthlyPageLimit });
         await _audit.LogAsync("Admin.PlanCreated", _currentUser.UserId, "Plan", plan.Id.ToString(), snapshot, ct: ct);
         return Ok(new { success = true, plan = ToAdminPlanDto(plan, 0) });
     }
@@ -228,14 +255,22 @@ public class AdminController : ControllerBase
         var previousPrice = plan.Price;
         var previousCurrency = plan.Currency;
         var previousBillingCycle = plan.BillingCycle;
-        var previousUploadLimit = plan.MonthlyUploadLimit;
+        var previousPageLimit = plan.MonthlyPageLimit;
+        var previousIsRecurring = plan.IsRecurring;
+        var previousIsFreeTrial = plan.IsFreeTrial;
 
         plan.Name = dto.Name;
         plan.Description = dto.Description;
         plan.Price = dto.Price;
         plan.Currency = dto.Currency;
         plan.BillingCycle = Enum.Parse<PlanBillingCycle>(dto.BillingCycle);
-        plan.MonthlyUploadLimit = dto.MonthlyUploadLimit;
+        plan.MonthlyPageLimit = dto.MonthlyPageLimit;
+        plan.IsRecurring = dto.IsRecurring;
+        plan.IsFreeTrial = dto.IsFreeTrial;
+
+        if (dto.IsFreeTrial)
+            await UnflagOtherFreeTrialPlansAsync(plan.Id, ct);
+
         await _db.SaveChangesAsync(ct);
 
         var diff = BuildDiff(
@@ -244,10 +279,18 @@ public class AdminController : ControllerBase
             ("price", previousPrice, plan.Price),
             ("currency", previousCurrency, plan.Currency),
             ("billingCycle", previousBillingCycle.ToString(), plan.BillingCycle.ToString()),
-            ("monthlyUploadLimit", previousUploadLimit, plan.MonthlyUploadLimit));
+            ("monthlyPageLimit", previousPageLimit, plan.MonthlyPageLimit),
+            ("isRecurring", previousIsRecurring, plan.IsRecurring),
+            ("isFreeTrial", previousIsFreeTrial, plan.IsFreeTrial));
         await _audit.LogAsync("Admin.PlanUpdated", _currentUser.UserId, "Plan", plan.Id.ToString(), diff, ct: ct);
         var subscriberCount = await _db.Subscriptions.CountAsync(s => s.PlanId == plan.Id && s.Status == SubscriptionStatus.Active, ct);
         return Ok(new { success = true, plan = ToAdminPlanDto(plan, subscriberCount) });
+    }
+
+    private async Task UnflagOtherFreeTrialPlansAsync(Guid keepPlanId, CancellationToken ct)
+    {
+        var others = await _db.Plans.Where(p => p.IsFreeTrial && p.Id != keepPlanId).ToListAsync(ct);
+        foreach (var other in others) other.IsFreeTrial = false;
     }
 
     [HttpDelete("plans/{id:guid}")]
@@ -268,7 +311,7 @@ public class AdminController : ControllerBase
     }
 
     private static AdminPlanDto ToAdminPlanDto(Domain.Entities.Plan p, int activeSubscribers) =>
-        new(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyUploadLimit, p.IsActive, activeSubscribers);
+        new(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyPageLimit, p.IsRecurring, p.IsActive, activeSubscribers, p.IsFreeTrial);
 
     [HttpPut("plans/{id:guid}/toggle-active")]
     public async Task<IActionResult> TogglePlanActive(Guid id, CancellationToken ct)

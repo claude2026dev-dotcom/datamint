@@ -12,7 +12,7 @@ export type IconName =
   | 'tool' | 'log-out' | 'edit' | 'key' | 'pause' | 'play' | 'trash'
   | 'alert-triangle' | 'dollar-sign' | 'inbox' | 'upload-cloud' | 'cpu'
   | 'sparkles' | 'chevron-left' | 'menu' | 'arrow-right' | 'scan' | 'grid'
-  | 'file' | 'shield' | 'close';
+  | 'file' | 'shield' | 'close' | 'sun' | 'moon' | 'monitor' | 'eye' | 'eye-off';
 
 @Component({
   selector: 'app-icon',
@@ -113,12 +113,34 @@ export type IconName =
           <rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1"/>
           <rect x="3.5" y="13" width="7.5" height="7.5" rx="1"/><rect x="13" y="13" width="7.5" height="7.5" rx="1"/>
         }
+        @case ('sun') {
+          <circle cx="12" cy="12" r="4.2"/>
+          <line x1="12" y1="2.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21.5"/>
+          <line x1="2.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21.5" y2="12"/>
+          <line x1="4.9" y1="4.9" x2="6.6" y2="6.6"/><line x1="17.4" y1="17.4" x2="19.1" y2="19.1"/>
+          <line x1="4.9" y1="19.1" x2="6.6" y2="17.4"/><line x1="17.4" y1="6.6" x2="19.1" y2="4.9"/>
+        }
+        @case ('moon') {
+          <path d="M20 13.5A8.5 8.5 0 1 1 10.5 4a6.7 6.7 0 0 0 9.5 9.5z"/>
+        }
+        @case ('monitor') {
+          <rect x="2.5" y="4" width="19" height="13" rx="1.5"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+        }
+        @case ('eye') {
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3.2"/>
+        }
+        @case ('eye-off') {
+          <path d="M3.5 3.5l17 17"/>
+          <path d="M10.6 5.2A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a15.6 15.6 0 0 1-3.4 4.3"/>
+          <path d="M6.5 6.7C4 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 3.4-.6"/>
+          <path d="M9.5 9.7a3.2 3.2 0 0 0 4.4 4.5"/>
+        }
       }
     </svg>
   `,
   styles: [`
     :host { display: inline-flex; line-height: 0; }
-    .dm-icon { display: block; }
+    .dm-icon { display: block; transition: transform 0.18s ease; }
   `]
 })
 export class IconComponent {

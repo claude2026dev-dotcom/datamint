@@ -30,18 +30,22 @@ import { ToastService } from '../../../core/services/toast.service';
     </div>
   `,
   styles: [`
-    .dm-toast-stack { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; max-width: 360px; }
+    .dm-toast-stack {
+      position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column-reverse; gap: 10px;
+      max-width: 360px; max-height: calc(100vh - 40px); overflow-y: auto; padding: 2px; /* padding avoids clipping each toast's own shadow/focus ring */
+    }
     .dm-toast {
-      display: flex; align-items: center; gap: 10px;
+      display: flex; align-items: flex-start; gap: 10px;
       background: var(--dm-surface); border: 1px solid var(--dm-border);
       color: var(--dm-text); padding: 12px 14px; border-radius: var(--dm-radius-sm);
-      box-shadow: var(--dm-shadow); font-size: 0.9rem;
+      box-shadow: var(--dm-shadow); font-size: 0.9rem; flex-shrink: 0;
     }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dm-primary); flex-shrink: 0; }
+    .dm-toast span:not(.dot) { word-break: break-word; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dm-primary); flex-shrink: 0; margin-top: 6px; }
     .dm-toast.success .dot { background: var(--dm-success); }
     .dm-toast.error .dot { background: var(--dm-danger); }
     .dm-toast.info .dot { background: var(--dm-accent); }
-    button { margin-left: auto; background: none; border: none; color: var(--dm-text-muted); cursor: pointer; font-size: 1rem; }
+    button { margin-left: auto; background: none; border: none; color: var(--dm-text-muted); cursor: pointer; font-size: 1rem; flex-shrink: 0; }
     @media (max-width: 480px) { .dm-toast-stack { left: 16px; right: 16px; max-width: none; } }
   `]
 })

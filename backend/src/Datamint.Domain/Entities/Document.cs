@@ -8,9 +8,17 @@ namespace Datamint.Domain.Entities;
 /// </summary>
 public class Document : BaseEntity
 {
-    public Guid? UserId { get; set; }               // nullable: anonymous free-tier uploads before login
+    // Nullable at the DB level only for rows created before uploads required sign-in;
+    // every document created going forward always has a real owner.
+    public Guid? UserId { get; set; }
     public ApplicationUser? User { get; set; }
-    public string? UploaderIpAddress { get; set; }  // anonymous free-tier limit is enforced against this server-side (client-reported counters can't be trusted)
+    public string? UploaderIpAddress { get; set; }  // kept for reference/abuse investigation only
+
+    // Every file in the same upload request shares this value (assigned once by
+    // DocumentsController.Upload); a lone/single-file upload just gets a value nobody
+    // else shares. Lets the frontend's "My documents" list group files that were
+    // uploaded together back into one bulk entry instead of listing them separately.
+    public Guid UploadBatchId { get; set; } = Guid.NewGuid();
 
     public string OriginalFileName { get; set; } = default!;
     public string StoredFilePath { get; set; } = default!;

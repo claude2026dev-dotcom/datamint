@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
-import { Plan } from '../models/models';
+import { Plan, SubscriptionStatus } from '../models/models';
 
 @Injectable({ providedIn: 'root' })
 export class SubscriptionService {
@@ -12,8 +12,7 @@ export class SubscriptionService {
   }
 
   getStatus() {
-    return this.http.get<{ success: boolean; status: { hasActiveSubscription: boolean; planName?: string; endAtUtc?: string; uploadsUsedThisCycle: number; monthlyUploadLimit: number } }>(
-      `${environment.apiBaseUrl}/subscription/status`);
+    return this.http.get<{ success: boolean; status: SubscriptionStatus }>(`${environment.apiBaseUrl}/subscription/status`);
   }
 
   activateFreePlan(planId: string) {
@@ -28,5 +27,9 @@ export class SubscriptionService {
 
   verifyPayment(payload: { planId: string; razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature: string }) {
     return this.http.post<{ success: boolean; message: string }>(`${environment.apiBaseUrl}/subscription/checkout/verify`, payload);
+  }
+
+  cancelSubscription() {
+    return this.http.post<{ success: boolean; message: string }>(`${environment.apiBaseUrl}/subscription/cancel`, {});
   }
 }

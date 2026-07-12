@@ -1,11 +1,45 @@
 // ===== Datamint design tokens =====
 // A single indigo/violet "data intelligence" theme used across every page,
 // so nothing looks like mismatched default Bootstrap/Material components.
+// Light is the default palette; [data-theme="dark"] (set by ThemeService,
+// based on saved preference or the OS `prefers-color-scheme`) overrides it.
 :root {
   // Tells the browser to render native form controls (date-picker icon,
-  // scrollbars, etc.) with dark-appropriate colors - without this, Chrome
-  // draws the <input type="date"> calendar icon in black, which is
-  // essentially invisible against this app's near-black inputs.
+  // scrollbars, etc.) with theme-appropriate colors - without this, a
+  // light-theme <input type="date"> would get a dark-rendered calendar
+  // icon that's hard to see against a light background, and vice versa.
+  color-scheme: light;
+
+  --dm-bg: #f4f5fa;
+  --dm-bg-elevated: #ffffff;
+  --dm-surface: #ffffff;
+  --dm-surface-hover: #eef0f8;
+  --dm-border: #e1e4ee;
+
+  --dm-primary: #6366f1;      // indigo
+  --dm-primary-light: #818cf8;
+  --dm-accent: #0891b2;       // darker cyan for "data" highlights - keeps AA contrast on a light surface
+  --dm-success: #16a34a;
+  --dm-warning: #b45309;
+  --dm-danger: #dc2626;
+  --dm-danger-contrast-text: #ffffff; // text/icon color to put ON a --dm-danger-filled surface (e.g. a solid danger button)
+
+  --dm-text: #14161f;
+  --dm-text-muted: #5b6072;
+
+  --dm-nav-bg: rgba(255, 255, 255, 0.85);
+
+  --dm-radius-sm: 8px;
+  --dm-radius-md: 14px;
+  --dm-radius-lg: 22px;
+
+  --dm-shadow: 0 8px 30px rgba(20, 22, 31, 0.10);
+  --dm-gradient-primary: linear-gradient(135deg, #6366f1 0%, #22d3ee 100%);
+
+  --dm-font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+:root[data-theme='dark'] {
   color-scheme: dark;
 
   --dm-bg: #0b0e17;
@@ -14,22 +48,18 @@
   --dm-surface-hover: #1e2540;
   --dm-border: #262e4a;
 
-  --dm-primary: #6366f1;      // indigo
+  --dm-primary: #6366f1;
   --dm-primary-light: #818cf8;
-  --dm-accent: #22d3ee;       // cyan accent for "data" highlights
+  --dm-accent: #22d3ee;
   --dm-success: #34d399;
   --dm-warning: #fbbf24;
   --dm-danger: #f87171;
+  --dm-danger-contrast-text: #2a0a0a;
 
   --dm-text: #e5e7f0;
   --dm-text-muted: #9095b3;
 
-  --dm-radius-sm: 8px;
-  --dm-radius-md: 14px;
-  --dm-radius-lg: 22px;
+  --dm-nav-bg: rgba(11, 14, 23, 0.85);
 
-  --dm-shadow: 0 8px 30px rgba(0,0,0,0.35);
-  --dm-gradient-primary: linear-gradient(135deg, #6366f1 0%, #22d3ee 100%);
-
-  --dm-font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --dm-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
 }

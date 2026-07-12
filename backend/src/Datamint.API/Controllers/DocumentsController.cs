@@ -22,10 +22,12 @@ public class DocumentsController : ControllerBase
     private readonly ICurrentUserService _currentUser;
     private readonly IConfiguration _config;
     private readonly DatamintDbContext _db;
+    private readonly IPdfTextExtractionService _textExtraction;
 
     public DocumentsController(
         DocumentProcessingService service, IDocumentRepository documents, IUserRepository users,
-        ICurrentUserService currentUser, IConfiguration config, DatamintDbContext db)
+        ICurrentUserService currentUser, IConfiguration config, DatamintDbContext db,
+        IPdfTextExtractionService textExtraction)
     {
         _service = service;
         _documents = documents;
@@ -33,15 +35,13 @@ public class DocumentsController : ControllerBase
         _currentUser = currentUser;
         _config = config;
         _db = db;
+        _textExtraction = textExtraction;
     }
 
     /// <summary>
-    /// Uploads one or more PDFs. Anonymous users get up to
-    /// DocumentProcessingService.FreeUploadLimit uploads total, enforced
-    /// server-side against the caller's IP address (never trust a client-supplied
-    /// counter for this). Logged-in users must have an active subscription with
-    /// remaining monthly capacity; otherwise they're redirected to /plans exactly
-    /// like an anonymous user who hit the free limit.
+    /// Uploads one or more PDFs. Requires sign-in - quota is enforced purely against the
+    /// caller's own chosen Plan/subscription, never a client-supplied counter or anything
+    /// tracked before they have an account.
     /// </summary>
     [HttpPost("upload")]
     [EnforcesUploadLimit]
@@ -52,6 +52,10 @@ public class DocumentsController : ControllerBase
         [FromForm] string? requestedFields = null,
         CancellationToken ct = default)
     {
+        var userId = _currentUser.UserId;
+        if (userId is null)
+            return StatusCode(401, new { success = false, message = "Please sign in to upload and extract documents.", errorCode = "LOGIN_REQUIRED" });
+
         if (files is null || files.Count == 0)
             return BadRequest(new { success = false, message = "Please select at least one PDF file to upload." });
 
@@ -59,67 +63,91 @@ public class DocumentsController : ControllerBase
         if (isFormatted && string.IsNullOrWhiteSpace(requestedFields))
             return BadRequest(new { success = false, message = "List the field names to extract, separated by commas, or switch to Dynamic mode." });
 
-        var userId = _currentUser.UserId;
-        Domain.Entities.Subscription? subscription = null;
+        // A cancelled plan still works until its paid-for period ends - only Status ==
+        // Active plans that have actually lapsed (past EndAtUtc, never renewed) are excluded.
+        var subscription = await _db.Subscriptions
+            .Include(s => s.Plan)
+            .Where(s => s.UserId == userId
+                && (s.Status == SubscriptionStatus.Active || (s.Status == SubscriptionStatus.Cancelled && s.EndAtUtc > DateTime.UtcNow)))
+            .OrderByDescending(s => s.StartAtUtc)
+            .FirstOrDefaultAsync(ct);
 
-        if (userId is null)
+        var hasUnlimitedPlan = subscription?.Plan.MonthlyPageLimit == -1;
+        var overLimit = subscription is null
+            || (!hasUnlimitedPlan && subscription.PagesUsedThisCycle >= subscription.Plan.MonthlyPageLimit);
+
+        if (overLimit)
         {
-            var ip = _currentUser.IpAddress ?? "unknown";
-            var alreadyUsed = await _documents.CountAnonymousUploadsByIpAsync(ip, ct);
-            if (alreadyUsed + files.Count > DocumentProcessingService.FreeUploadLimit)
+            return StatusCode(402, new
             {
-                return StatusCode(402, new
-                {
-                    success = false,
-                    message = "You've used your 2 free extractions. Please sign in and choose a plan to continue.",
-                    errorCode = "FREE_LIMIT_REACHED",
-                    redirectTo = "/plans"
-                });
-            }
-        }
-        else
-        {
-            subscription = await _db.Subscriptions
-                .Include(s => s.Plan)
-                .Where(s => s.UserId == userId && s.Status == SubscriptionStatus.Active)
-                .OrderByDescending(s => s.StartAtUtc)
-                .FirstOrDefaultAsync(ct);
-
-            var hasUnlimitedPlan = subscription?.Plan.MonthlyUploadLimit == -1;
-            var overLimit = subscription is null
-                || (!hasUnlimitedPlan && subscription.UploadsUsedThisCycle + files.Count > subscription.Plan.MonthlyUploadLimit);
-
-            if (overLimit)
-            {
-                return StatusCode(402, new
-                {
-                    success = false,
-                    message = subscription is null
-                        ? "Please choose a plan to start extracting data."
-                        : "You've reached your plan's monthly upload limit. Please upgrade to continue.",
-                    errorCode = "PLAN_LIMIT_REACHED",
-                    redirectTo = "/plans"
-                });
-            }
+                success = false,
+                message = subscription is null
+                    ? "Please choose a plan to start extracting data."
+                    : subscription.Plan.IsRecurring
+                        ? "You've used all the pages in your current billing cycle. Please upgrade to continue."
+                        : "You've used up your plan's page allowance. Please upgrade to continue.",
+                errorCode = "PLAN_LIMIT_REACHED",
+                redirectTo = "/plans"
+            });
         }
 
-        var uploadsRoot = _config["FileStorage:UploadsRootPath"] ?? "./uploads";
-        Directory.CreateDirectory(uploadsRoot);
-
-        var results = new List<DocumentSummaryDto>();
         foreach (var file in files)
         {
             if (Path.GetExtension(file.FileName).ToLowerInvariant() != ".pdf")
                 return BadRequest(new { success = false, message = $"'{file.FileName}' is not a PDF file." });
+        }
 
-            var storedName = $"{Guid.NewGuid()}.pdf";
-            var storedPath = Path.Combine(uploadsRoot, storedName);
+        // Every document created below shares this id, marking them as one upload batch -
+        // lets the frontend's "My documents" list show a multi-file upload as one grouped
+        // entry (linking to the combined batch review) instead of as separate rows.
+        var uploadBatchId = Guid.NewGuid();
+
+        var uploadsRoot = _config["FileStorage:UploadsRootPath"] ?? "./uploads";
+        Directory.CreateDirectory(uploadsRoot);
+
+        var saved = new List<(IFormFile File, string StoredPath)>();
+        foreach (var file in files)
+        {
+            var storedPath = Path.Combine(uploadsRoot, $"{Guid.NewGuid()}.pdf");
             await using (var stream = new FileStream(storedPath, FileMode.Create))
                 await file.CopyToAsync(stream, ct);
+            saved.Add((file, storedPath));
+        }
 
+        // Every file's page count has to be known BEFORE any AI extraction runs, so the
+        // whole batch can be gated against remaining quota up front instead of letting it
+        // all through and only charging (i.e. discovering the overage) afterwards. This
+        // read-only PdfPig pass is the same one ProcessDocumentAsync would otherwise redo,
+        // so its result is carried forward below instead of re-parsing each file twice.
+        var textResults = new List<PdfTextExtractionResultDto>();
+        foreach (var (_, storedPath) in saved)
+            textResults.Add(await _textExtraction.ExtractTextAsync(storedPath, ct));
+
+        var totalPages = textResults.Sum(r => r.PageCount);
+        if (!hasUnlimitedPlan && totalPages > subscription!.Plan.MonthlyPageLimit - subscription.PagesUsedThisCycle)
+        {
+            foreach (var (_, storedPath) in saved)
+            {
+                if (System.IO.File.Exists(storedPath)) System.IO.File.Delete(storedPath);
+            }
+
+            var remaining = subscription.Plan.MonthlyPageLimit - subscription.PagesUsedThisCycle;
+            return StatusCode(402, new
+            {
+                success = false,
+                message = $"This upload has {totalPages} page(s) in total, but your plan only has {remaining} page(s) remaining. Remove some files or upgrade your plan.",
+                errorCode = "PLAN_LIMIT_REACHED",
+                redirectTo = "/plans"
+            });
+        }
+
+        var results = new List<DocumentSummaryDto>();
+        for (var i = 0; i < saved.Count; i++)
+        {
+            var (file, storedPath) = saved[i];
             var result = await _service.UploadAndQueueAsync(
-                userId, file.FileName, storedPath, file.Length, _currentUser.IpAddress,
-                isFormatted ? "Formatted" : "Dynamic", isFormatted ? requestedFields : null, ct);
+                userId.Value, file.FileName, storedPath, file.Length, _currentUser.IpAddress,
+                isFormatted ? "Formatted" : "Dynamic", isFormatted ? requestedFields : null, uploadBatchId, ct);
             if (!result.Succeeded)
                 return BadRequest(new { success = false, message = result.Error });
 
@@ -132,16 +160,27 @@ public class DocumentsController : ControllerBase
             // reload, network blip, tab close) must not abort processing that's
             // already underway - the document should still finish extracting even
             // if this particular response never reaches the browser.
-            var processed = await _service.ProcessDocumentAsync(result.Data!.Id, CancellationToken.None);
+            var processed = await _service.ProcessDocumentAsync(result.Data!.Id, textResults[i], CancellationToken.None);
             // Add the POST-processing summary (Status reflects whether extraction actually
             // succeeded), not the pre-processing one - otherwise a failed extraction still
             // looks like "Uploaded" to the frontend with no explanation of what went wrong.
             results.Add(processed.Succeeded ? processed.Data! : result.Data!);
         }
 
+        // Only meaningful for an actual multi-file batch - reconciles field labels across
+        // the documents that just extracted (e.g. "Invoice No" vs "Invoice Number") so the
+        // combined batch view/export puts matching fields in the same column. Runs before
+        // the response goes out so the frontend's very next detail fetch already sees the
+        // harmonized names, not a stale pre-harmonization set it'd have to re-fetch to see.
+        if (results.Count > 1)
+            await _service.HarmonizeBatchFieldKeysAsync(results.Select(d => d.Id).ToList(), CancellationToken.None);
+
         if (subscription is not null)
         {
-            subscription.UploadsUsedThisCycle += files.Count;
+            // Charged in actual extracted pages - a failed extraction (PageCount still
+            // reported since text extraction succeeded even if the AI call failed) still
+            // counts, since the quota gate above already confirmed the whole batch fits.
+            subscription.PagesUsedThisCycle += results.Sum(d => d.PageCount);
             await _db.SaveChangesAsync(ct);
         }
 
@@ -149,23 +188,26 @@ public class DocumentsController : ControllerBase
     }
 
     /// <summary>
-    /// Anonymous (unowned) documents are viewable by anyone with the id, matching the
-    /// anonymous upload flow. Documents owned by a user are only viewable by that user -
-    /// and if someone else's shared link ends up on your screen, we deliberately don't
-    /// distinguish "not yours" from "doesn't exist": an unauthenticated visitor is asked
-    /// to sign in (they might be the actual owner in a fresh session), while a different
-    /// logged-in user gets the same 404 as a genuinely missing document, so a shared URL
-    /// never confirms someone else's document even exists.
+    /// A document can only ever be viewed by its owner. If someone else's shared link ends up
+    /// on your screen, we deliberately don't distinguish "not yours" from "doesn't exist": an
+    /// unauthenticated visitor is asked to sign in, while a different logged-in user gets the
+    /// same 404 as a genuinely missing document, so a shared URL never confirms someone else's
+    /// document even exists.
     /// </summary>
     private async Task<(Domain.Entities.Document? document, IActionResult? error)> GetOwnedDocumentAsync(Guid id, CancellationToken ct)
     {
         var document = await _documents.GetWithDetailsAsync(id, ct);
         if (document is null) return (null, NotFound(new { success = false, message = "Document not found." }));
 
-        if (document.UserId is not null && document.UserId != _currentUser.UserId)
+        // Note: null-safe on purpose, not a plain `!=` - null != null is false in C#, which would
+        // let an unauthenticated visitor view any document with no owner as if it were "theirs".
+        // Uploads always require sign-in now, so document.UserId should never be null for a
+        // document created going forward; this only matters for pre-existing legacy rows.
+        var isOwner = document.UserId is not null && document.UserId == _currentUser.UserId;
+        if (!isOwner)
         {
             if (_currentUser.UserId is null)
-                return (null, StatusCode(401, new { success = false, message = "Please sign in to view this document.", errorCode = "LOGIN_REQUIRED" }));
+                return (null, StatusCode(401, new { success = false, message = "Please sign in to view your extracted data.", errorCode = "LOGIN_REQUIRED" }));
 
             return (null, NotFound(new { success = false, message = "Document not found." }));
         }
@@ -208,7 +250,7 @@ public class DocumentsController : ControllerBase
         if (error is not null) return error;
 
         var result = await _service.UpdateFieldAsync(id, dto.FieldId, dto.NewValue, dto.NewKey, ct);
-        return result.Succeeded ? Ok(new { success = true }) : NotFound(new { success = false, message = result.Error });
+        return result.Succeeded ? Ok(new { success = true, field = result.Data }) : NotFound(new { success = false, message = result.Error });
     }
 
     [HttpGet("{id:guid}/export")]
@@ -257,9 +299,12 @@ public class DocumentsController : ControllerBase
         var (documents, error) = await GetOwnedDocumentsAsync(dto.DocumentIds, ct);
         if (error is not null) return error;
 
-        var result = await _service.ExportBatchToExcelAsync(documents!, ct);
+        var result = await _service.ExportBatchToExcelAsync(documents!, dto.ExportMode, ct);
         if (!result.Succeeded) return NotFound(new { success = false, message = result.Error });
-        return File(result.Data!, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "datamint-batch-export.xlsx");
+
+        return dto.ExportMode == "SeparateFiles"
+            ? File(result.Data!, "application/zip", "datamint-batch-export.zip")
+            : File(result.Data!, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "datamint-batch-export.xlsx");
     }
 
     [HttpPost("batch-send-email")]
@@ -271,7 +316,7 @@ public class DocumentsController : ControllerBase
         var (documents, error) = await GetOwnedDocumentsAsync(dto.DocumentIds, ct);
         if (error is not null) return error;
 
-        var result = await _service.EmailBatchExportAsync(documents!, dto.ToAddress, ct);
+        var result = await _service.EmailBatchExportAsync(documents!, dto.ToAddress, dto.ExportMode, ct);
         return result.Succeeded
             ? Ok(new { success = true, message = "Export emailed successfully." })
             : BadRequest(new { success = false, message = result.Error });
@@ -286,7 +331,7 @@ public class DocumentsController : ControllerBase
         return Ok(new
         {
             success = true,
-            documents = docs.Select(d => new DocumentSummaryDto(d.Id, d.OriginalFileName, d.PageCount, d.RequiresOcr, d.Status.ToString(), d.CreatedAtUtc))
+            documents = docs.Select(d => new DocumentSummaryDto(d.Id, d.OriginalFileName, d.PageCount, d.RequiresOcr, d.Status.ToString(), d.CreatedAtUtc, d.FailureReason, d.FileSizeBytes, d.UploadBatchId))
         });
     }
 }

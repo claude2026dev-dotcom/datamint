@@ -3,17 +3,69 @@
 
 * { box-sizing: border-box; }
 
+// So flipping Light/Dark/System never feels like a jarring instant flash -
+// every themed surface eases into its new colors instead of snapping to them.
+// More specific component rules (e.g. .dm-btn's own transition) still win the
+// cascade for their own properties, so curated hover/press animations are untouched.
+*, *::before, *::after {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
 html, body {
   margin: 0;
   padding: 0;
   height: 100%;
+  // Safety net: no single element getting its width math wrong should ever be able
+  // to force the whole page to scroll sideways and hide content off past the edge.
+  // `clip` (not `hidden`) is deliberate: any non-`visible` overflow-x forces the
+  // OTHER axis's computed value from `visible` to `auto` per the CSS overflow spec,
+  // UNLESS the value is `clip` - `hidden` here turned <body> into its own internal
+  // vertical scroll container instead of the real browser viewport, which is what
+  // silently broke Angular's scroll-position-restoration (a route change no longer
+  // reset the page to the top, since Angular resets window/documentElement scroll,
+  // not this now-separate internal one).
+  overflow-x: clip;
   background: var(--dm-bg);
   color: var(--dm-text);
   font-family: var(--dm-font);
   -webkit-font-smoothing: antialiased;
 }
 
+// Browsers default unknown custom elements to `display: inline`. Without this,
+// <app-root> (and every full-page component under it) lays out as an inline box
+// instead of filling the viewport width, causing subtle asymmetric left/right
+// spacing bugs across the whole app - not just cosmetic, since children whose
+// own CSS assumes a block-level 100%-wide parent inherit the same skew.
+// display: flex + flex-direction: column (not just display: block) so the
+// footer's margin-top: auto can push it to the bottom of the viewport on
+// pages whose content is shorter than one screen, instead of it riding up
+// directly under a short page's content.
+app-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
 h1, h2, h3, h4 { font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+
+// Every routed page shares one of these wrapper classes, and the router
+// destroys/recreates them on each navigation - so this CSS-only entrance
+// animation (no JS route-transition wiring needed) naturally replays on
+// every page change, giving the whole app a consistent "arriving" feel.
+// Opacity-only on purpose: a `transform` here (even a brief animated one)
+// makes the element a new containing block for any `position: fixed`
+// descendant - e.g. a modal opened inside .admin-content - which breaks
+// that modal's fixed positioning relative to the viewport instead of itself.
+@keyframes dm-page-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.page, .admin-content, .legal {
+  animation: dm-page-in 0.35s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .page, .admin-content, .legal { animation: none; }
+}
 
 .dm-container {
   width: 100%;
@@ -25,6 +77,8 @@ h1, h2, h3, h4 { font-weight: 700; letter-spacing: -0.02em; margin: 0; }
 }
 
 .dm-btn {
+  -webkit-appearance: none;
+  appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -38,6 +92,7 @@ h1, h2, h3, h4 { font-weight: 700; letter-spacing: -0.02em; margin: 0; }
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
 
   &:active { transform: translateY(1px) scale(0.98); }
+  &:disabled { cursor: not-allowed; opacity: 0.6; }
 }
 
 .dm-btn-primary {
@@ -78,6 +133,12 @@ h1, h2, h3, h4 { font-weight: 700; letter-spacing: -0.02em; margin: 0; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--dm-border); border-radius: 4px; }
+
+// Global (not component-scoped) on purpose: app-icon is nested inside buttons/links
+// owned by whatever component uses it, so a rule scoped to app-icon's own styles
+// could never reach across that component boundary to react to the ancestor's hover.
+:is(button, a):hover .dm-icon { transform: scale(1.12); }
+:is(button, a):active .dm-icon { transform: scale(0.94); }
 
 // `color-scheme: dark` (set globally in _tokens.scss) already makes Chrome's
 // calendar-picker-indicator render in a visible light color - this just

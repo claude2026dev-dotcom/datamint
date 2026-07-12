@@ -17,13 +17,16 @@ public interface IUserRepository : IGenericRepository<ApplicationUser>
 {
     Task<ApplicationUser?> GetByEmailAsync(string email, CancellationToken ct = default);
     Task<ApplicationUser?> GetByGoogleIdAsync(string googleId, CancellationToken ct = default);
+    /// <summary>Includes soft-deleted rows - used only to decide whether a new registration
+    /// should reactivate a previously-deleted account instead of colliding with the
+    /// database's unconditional unique index on Email (which a soft-deleted row still holds).</summary>
+    Task<ApplicationUser?> GetByEmailIncludingDeletedAsync(string email, CancellationToken ct = default);
 }
 
 public interface IDocumentRepository : IGenericRepository<Document>
 {
     Task<List<Document>> GetByUserIdAsync(Guid userId, CancellationToken ct = default);
     Task<Document?> GetWithDetailsAsync(Guid id, CancellationToken ct = default);
-    Task<int> CountAnonymousUploadsByIpAsync(string ipAddress, CancellationToken ct = default);
     void AddPage(DocumentPage page);
     void AddExtractedField(ExtractedField field);
 }

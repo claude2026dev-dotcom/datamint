@@ -1,12 +1,14 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
 
 @Component({
   selector: 'app-terms',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, BackButtonComponent],
   template: `
     <div class="dm-container legal">
+      <app-back-button fallbackUrl="/" />
       <h1>Terms and Conditions</h1>
       <p class="muted">Last updated: placeholder — replace with your actual effective date.</p>
       <p>These Terms govern your use of Datamint. By creating an account or uploading a document, you agree to these Terms.</p>
@@ -24,7 +26,7 @@ import { CommonModule } from '@angular/common';
     </div>
   `,
   styles: [`
-    .legal { padding: 50px 0 90px; max-width: 780px; }
+    .legal { padding-top: 50px; padding-bottom: 90px; max-width: 780px; }
     h1 { margin-bottom: 6px; }
     h3 { margin-top: 26px; margin-bottom: 8px; }
     p { color: var(--dm-text-muted); line-height: 1.6; }

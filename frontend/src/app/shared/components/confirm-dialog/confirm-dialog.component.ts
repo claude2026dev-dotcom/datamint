@@ -43,11 +43,12 @@ import { ConfirmDialogService } from '../../../core/services/confirm-dialog.serv
     .panel {
       background: var(--dm-surface); border: 1px solid var(--dm-border); border-radius: var(--dm-radius-md);
       box-shadow: var(--dm-shadow); padding: 24px; width: 100%; max-width: 400px;
+      max-height: 100%; overflow-y: auto;
     }
     h3 { margin: 0 0 10px; font-size: 1.05rem; }
     p { margin: 0 0 20px; color: var(--dm-text-muted); font-size: 0.9rem; line-height: 1.5; }
     .actions { display: flex; justify-content: flex-end; gap: 10px; }
-    .dm-btn-danger { background: var(--dm-danger); color: #1a0505; border: none; }
+    .dm-btn-danger { background: var(--dm-danger); color: var(--dm-danger-contrast-text); border: none; }
     .dm-btn-danger:hover { filter: brightness(1.08); }
   `]
 })

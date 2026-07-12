@@ -83,7 +83,12 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     .stat-alert { border-color: var(--dm-danger); }
     .stat-icon { width: 46px; height: 46px; flex-shrink: 0; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(99,102,241,0.12); color: var(--dm-primary-light); }
+    .stat-icon.users { background: rgba(99,102,241,0.12); color: var(--dm-primary-light); }
+    .stat-icon.subs { background: rgba(34,211,238,0.14); color: var(--dm-accent); }
+    .stat-icon.docs { background: rgba(168,85,247,0.14); color: #a855f7; }
+    .stat-icon.today { background: rgba(52,211,153,0.14); color: var(--dm-success); }
     .stat-icon.fail { background: rgba(239,68,68,0.12); color: var(--dm-danger); }
+    .stat-icon.rev { background: rgba(251,191,36,0.14); color: var(--dm-warning); }
     .stat-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
     .label { font-size: 0.78rem; color: var(--dm-text-muted); }
     .value { font-size: 1.55rem; font-weight: 800; }

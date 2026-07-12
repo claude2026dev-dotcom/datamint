@@ -26,21 +26,57 @@ public class SubscriptionController : ControllerBase
         _audit = audit;
     }
 
-    /// <summary>Public plans list for the pricing page. Prices are data-driven — edit from Admin > Plans once decided.</summary>
+    /// <summary>Public plans list for the pricing page. Prices are data-driven — edit from Admin > Plans once decided.
+    /// The free trial plan is deliberately excluded - it's auto-granted once at sign-in
+    /// (see AuthController.EnsureFreePlanActivatedAsync), never something to pick from a
+    /// list, so it never appears here as a selectable card.</summary>
     [HttpGet("plans")]
     public async Task<IActionResult> GetPlans(CancellationToken ct)
     {
-        var plans = await _db.Plans.Where(p => p.IsActive).OrderBy(p => p.Price).ToListAsync(ct);
+        var plans = await _db.Plans.Where(p => p.IsActive && !p.IsFreeTrial).OrderBy(p => p.Price).ToListAsync(ct);
         return Ok(new
         {
             success = true,
-            plans = plans.Select(p => new PlanDto(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyUploadLimit, p.IsActive))
+            plans = plans.Select(p => new PlanDto(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyPageLimit, p.IsRecurring, p.IsActive, p.IsFreeTrial))
         });
     }
 
+    /// <summary>Cancelling doesn't end access immediately - it just stops the plan from
+    /// renewing, so a subscription is still "usable" for the rest of the cycle already
+    /// paid for. Every place that needs to know "can this user still upload/see their
+    /// plan as active" checks this same condition (Active, or Cancelled but not yet
+    /// past EndAtUtc) rather than a plain Status == Active.</summary>
     [HttpGet("status")]
     [Authorize]
     public async Task<IActionResult> GetStatus(CancellationToken ct)
+    {
+        var userId = _currentUser.UserId!.Value;
+        var sub = await _db.Subscriptions
+            .Include(s => s.Plan)
+            .Where(s => s.UserId == userId && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Cancelled))
+            .OrderByDescending(s => s.StartAtUtc)
+            .FirstOrDefaultAsync(ct);
+
+        if (sub is null)
+            return Ok(new { success = true, status = new SubscriptionStatusDto(false, null, null, null, null, null, null, null, null, 0, 0, true, false) });
+
+        var isUsable = sub.Status == SubscriptionStatus.Active || sub.EndAtUtc > DateTime.UtcNow;
+
+        return Ok(new
+        {
+            success = true,
+            status = new SubscriptionStatusDto(
+                isUsable, sub.PlanId, sub.Plan.Name, sub.Plan.Price, sub.Plan.Currency, sub.Plan.BillingCycle.ToString(),
+                sub.Status.ToString(), sub.StartAtUtc, sub.EndAtUtc, sub.PagesUsedThisCycle, sub.Plan.MonthlyPageLimit, sub.Plan.IsRecurring,
+                sub.Status == SubscriptionStatus.Cancelled)
+        });
+    }
+
+    /// <summary>Cancels the caller's active plan - it keeps working until the current
+    /// billing period ends (they already paid for it), it just won't renew.</summary>
+    [HttpPost("cancel")]
+    [Authorize]
+    public async Task<IActionResult> CancelSubscription(CancellationToken ct)
     {
         var userId = _currentUser.UserId!.Value;
         var sub = await _db.Subscriptions
@@ -49,13 +85,19 @@ public class SubscriptionController : ControllerBase
             .OrderByDescending(s => s.StartAtUtc)
             .FirstOrDefaultAsync(ct);
 
-        if (sub is null)
-            return Ok(new { success = true, status = new SubscriptionStatusDto(false, null, null, 0, 0) });
+        if (sub is null) return NotFound(new { success = false, message = "You don't have an active plan to cancel." });
+        if (!sub.Plan.IsRecurring) return BadRequest(new { success = false, message = "This plan doesn't renew, so there's nothing to cancel." });
+
+        sub.Status = SubscriptionStatus.Cancelled;
+        await _db.SaveChangesAsync(ct);
+        await _audit.LogAsync("Subscription.Cancelled", userId, "Subscription", sub.Id.ToString(), ct: ct);
 
         return Ok(new
         {
             success = true,
-            status = new SubscriptionStatusDto(true, sub.Plan.Name, sub.EndAtUtc, sub.UploadsUsedThisCycle, sub.Plan.MonthlyUploadLimit)
+            message = sub.EndAtUtc is not null
+                ? $"Your {sub.Plan.Name} plan won't renew. You'll keep access until {sub.EndAtUtc:MMM d, yyyy}."
+                : $"Your {sub.Plan.Name} plan has been cancelled."
         });
     }
 
@@ -74,13 +116,27 @@ public class SubscriptionController : ControllerBase
             return BadRequest(new { success = false, message = "This plan requires payment - use checkout instead." });
 
         var userId = _currentUser.UserId!.Value;
+
+        // The free trial is a one-time perk granted automatically at sign-in, never
+        // something to (re-)pick manually - without this check, cancelling back to it
+        // (or hitting this endpoint directly) would hand out a brand new Subscription
+        // row with PagesUsedThisCycle reset to 0, letting the same user re-earn the
+        // trial's page allowance indefinitely.
+        if (plan.IsFreeTrial)
+        {
+            var alreadyHadTrial = await _db.Subscriptions.AnyAsync(s => s.UserId == userId && s.Plan.IsFreeTrial, ct);
+            if (alreadyHadTrial)
+                return BadRequest(new { success = false, message = "You've already used your free trial. Please choose a paid plan to continue." });
+        }
+
+        var startAt = DateTime.UtcNow;
         var subscription = new Subscription
         {
             UserId = userId,
             PlanId = plan.Id,
             Status = SubscriptionStatus.Active,
-            StartAtUtc = DateTime.UtcNow,
-            EndAtUtc = plan.BillingCycle == PlanBillingCycle.Yearly ? DateTime.UtcNow.AddYears(1) : DateTime.UtcNow.AddMonths(1)
+            StartAtUtc = startAt,
+            EndAtUtc = plan.ComputeSubscriptionEndAt(startAt)
         };
         _db.Subscriptions.Add(subscription);
         await _db.SaveChangesAsync(ct);
@@ -111,6 +167,8 @@ public class SubscriptionController : ControllerBase
             Status = "created"
         });
         await _db.SaveChangesAsync(ct);
+        await _audit.LogAsync("Subscription.OrderCreated", userId, "Plan", plan.Id.ToString(),
+            $"{{\"amount\":{plan.Price},\"currency\":\"{plan.Currency}\",\"orderId\":\"{order.OrderId}\"}}", ct: ct);
 
         return Ok(new { success = true, order });
     }
@@ -139,13 +197,14 @@ public class SubscriptionController : ControllerBase
         transaction.RazorpaySignature = dto.RazorpaySignature;
 
         var plan = await _db.Plans.FirstAsync(p => p.Id == dto.PlanId, ct);
+        var startAt = DateTime.UtcNow;
         var subscription = new Subscription
         {
             UserId = userId,
             PlanId = plan.Id,
             Status = SubscriptionStatus.Active,
-            StartAtUtc = DateTime.UtcNow,
-            EndAtUtc = plan.BillingCycle == PlanBillingCycle.Yearly ? DateTime.UtcNow.AddYears(1) : DateTime.UtcNow.AddMonths(1)
+            StartAtUtc = startAt,
+            EndAtUtc = plan.ComputeSubscriptionEndAt(startAt)
         };
         _db.Subscriptions.Add(subscription);
         transaction.SubscriptionId = subscription.Id;

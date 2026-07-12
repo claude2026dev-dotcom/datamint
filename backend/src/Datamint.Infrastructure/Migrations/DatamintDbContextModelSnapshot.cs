@@ -39,9 +39,6 @@ namespace Datamint.Infrastructure.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<int>("FreeUploadsUsed")
-                        .HasColumnType("int");
-
                     b.Property<string>("GoogleId")
                         .HasColumnType("nvarchar(max)");
 
@@ -52,6 +49,9 @@ namespace Datamint.Infrastructure.Migrations
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsEmailVerified")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSuperAdmin")
                         .HasColumnType("bit");
 
                     b.Property<DateTime?>("LastLoginAtUtc")
@@ -178,6 +178,9 @@ namespace Datamint.Infrastructure.Migrations
 
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UploadBatchId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("UploaderIpAddress")
                         .HasColumnType("nvarchar(max)");
@@ -426,7 +429,13 @@ namespace Datamint.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
-                    b.Property<int>("MonthlyUploadLimit")
+                    b.Property<bool>("IsFreeTrial")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsRecurring")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("MonthlyPageLimit")
                         .HasColumnType("int");
 
                     b.Property<string>("Name")
@@ -498,6 +507,9 @@ namespace Datamint.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<int>("PagesUsedThisCycle")
+                        .HasColumnType("int");
+
                     b.Property<Guid>("PlanId")
                         .HasColumnType("uniqueidentifier");
 
@@ -515,9 +527,6 @@ namespace Datamint.Infrastructure.Migrations
 
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("datetime2");
-
-                    b.Property<int>("UploadsUsedThisCycle")
-                        .HasColumnType("int");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");

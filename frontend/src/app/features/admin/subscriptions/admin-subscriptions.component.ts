@@ -12,8 +12,10 @@ interface PlanForm {
   price: number;
   currency: string;
   billingCycle: string;
-  monthlyUploadLimit: number;
+  monthlyPageLimit: number;
   unlimited: boolean;
+  isRecurring: boolean;
+  isFreeTrial: boolean;
 }
 
 @Component({
@@ -46,19 +48,25 @@ interface PlanForm {
           <div class="dm-card plan-card" [class.inactive]="!p.isActive">
             <div class="plan-card-head">
               <span class="plan-name">{{ p.name }}</span>
-              <span class="badge" [class.badge-ok]="p.isActive" [class.badge-fail]="!p.isActive">{{ p.isActive ? 'Active' : 'Hidden' }}</span>
+              <div class="badges">
+                @if (p.isFreeTrial) { <span class="badge badge-trial">Free trial</span> }
+                <span class="badge" [class.badge-ok]="p.isActive" [class.badge-fail]="!p.isActive">{{ p.isActive ? 'Active' : 'Hidden' }}</span>
+              </div>
             </div>
+            @if (p.isFreeTrial) {
+              <p class="plan-desc trial-note">Auto-granted once at sign-up — never shown on the public pricing page.</p>
+            }
             @if (p.description) { <p class="plan-desc">{{ p.description }}</p> }
 
             <div class="plan-price">
               <span class="amount">{{ p.currency }} {{ p.price }}</span>
-              <span class="cycle">/ {{ p.billingCycle === 'Monthly' ? 'mo' : 'yr' }}</span>
+              <span class="cycle">{{ p.isRecurring ? '/ ' + (p.billingCycle === 'Monthly' ? 'mo' : 'yr') : '(one-time)' }}</span>
             </div>
 
             <div class="plan-meta">
               <div class="meta-item">
-                <span class="meta-label">Upload limit</span>
-                <span class="meta-value">{{ p.monthlyUploadLimit === -1 ? 'Unlimited' : p.monthlyUploadLimit }}</span>
+                <span class="meta-label">{{ p.isRecurring ? 'Page limit' : 'Lifetime pages' }}</span>
+                <span class="meta-value">{{ p.monthlyPageLimit === -1 ? 'Unlimited' : p.monthlyPageLimit }}</span>
               </div>
               <div class="meta-item">
                 <span class="meta-label">Subscribers</span>
@@ -115,12 +123,20 @@ interface PlanForm {
           </div>
 
           <label class="field">
-            <span>Monthly upload limit</span>
-            <input class="dm-input" type="number" min="1" [(ngModel)]="form.monthlyUploadLimit" [disabled]="form.unlimited" />
+            <span>{{ form.isRecurring ? 'Monthly page limit' : 'Lifetime page limit' }}</span>
+            <input class="dm-input" type="number" min="1" [(ngModel)]="form.monthlyPageLimit" [disabled]="form.unlimited" />
           </label>
           <label class="checkbox-field">
             <input type="checkbox" [(ngModel)]="form.unlimited" />
-            <span>Unlimited uploads</span>
+            <span>Unlimited pages</span>
+          </label>
+          <label class="checkbox-field">
+            <input type="checkbox" [(ngModel)]="form.isRecurring" />
+            <span>Renews each billing cycle (uncheck for a one-time lifetime allowance, e.g. a free trial)</span>
+          </label>
+          <label class="checkbox-field">
+            <input type="checkbox" [(ngModel)]="form.isFreeTrial" />
+            <span>This is the free trial plan — auto-granted once at sign-up, hidden from the pricing page, and can't be re-activated once used. Only one plan should have this checked.</span>
           </label>
 
           @if (formError) { <p class="form-error">{{ formError }}</p> }
@@ -164,23 +180,38 @@ interface PlanForm {
     .danger { border-color: var(--dm-danger); color: var(--dm-danger); }
     .danger:hover { background: rgba(248,113,113,0.1); }
 
+    .badges { display: flex; align-items: center; gap: 6px; }
     .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.76rem; font-weight: 600; }
     .badge-ok { background: rgba(52, 211, 153, 0.15); color: var(--dm-success); }
     .badge-fail { background: rgba(248, 113, 113, 0.15); color: var(--dm-danger); }
+    .badge-trial { background: rgba(99, 102, 241, 0.15); color: var(--dm-primary-light); }
+    .trial-note { font-style: italic; }
 
     .modal-backdrop {
       position: fixed; inset: 0; background: rgba(4, 6, 14, 0.6); backdrop-filter: blur(2px);
-      display: flex; align-items: center; justify-content: center; z-index: 9000; padding: 20px; overflow-y: auto;
+      display: flex; align-items: flex-start; justify-content: center; z-index: 9000; padding: 40px 20px; overflow-y: auto;
     }
-    .modal-panel { padding: 28px; width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 14px; }
+    /* align-items: flex-start (not center) is deliberate - a centered flex item taller
+       than its container overflows equally above AND below, and content pushed above
+       the scroll container's natural top can never be scrolled back into view. Anchoring
+       to the top means a tall form (e.g. this one on a short mobile viewport) just grows
+       downward into the already-scrollable backdrop instead of clipping its own heading. */
+    .modal-panel { padding: 28px; width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 14px; margin: auto 0; }
     .modal-panel h2 { font-size: 1.15rem; margin: 0 0 4px; }
-    .field { display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; color: var(--dm-text-muted); flex: 1; }
+    .field { display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; color: var(--dm-text-muted); flex: 1; min-width: 0; }
     .field textarea { resize: vertical; font-family: inherit; }
     .field-row { display: flex; gap: 12px; }
-    .checkbox-field { display: flex; align-items: center; gap: 8px; font-size: 0.86rem; color: var(--dm-text); }
+    .checkbox-field { display: flex; align-items: flex-start; gap: 8px; font-size: 0.86rem; color: var(--dm-text); }
+    .checkbox-field input { margin-top: 3px; flex-shrink: 0; }
     .form-error { color: var(--dm-danger); font-size: 0.82rem; margin: 0; }
     .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
-    @media (max-width: 520px) { .field-row { flex-direction: column; } }
+    @media (max-width: 520px) {
+      .field-row { flex-direction: column; }
+      .modal-backdrop { padding: 20px 12px; }
+      .modal-panel { padding: 20px; }
+      .modal-actions { flex-direction: column-reverse; }
+      .modal-actions .dm-btn { width: 100%; }
+    }
   `]
 })
 export class AdminSubscriptionsComponent implements OnInit {
@@ -202,7 +233,7 @@ export class AdminSubscriptionsComponent implements OnInit {
   ngOnInit() { this.load(); }
 
   emptyForm(): PlanForm {
-    return { id: null, name: '', description: '', price: 0, currency: 'INR', billingCycle: 'Monthly', monthlyUploadLimit: 50, unlimited: false };
+    return { id: null, name: '', description: '', price: 0, currency: 'INR', billingCycle: 'Monthly', monthlyPageLimit: 50, unlimited: false, isRecurring: true, isFreeTrial: false };
   }
 
   load() {
@@ -232,8 +263,10 @@ export class AdminSubscriptionsComponent implements OnInit {
     this.form = {
       id: p.id, name: p.name, description: p.description ?? '', price: p.price,
       currency: p.currency, billingCycle: p.billingCycle,
-      monthlyUploadLimit: p.monthlyUploadLimit === -1 ? 50 : p.monthlyUploadLimit,
-      unlimited: p.monthlyUploadLimit === -1
+      monthlyPageLimit: p.monthlyPageLimit === -1 ? 50 : p.monthlyPageLimit,
+      unlimited: p.monthlyPageLimit === -1,
+      isRecurring: p.isRecurring,
+      isFreeTrial: p.isFreeTrial
     };
     this.formError = '';
     this.modalMode = 'edit';
@@ -245,7 +278,7 @@ export class AdminSubscriptionsComponent implements OnInit {
   save() {
     if (!this.form.name.trim()) { this.formError = 'Plan name is required.'; return; }
     if (this.form.price < 0) { this.formError = 'Price can\'t be negative.'; return; }
-    if (!this.form.unlimited && this.form.monthlyUploadLimit < 1) { this.formError = 'Upload limit must be at least 1, or mark it unlimited.'; return; }
+    if (!this.form.unlimited && this.form.monthlyPageLimit < 1) { this.formError = 'Page limit must be at least 1, or mark it unlimited.'; return; }
     this.formError = '';
 
     const payload = {
@@ -254,7 +287,9 @@ export class AdminSubscriptionsComponent implements OnInit {
       price: this.form.price,
       currency: this.form.currency,
       billingCycle: this.form.billingCycle,
-      monthlyUploadLimit: this.form.unlimited ? -1 : this.form.monthlyUploadLimit
+      monthlyPageLimit: this.form.unlimited ? -1 : this.form.monthlyPageLimit,
+      isRecurring: this.form.isRecurring,
+      isFreeTrial: this.form.isFreeTrial
     };
 
     const request = this.modalMode === 'create'

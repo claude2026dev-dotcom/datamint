@@ -15,8 +15,9 @@ export class GoogleCallbackComponent implements OnInit {
 
   ngOnInit() {
     const idToken = this.route.snapshot.queryParamMap.get('id_token');
+    const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl') ?? undefined;
     if (idToken) {
-      this.auth.loginWithGoogle(idToken).subscribe(res => this.auth.completeLogin(res, true));
+      this.auth.loginWithGoogle(idToken).subscribe(res => this.auth.completeLogin(res, true, returnUrl));
     }
   }
 }

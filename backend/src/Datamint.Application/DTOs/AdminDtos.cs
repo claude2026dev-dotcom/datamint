@@ -29,7 +29,8 @@ public record AdminUserListItemDto(
     string? CurrentPlan,
     DateTime CreatedAtUtc,
     DateTime? LastLoginAtUtc,
-    bool HasPassword);
+    bool HasPassword,
+    bool IsSuperAdmin);
 
 public record AuditLogFilterDto(
     string? Action,
@@ -53,7 +54,7 @@ public record AdminUserFilterDto(
 
 public record UpdateUserRequestDto(string? DisplayName, string? Role);
 
-public record UpdatePlanRequestDto(string Name, string? Description, decimal Price, string Currency, string BillingCycle, int MonthlyUploadLimit);
+public record UpdatePlanRequestDto(string Name, string? Description, decimal Price, string Currency, string BillingCycle, int MonthlyPageLimit, bool IsRecurring = true, bool IsFreeTrial = false);
 
 public record AdminPlanDto(
     Guid Id,
@@ -62,6 +63,8 @@ public record AdminPlanDto(
     decimal Price,
     string Currency,
     string BillingCycle,
-    int MonthlyUploadLimit,
+    int MonthlyPageLimit,
+    bool IsRecurring,
     bool IsActive,
-    int ActiveSubscribers);
+    int ActiveSubscribers,
+    bool IsFreeTrial);

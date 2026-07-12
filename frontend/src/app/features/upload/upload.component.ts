@@ -3,10 +3,10 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DocumentService } from '../../core/services/document.service';
-import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { UploadProgressComponent, ProcessingStage } from '../../shared/components/upload-progress/upload-progress.component';
 import { IconComponent } from '../../shared/components/icon/icon.component';
+import { formatFileSize } from '../../shared/utils/format-file-size';
 
 @Component({
   selector: 'app-upload',
@@ -24,9 +24,6 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           <input #fileInput type="file" accept="application/pdf" multiple hidden (change)="onFilesPicked($event)" />
           <div class="drop-icon"><app-icon name="upload-cloud" [size]="34" /></div>
           <p><strong>Click to browse</strong> or drag PDF files here</p>
-          <p class="muted small">
-            @if (!auth.isLoggedIn()) { {{ 2 - auth.getAnonUploadCount() }} free upload(s) remaining before sign-in is required }
-          </p>
         </div>
 
         <div class="dm-card mode-card">
@@ -67,7 +64,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
             @for (f of selectedFiles; track f.name) {
               <div class="file-row">
                 <span class="file-name"><app-icon name="file" [size]="15" /> {{ f.name }}</span>
-                <span class="muted">{{ (f.size / 1024 / 1024).toFixed(2) }} MB</span>
+                <span class="muted">{{ formatFileSize(f.size) }}</span>
               </div>
             }
             <button class="dm-btn dm-btn-primary go" (click)="startUpload()">Extract data from {{ selectedFiles.length }} file(s)</button>
@@ -87,7 +84,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     </div>
   `,
   styles: [`
-    .page { padding: 50px 0 80px; }
+    .page { padding-top: 50px; padding-bottom: 80px; }
     h1 { font-size: 1.8rem; margin-bottom: 8px; }
     .muted { color: var(--dm-text-muted); }
     .small { font-size: 0.82rem; }
@@ -124,6 +121,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
   `]
 })
 export class UploadComponent {
+  formatFileSize = formatFileSize;
   selectedFiles: File[] = [];
   dragging = false;
   processing = false;
@@ -137,7 +135,6 @@ export class UploadComponent {
 
   constructor(
     private documentService: DocumentService,
-    public auth: AuthService,
     private toast: ToastService,
     private router: Router
   ) {}
@@ -169,12 +166,10 @@ export class UploadComponent {
   }
 
   startUpload() {
-    if (this.auth.hasReachedFreeLimit()) {
-      this.toast.info("You've used your 2 free extractions. Please sign in and choose a plan to continue.");
-      this.router.navigateByUrl('/plans');
-      return;
-    }
-
+    // The plan's page limit is enforced server-side (against the user's subscription,
+    // not anything the client can see) - a failed attempt here surfaces via the error
+    // callback below, and the shared HTTP error interceptor redirects to /plans for a
+    // PLAN_LIMIT_REACHED response, so there's nothing to pre-check client-side.
     if (this.extractionMode === 'Formatted' && this.requestedFieldNames.length === 0) {
       this.toast.error('Add at least one field to extract, or switch to Auto-detect.');
       return;
@@ -187,11 +182,18 @@ export class UploadComponent {
     // Simulated staged progress for a smooth perceived-performance animation
     // while the real request is in flight (see README for wiring this to
     // real SignalR/polling progress once a background job queue is added).
-    setTimeout(() => { this.stage = 'reading'; this.progress = 40; }, 500);
-    setTimeout(() => { this.stage = 'extracting'; this.progress = 75; }, 1300);
+    // Cleared as soon as the real response arrives (below) - otherwise a fast
+    // response (e.g. an immediate validation failure) can have these fire
+    // afterward and clobber the real 'failed'/'done' stage back to 'extracting'.
+    const stagingTimeouts = [
+      setTimeout(() => { this.stage = 'reading'; this.progress = 40; }, 500),
+      setTimeout(() => { this.stage = 'extracting'; this.progress = 75; }, 1300)
+    ];
+    const clearStaging = () => stagingTimeouts.forEach(clearTimeout);
 
     this.documentService.upload(this.selectedFiles, this.extractionMode, this.requestedFieldNames.join(',')).subscribe({
       next: res => {
+        clearStaging();
         this.progress = 100;
         // The HTTP call succeeding only means the upload was accepted - each
         // document's own status reflects whether AI extraction actually worked,
@@ -210,9 +212,9 @@ export class UploadComponent {
         if (failed.length > 0) {
           this.toast.error(`${failed.length} of ${res.documents.length} file(s) failed to extract: ${failed[0].failureReason || 'Unknown error'}`);
         }
-        if (!this.auth.isLoggedIn()) this.auth.incrementAnonUploadCount(this.selectedFiles.length);
       },
       error: err => {
+        clearStaging();
         this.stage = 'failed';
         this.errorMessage = err?.error?.message;
       }

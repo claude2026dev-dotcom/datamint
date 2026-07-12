@@ -19,17 +19,17 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
         </div>
 
         <nav class="sidebar-nav">
-          <a routerLink="/admin" [routerLinkActiveOptions]="{exact:true}" routerLinkActive="active">
-            <app-icon name="bar-chart" [size]="17" /> Overview
+          <a routerLink="/admin" [routerLinkActiveOptions]="{exact:true}" routerLinkActive="active" title="Overview">
+            <app-icon name="bar-chart" [size]="17" /> <span>Overview</span>
           </a>
-          <a routerLink="/admin/audits" routerLinkActive="active">
-            <app-icon name="file-text" [size]="17" /> Audit logs
+          <a routerLink="/admin/audits" routerLinkActive="active" title="Audit logs">
+            <app-icon name="file-text" [size]="17" /> <span>Audit logs</span>
           </a>
-          <a routerLink="/admin/users" routerLinkActive="active">
-            <app-icon name="users" [size]="17" /> Users
+          <a routerLink="/admin/users" routerLinkActive="active" title="Users">
+            <app-icon name="users" [size]="17" /> <span>Users</span>
           </a>
-          <a routerLink="/admin/subscriptions" routerLinkActive="active">
-            <app-icon name="credit-card" [size]="17" /> Plans
+          <a routerLink="/admin/subscriptions" routerLinkActive="active" title="Plans">
+            <app-icon name="credit-card" [size]="17" /> <span>Plans</span>
           </a>
         </nav>
 
@@ -73,20 +73,28 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     }
     .sidebar-footer:hover { color: var(--dm-text); }
 
-    .admin-content { flex: 1; min-width: 0; }
+    .admin-content { flex: 1; min-width: 0; width: 100%; }
     .admin-content-inner { max-width: 1320px; margin: 0 auto; padding: 32px 36px 80px; }
 
     @media (max-width: 900px) {
       .admin-shell { flex-direction: column; min-height: 0; }
       .admin-sidebar {
         position: static; width: 100%; height: auto; flex-direction: row; align-items: center;
-        overflow-x: auto; padding: 10px 14px; gap: 4px; border-right: none; border-bottom: 1px solid var(--dm-border);
+        overflow-x: auto; padding: 8px 6px; gap: 2px; border-right: none; border-bottom: 1px solid var(--dm-border);
       }
       .sidebar-header, .sidebar-footer { display: none; }
-      .sidebar-nav { flex-direction: row; flex: none; }
-      .sidebar-nav a { white-space: nowrap; }
+      .sidebar-nav { flex-direction: row; flex: 1; gap: 2px; }
+      .sidebar-nav a { white-space: nowrap; flex: 1; justify-content: center; padding: 8px 6px; gap: 6px; font-size: 0.8rem; }
       .sidebar-nav a.active { box-shadow: inset 0 -3px 0 var(--dm-primary); }
       .admin-content-inner { padding: 24px 16px 60px; }
+    }
+
+    @media (max-width: 400px) {
+      /* At the very narrowest phones, labels give way to icon-only tabs (still with
+         a visible accessible name) rather than letting 4 tabs force a horizontal
+         scroll that's easy to miss. */
+      .sidebar-nav a span { display: none; }
+      .sidebar-nav a { padding: 8px; }
     }
   `]
 })

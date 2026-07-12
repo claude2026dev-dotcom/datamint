@@ -66,23 +66,24 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
             } @else {
               @for (u of users; track u.id) {
                 <tr>
-                  <td>
+                  <td data-label="Email">
                     <div class="user-cell">
                       <span class="avatar" [style.background]="avatarColor(u)">{{ initials(u) }}</span>
                       <span>{{ u.email }}</span>
                       @if (u.id === myId) { <span class="you-badge">you</span> }
+                      @if (u.isSuperAdmin) { <span class="you-badge super-badge" title="Can't be disabled, demoted, or deleted"><app-icon name="shield" [size]="11" /> super admin</span> }
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Name">
                     @if (editingId === u.id) {
                       <input class="dm-input small-input" [(ngModel)]="editDisplayName" placeholder="Display name" />
                     } @else {
                       {{ u.displayName || '—' }}
                     }
                   </td>
-                  <td>
+                  <td data-label="Role">
                     @if (editingId === u.id) {
-                      <select class="dm-input small-input" [(ngModel)]="editRole" [disabled]="u.id === myId">
+                      <select class="dm-input small-input" [(ngModel)]="editRole" [disabled]="u.id === myId || u.isSuperAdmin">
                         <option value="User">User</option>
                         <option value="Admin">Admin</option>
                       </select>
@@ -90,11 +91,11 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
                       <span class="badge" [class.badge-admin]="u.role === 'Admin'">{{ u.role }}</span>
                     }
                   </td>
-                  <td>{{ u.currentPlan ?? 'Free' }}</td>
-                  <td><span class="badge" [class.badge-ok]="u.isActive" [class.badge-fail]="!u.isActive">{{ u.isActive ? 'Active' : 'Disabled' }}</span></td>
-                  <td class="nowrap">{{ u.createdAtUtc | date:'mediumDate' }}</td>
-                  <td class="nowrap">{{ u.lastLoginAtUtc ? (u.lastLoginAtUtc | date:'medium') : '—' }}</td>
-                  <td class="actions-col">
+                  <td data-label="Plan">{{ u.currentPlan ?? 'Free' }}</td>
+                  <td data-label="Status"><span class="badge" [class.badge-ok]="u.isActive" [class.badge-fail]="!u.isActive">{{ u.isActive ? 'Active' : 'Disabled' }}</span></td>
+                  <td class="nowrap" data-label="Joined">{{ u.createdAtUtc | date:'mediumDate' }}</td>
+                  <td class="nowrap" data-label="Last login">{{ u.lastLoginAtUtc ? (u.lastLoginAtUtc | date:'medium') : '—' }}</td>
+                  <td class="actions-col" data-label="Actions">
                     @if (editingId === u.id) {
                       <button class="dm-btn dm-btn-primary tiny" (click)="saveEdit(u)">Save</button>
                       <button class="dm-btn dm-btn-ghost tiny" (click)="cancelEdit()">Cancel</button>
@@ -103,10 +104,12 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
                       <button class="icon-btn" [disabled]="!u.hasPassword || resettingId === u.id"
                               [title]="u.hasPassword ? 'Send password reset link' : 'Signs in with Google — no password to reset'"
                               (click)="sendPasswordReset(u)"><app-icon name="key" [size]="16" /></button>
-                      <button class="icon-btn" [class.warning]="u.isActive" [disabled]="u.id === myId" [title]="u.isActive ? 'Disable this account' : 'Re-enable this account'" (click)="toggle(u)">
+                      <button class="icon-btn" [class.warning]="u.isActive" [disabled]="u.id === myId || u.isSuperAdmin"
+                              [title]="u.isSuperAdmin ? 'The super admin account cannot be disabled' : (u.isActive ? 'Disable this account' : 'Re-enable this account')" (click)="toggle(u)">
                         <app-icon [name]="u.isActive ? 'pause' : 'play'" [size]="16" />
                       </button>
-                      <button class="icon-btn danger" [disabled]="u.id === myId" title="Delete" (click)="remove(u)"><app-icon name="trash" [size]="16" /></button>
+                      <button class="icon-btn danger" [disabled]="u.id === myId || u.isSuperAdmin"
+                              [title]="u.isSuperAdmin ? 'The super admin account cannot be deleted' : 'Delete'" (click)="remove(u)"><app-icon name="trash" [size]="16" /></button>
                     }
                   </td>
                 </tr>
@@ -160,17 +163,19 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     .skeleton { height: 32px; border-radius: 6px; background: linear-gradient(90deg, var(--dm-surface) 25%, var(--dm-surface-hover) 50%, var(--dm-surface) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
     @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-    .user-cell { display: flex; align-items: center; gap: 10px; }
+    .user-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .user-cell span:not(.you-badge) { word-break: break-all; }
     .avatar { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-size: 0.68rem; font-weight: 700; flex-shrink: 0; }
-    .you-badge { font-size: 0.68rem; padding: 2px 6px; border-radius: 10px; background: var(--dm-border); color: var(--dm-text-muted); }
+    .you-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 0.68rem; padding: 2px 6px; border-radius: 10px; background: var(--dm-border); color: var(--dm-text-muted); white-space: nowrap; }
+    .super-badge { background: rgba(124, 58, 237, 0.15); color: #a78bfa; }
 
     .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.76rem; font-weight: 600; background: rgba(127,127,127,0.15); color: var(--dm-text-muted); }
     .badge-admin { background: rgba(124, 58, 237, 0.15); color: #a78bfa; }
     .badge-ok { background: rgba(52, 211, 153, 0.15); color: var(--dm-success); }
     .badge-fail { background: rgba(248, 113, 113, 0.15); color: var(--dm-danger); }
 
-    .actions-col { display: flex; gap: 4px; align-items: center; }
-    .icon-btn { display: inline-flex; align-items: center; justify-content: center; background: none; border: 1px solid transparent; border-radius: 8px; padding: 7px; cursor: pointer; color: var(--dm-text-muted); transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
+    .actions-col { display: flex; gap: 2px; align-items: center; }
+    .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; background: none; border: 1px solid transparent; border-radius: 8px; padding: 0; cursor: pointer; color: var(--dm-text-muted); transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
     .icon-btn:hover:not(:disabled) { color: var(--dm-text); background: var(--dm-bg-elevated); border-color: var(--dm-border); }
     .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
     .icon-btn.danger { color: var(--dm-danger); opacity: 0.85; }
@@ -185,8 +190,35 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     .page-size { max-width: 120px; }
     @media (max-width: 700px) {
       .filter-bar { flex-direction: column; }
-      .filter-bar select.dm-input { flex: 1 1 auto; }
+      /* .search-wrap's flex: 1 1 240px was sized for the row layout above - in a
+         column flex container, flex-basis applies to HEIGHT not width, so left
+         un-overridden it turned the search box into a ~240px-tall empty block. */
+      .filter-bar select.dm-input, .search-wrap { flex: 1 1 auto; }
       .pagination { flex-direction: column; align-items: flex-start; }
+
+      /* Reflow the table into a stack of cards instead of a horizontally-scrolling
+         grid - each row becomes its own bordered block, each cell becomes a labeled
+         line inside it. Every <td> keeps its data-label attribute (set in the
+         template) and a ::before pseudo-element renders it as a mini-header. */
+      .table-wrap { overflow-x: visible; padding: 0; }
+      table, thead, tbody, th, tr, td { display: block; width: 100%; }
+      thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+      tbody tr {
+        border: 1px solid var(--dm-border); border-radius: var(--dm-radius-sm);
+        margin-bottom: 12px; padding: 6px 0; background: var(--dm-bg-elevated);
+      }
+      tbody tr.skeleton-row { border: none; background: none; padding: 0; }
+      td {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 9px 14px; border-bottom: 1px solid var(--dm-border); white-space: normal; text-align: right;
+      }
+      td:last-child { border-bottom: none; }
+      td::before {
+        content: attr(data-label); font-weight: 600; font-size: 0.72rem; color: var(--dm-text-muted);
+        text-transform: uppercase; letter-spacing: 0.04em; text-align: left; flex-shrink: 0;
+      }
+      .actions-col { flex-wrap: wrap; }
+      .actions-col::before { align-self: center; }
     }
   `]
 })

@@ -14,4 +14,10 @@ public interface IExcelExportService
     /// uploaded together.
     /// </summary>
     Task<byte[]> GenerateBatchExcelAsync(List<DocumentDetailDto> documents, CancellationToken ct = default);
+
+    /// <summary>Builds one .xlsx with one sheet per document (each sheet shaped like GenerateExcelAsync's single-document layout).</summary>
+    Task<byte[]> GenerateMultiSheetExcelAsync(List<DocumentDetailDto> documents, CancellationToken ct = default);
+
+    /// <summary>Builds a .zip containing one standalone .xlsx per document (each named after its source file).</summary>
+    Task<byte[]> GenerateSeparateFilesZipAsync(List<DocumentDetailDto> documents, CancellationToken ct = default);
 }

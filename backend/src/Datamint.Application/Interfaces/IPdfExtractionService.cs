@@ -26,4 +26,16 @@ public interface IAiFieldExtractionService
     /// mode: extract ONLY these exact fields, in this order, null value if not found.
     /// </param>
     Task<AiExtractionResultDto> ExtractStructuredDataAsync(IEnumerable<PdfPageTextDto> pages, IReadOnlyList<string>? requestedFields = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Each document in a bulk upload is extracted independently, so the exact same
+    /// real-world field (e.g. an invoice number) can come back worded differently per
+    /// document ("Invoice Number" vs "Invoice No" vs "Inv #"). Given every distinct field
+    /// label seen across a batch, this asks the AI to recognize which labels mean the same
+    /// thing and returns one canonical name per group - every input label maps to a value,
+    /// including labels that are already fine as-is (which map to themselves). Returns an
+    /// empty dictionary (not an exception) on any failure, so a harmonization hiccup never
+    /// blocks the upload it was only meant to polish.
+    /// </summary>
+    Task<Dictionary<string, string>> HarmonizeFieldKeysAsync(IReadOnlyList<string> distinctKeys, CancellationToken ct = default);
 }
