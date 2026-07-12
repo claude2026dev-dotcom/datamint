@@ -1,9 +1,11 @@
 import { Injectable, signal, computed } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { tap, catchError, of } from 'rxjs';
+import { Observable, tap, catchError, of, finalize, shareReplay } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { AuthResponse, UserProfile } from '../models/models';
+
+type RefreshResponse = { accessToken: string; refreshToken: string; accessTokenExpiresAtUtc: string };
 
 const ACCESS_TOKEN_KEY = 'dm_access_token';
 const REFRESH_TOKEN_KEY = 'dm_refresh_token';
@@ -15,6 +17,14 @@ export class AuthService {
   currentUser = computed(() => this.userSignal());
   isLoggedIn = computed(() => !!this.userSignal());
   isAdmin = computed(() => this.userSignal()?.role === 'Admin');
+
+  // Several requests can be in flight when the access token turns out to be dead
+  // (e.g. right after a password change on another device) - without this they'd
+  // each independently hit /auth/refresh and each independently show their own
+  // "session expired" toast. refreshInFlight$ makes concurrent 401s share one
+  // refresh call; sessionExpiryHandled makes errorInterceptor show that toast once.
+  private refreshInFlight$: Observable<RefreshResponse> | null = null;
+  private sessionExpiryHandled = false;
 
   constructor(private http: HttpClient, private router: Router) {
     // localStorage is one shared bucket per browser (not per tab), so every
@@ -39,6 +49,16 @@ export class AuthService {
     localStorage.setItem(REFRESH_TOKEN_KEY, res.refreshToken);
     localStorage.setItem(USER_KEY, JSON.stringify(res.user));
     this.userSignal.set(res.user);
+    this.sessionExpiryHandled = false;
+  }
+
+  /// Lets errorInterceptor show exactly one "session expired" toast/logout even when
+  /// several requests fail with 401 around the same time - returns true only for the
+  /// first caller since the last successful login.
+  claimSessionExpiry(): boolean {
+    if (this.sessionExpiryHandled) return false;
+    this.sessionExpiryHandled = true;
+    return true;
   }
 
   register(email: string, password: string, displayName?: string, rememberMe = true) {
@@ -126,18 +146,26 @@ export class AuthService {
     return localStorage.getItem(REFRESH_TOKEN_KEY);
   }
 
-  /** Silent refresh: exchanges the stored refresh token for a new access token. */
+  /// Silent refresh: exchanges the stored refresh token for a new access token.
+  /// Shared across concurrent callers (shareReplay) - if several requests all hit a
+  /// dead access token at once, they ride the same /auth/refresh call instead of each
+  /// firing their own, which used to also mean each got its own independent failure
+  /// (and its own "session expired" toast) when the refresh token turned out dead too.
   refreshAccessToken() {
-    const refreshToken = this.getRefreshToken();
+    if (this.refreshInFlight$) return this.refreshInFlight$;
 
-    return this.http.post<{ accessToken: string; refreshToken: string; accessTokenExpiresAtUtc: string }>(
+    const refreshToken = this.getRefreshToken();
+    this.refreshInFlight$ = this.http.post<RefreshResponse>(
       `${environment.apiBaseUrl}/auth/refresh`, { refreshToken }
     ).pipe(
       tap(res => {
         localStorage.setItem(ACCESS_TOKEN_KEY, res.accessToken);
         localStorage.setItem(REFRESH_TOKEN_KEY, res.refreshToken);
-      })
+      }),
+      finalize(() => this.refreshInFlight$ = null),
+      shareReplay(1)
     );
+    return this.refreshInFlight$;
   }
 
 }

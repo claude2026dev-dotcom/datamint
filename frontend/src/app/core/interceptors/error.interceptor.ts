@@ -45,8 +45,13 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
         toast.info(message);
         router.navigateByUrl(`/login?returnUrl=${encodeURIComponent(router.url)}`);
       } else if (err.status === 401) {
-        toast.error('Your session has expired. Please sign in again.');
-        auth.logout();
+        // Several requests can fail with 401 around the same moment (a page that
+        // fires off two calls at once, or authInterceptor's own retry) - only the
+        // first one gets to show the toast and trigger logout; see claimSessionExpiry.
+        if (auth.claimSessionExpiry()) {
+          toast.error('Your session has expired. Please sign in again.');
+          auth.logout();
+        }
       } else if (err.status === 402 && err.error?.errorCode === 'PLAN_LIMIT_REACHED') {
         toast.info(message);
         router.navigateByUrl(err.error?.redirectTo || '/plans');
