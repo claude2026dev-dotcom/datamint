@@ -30,6 +30,22 @@ export interface DocumentSummary {
 
 export type BatchExportMode = 'SingleSheet' | 'MultipleSheets' | 'SeparateFiles';
 
+export type ExportFormat = 'Excel' | 'Json';
+
+// RowsPerField: one row per field (per-document/per-sheet). ColumnsPerField: one column per
+// field key, one row per document - today's implicit batch "SingleSheet" transpose, now
+// selectable everywhere and orthogonal to BatchExportMode (which only controls sheet/file count).
+export type ExportLayout = 'RowsPerField' | 'ColumnsPerField';
+
+export interface ExportOptions {
+  format: ExportFormat;
+  layout: ExportLayout;
+  // Explicit override subset. Omit/undefined = respect each field's own includeInExport flag.
+  includedFieldIds?: string[];
+  // Batch-only. Omit/undefined = every document in the request.
+  includedDocumentIds?: string[];
+}
+
 export interface ExtractedFieldEdit {
   id: string;
   fieldKey: string;

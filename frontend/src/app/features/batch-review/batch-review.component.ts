@@ -5,10 +5,11 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { DocumentService } from '../../core/services/document.service';
 import { ToastService } from '../../core/services/toast.service';
-import { BatchExportMode, ExtractedFieldEdit } from '../../core/models/models';
+import { ExtractedFieldEdit } from '../../core/models/models';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
 import { AutoGrowDirective } from '../../shared/directives/auto-grow.directive';
+import { ExportModalComponent, ExportModalResult } from '../../shared/components/export-modal/export-modal.component';
 
 interface BatchDocument {
   id: string;
@@ -24,7 +25,7 @@ interface BatchDocument {
 @Component({
   selector: 'app-batch-review',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, AutoGrowDirective],
+  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, AutoGrowDirective, ExportModalComponent],
   template: `
     <div class="dm-container page">
       <app-back-button fallbackUrl="/documents" />
@@ -42,54 +43,15 @@ interface BatchDocument {
           <p class="muted">Edit any field below. Each file keeps its own labels and values.</p>
         </div>
         <div class="actions">
-          <button class="dm-btn dm-btn-ghost" (click)="openExportChooser('download')" [disabled]="loading">⬇ Export Excel</button>
+          <button class="dm-btn dm-btn-ghost" (click)="openExportChooser('download')" [disabled]="loading">⬇ Export</button>
           <button class="dm-btn dm-btn-primary" (click)="openExportChooser('email')" [disabled]="loading">✉ Email export</button>
         </div>
       </div>
 
       @if (exportChooserFor) {
-        <div class="dm-card export-chooser">
-          <h3>How should these {{ documents.length }} files be exported?</h3>
-          <div class="mode-options">
-            <label class="mode-option" [class.active]="exportMode === 'SingleSheet'">
-              <input type="radio" name="exportMode" value="SingleSheet" [(ngModel)]="exportMode" />
-              <div>
-                <strong>One combined sheet</strong>
-                <p class="muted small">A single table — one row per file, one column per field.</p>
-              </div>
-            </label>
-            <label class="mode-option" [class.active]="exportMode === 'MultipleSheets'">
-              <input type="radio" name="exportMode" value="MultipleSheets" [(ngModel)]="exportMode" />
-              <div>
-                <strong>One workbook, separate sheets</strong>
-                <p class="muted small">A single .xlsx file with one tab per document.</p>
-              </div>
-            </label>
-            <label class="mode-option" [class.active]="exportMode === 'SeparateFiles'">
-              <input type="radio" name="exportMode" value="SeparateFiles" [(ngModel)]="exportMode" />
-              <div>
-                <strong>Separate files</strong>
-                <p class="muted small">A .zip with one standalone spreadsheet per document.</p>
-              </div>
-            </label>
-          </div>
-
-          @if (exportChooserFor === 'email') {
-            <div class="field email-field">
-              <label>Send to</label>
-              <input class="dm-input" type="email" [(ngModel)]="emailAddress" placeholder="recipient@company.com" />
-            </div>
-          }
-
-          <div class="chooser-actions">
-            <button class="dm-btn dm-btn-ghost" (click)="exportChooserFor = null">Cancel</button>
-            @if (exportChooserFor === 'download') {
-              <button class="dm-btn dm-btn-primary" (click)="exportExcel()" [disabled]="exporting">{{ exporting ? 'Exporting…' : 'Export' }}</button>
-            } @else {
-              <button class="dm-btn dm-btn-primary" (click)="sendEmail()" [disabled]="sendingEmail || !emailAddress">{{ sendingEmail ? 'Sending…' : 'Send' }}</button>
-            }
-          </div>
-        </div>
+        <app-export-modal [action]="exportChooserFor" [isBatch]="true"
+                           [documents]="exportModalDocuments()" [busy]="exportBusy"
+                           (confirmed)="onExportConfirmed($event)" (cancelled)="exportChooserFor = null" />
       }
 
       @if (loading) {
@@ -136,18 +98,6 @@ interface BatchDocument {
     .not-found-card h2 { margin-bottom: 10px; }
     .not-found-card p { margin-bottom: 20px; }
 
-    .export-chooser { padding: 20px; margin-bottom: 22px; }
-    .export-chooser h3 { font-size: 0.98rem; margin-bottom: 14px; }
-    .mode-options { display: flex; flex-direction: column; gap: 4px; }
-    .mode-option { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border-radius: var(--dm-radius-sm); cursor: pointer; border: 1px solid transparent; }
-    .mode-option:hover { background: var(--dm-surface-hover); }
-    .mode-option.active { border-color: var(--dm-primary); background: rgba(99,102,241,0.08); }
-    .mode-option input[type="radio"] { margin-top: 4px; accent-color: var(--dm-primary); flex-shrink: 0; }
-    .mode-option strong { font-size: 0.9rem; }
-    .email-field { margin-top: 14px; }
-    .email-field label { display: block; font-size: 0.82rem; color: var(--dm-text-muted); margin-bottom: 6px; }
-    .chooser-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--dm-border); }
-
     .doc-card { padding: 20px; margin-bottom: 18px; }
     .doc-card-head { display: flex; align-items: center; gap: 8px; padding-bottom: 14px; margin-bottom: 6px; border-bottom: 1px solid var(--dm-border); }
     .doc-card-head app-icon { color: var(--dm-text-muted); flex-shrink: 0; }
@@ -174,10 +124,7 @@ export class BatchReviewComponent implements OnInit {
   notFound = false;
 
   exportChooserFor: 'download' | 'email' | null = null;
-  exportMode: BatchExportMode = 'SingleSheet';
-  emailAddress = '';
-  exporting = false;
-  sendingEmail = false;
+  exportBusy = false;
 
   private lastSaved: Record<string, { key: string; value: string | null }> = {};
 
@@ -233,34 +180,40 @@ export class BatchReviewComponent implements OnInit {
     this.exportChooserFor = this.exportChooserFor === target ? null : target;
   }
 
-  exportExcel() {
-    this.exporting = true;
-    this.documentService.batchExport(this.documents.map(d => d.id), this.exportMode).subscribe({
+  exportModalDocuments() {
+    return this.documents.map(d => ({ id: d.id, fileName: d.fileName }));
+  }
+
+  onExportConfirmed(result: ExportModalResult) {
+    const documentIds = result.options.includedDocumentIds ?? this.documents.map(d => d.id);
+    this.exportBusy = true;
+
+    if (result.toAddress) {
+      this.documentService.batchSendEmail(documentIds, result.toAddress, result.exportMode, result.options).subscribe({
+        next: () => {
+          this.toast.success('Export emailed successfully.');
+          this.exportChooserFor = null;
+          this.exportBusy = false;
+        },
+        error: () => { this.exportBusy = false; this.toast.error('Could not send that email. Please try again.'); }
+      });
+      return;
+    }
+
+    this.documentService.batchExport(documentIds, result.exportMode, result.options).subscribe({
       next: blob => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = this.exportMode === 'SeparateFiles' ? 'datamint-batch-export.zip' : 'datamint-batch-export.xlsx';
+        const ext = result.options.format === 'Json' ? 'json' : (result.exportMode === 'SeparateFiles' ? 'zip' : 'xlsx');
+        a.download = `datamint-batch-export.${ext}`;
         a.click();
         window.URL.revokeObjectURL(url);
-        this.exporting = false;
+        this.exportBusy = false;
         this.exportChooserFor = null;
         this.toast.success('Export downloaded.');
       },
-      error: () => { this.exporting = false; this.toast.error('Could not export. Please try again.'); }
-    });
-  }
-
-  sendEmail() {
-    if (!this.emailAddress) return;
-    this.sendingEmail = true;
-    this.documentService.batchSendEmail(this.documents.map(d => d.id), this.emailAddress, this.exportMode).subscribe({
-      next: () => {
-        this.toast.success('Export emailed successfully.');
-        this.exportChooserFor = null;
-        this.sendingEmail = false;
-      },
-      error: () => this.sendingEmail = false
+      error: () => { this.exportBusy = false; this.toast.error('Could not export. Please try again.'); }
     });
   }
 }

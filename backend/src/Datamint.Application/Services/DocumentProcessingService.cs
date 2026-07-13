@@ -21,6 +21,7 @@ public class DocumentProcessingService
     private readonly IPdfTextExtractionService _textExtraction;
     private readonly IAiFieldExtractionService _aiExtraction;
     private readonly IExcelExportService _excel;
+    private readonly IJsonExportService _json;
     private readonly IEmailService _email;
     private readonly IAuditService _audit;
     private readonly ILogger<DocumentProcessingService> _logger;
@@ -32,6 +33,7 @@ public class DocumentProcessingService
         IPdfTextExtractionService textExtraction,
         IAiFieldExtractionService aiExtraction,
         IExcelExportService excel,
+        IJsonExportService json,
         IEmailService email,
         IAuditService audit,
         ILogger<DocumentProcessingService> logger,
@@ -42,6 +44,7 @@ public class DocumentProcessingService
         _textExtraction = textExtraction;
         _aiExtraction = aiExtraction;
         _excel = excel;
+        _json = json;
         _email = email;
         _audit = audit;
         _logger = logger;
@@ -267,67 +270,88 @@ public class DocumentProcessingService
         return Result<ExtractedFieldEditDto>.Success(ToEditDto(field));
     }
 
-    public async Task<Result<byte[]>> ExportToExcelAsync(Guid documentId, CancellationToken ct = default)
+    private static readonly ExportOptionsDto DefaultExportOptions = new();
+
+    public async Task<Result<ExportResultDto>> ExportDocumentAsync(Guid documentId, ExportOptionsDto? options = null, CancellationToken ct = default)
     {
+        options ??= DefaultExportOptions;
         var document = await _documents.GetWithDetailsAsync(documentId, ct);
-        if (document is null) return Result<byte[]>.Failure("Document not found.", "NOT_FOUND");
+        if (document is null) return Result<ExportResultDto>.Failure("Document not found.", "NOT_FOUND");
 
         var dto = MapToDetailDto(document);
-        var bytes = await _excel.GenerateExcelAsync(dto, ct);
+        var result = options.Format == ExportFormat.Json
+            ? new ExportResultDto(await _json.GenerateDocumentJsonAsync(dto, options, ct), "application/json", "datamint-export.json")
+            : new ExportResultDto(await _excel.GenerateExcelAsync(dto, options, ct), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "datamint-export.xlsx");
 
         document.Status = DocumentStatus.Exported;
         await _documents.SaveChangesAsync(ct);
 
-        await _audit.LogAsync("Document.Export", document.UserId, "Document", document.Id.ToString(), null, true, ct);
-        return Result<byte[]>.Success(bytes);
+        await _audit.LogAsync("Document.Export", document.UserId, "Document", document.Id.ToString(), $"{{\"format\":\"{options.Format}\"}}", true, ct);
+        return Result<ExportResultDto>.Success(result);
     }
 
     /// <summary>
     /// Several documents at once - the ownership check for each id already happened in
     /// the controller before these tracked entities were fetched, so this trusts the list.
-    /// exportMode picks the shape: "SingleSheet" (default - one combined sheet, rows=documents,
-    /// columns=field keys), "MultipleSheets" (one .xlsx, one tab per document), or
-    /// "SeparateFiles" (a .zip with one standalone .xlsx per document).
+    /// exportMode picks the shape when options.Format is Excel: "SingleSheet" (default - one
+    /// combined sheet, rows=documents, columns=field keys), "MultipleSheets" (one .xlsx, one
+    /// tab per document), or "SeparateFiles" (a .zip with one standalone .xlsx per document).
+    /// Ignored when options.Format is Json, which always returns one structured payload.
     /// </summary>
-    public async Task<Result<byte[]>> ExportBatchToExcelAsync(List<Document> documents, string exportMode = "SingleSheet", CancellationToken ct = default)
+    public async Task<Result<ExportResultDto>> ExportBatchAsync(List<Document> documents, string exportMode = "SingleSheet", ExportOptionsDto? options = null, CancellationToken ct = default)
     {
-        if (documents.Count == 0) return Result<byte[]>.Failure("No documents to export.", "NOT_FOUND");
+        if (documents.Count == 0) return Result<ExportResultDto>.Failure("No documents to export.", "NOT_FOUND");
+        options ??= DefaultExportOptions;
 
         var dtos = documents.Select(MapToDetailDto).ToList();
-        var bytes = exportMode switch
+
+        ExportResultDto result;
+        if (options.Format == ExportFormat.Json)
         {
-            "MultipleSheets" => await _excel.GenerateMultiSheetExcelAsync(dtos, ct),
-            "SeparateFiles" => await _excel.GenerateSeparateFilesZipAsync(dtos, ct),
-            _ => await _excel.GenerateBatchExcelAsync(dtos, ct)
-        };
+            result = new ExportResultDto(await _json.GenerateBatchJsonAsync(dtos, options, ct), "application/json", "datamint-batch-export.json");
+        }
+        else
+        {
+            var bytes = exportMode switch
+            {
+                "MultipleSheets" => await _excel.GenerateMultiSheetExcelAsync(dtos, options, ct),
+                "SeparateFiles" => await _excel.GenerateSeparateFilesZipAsync(dtos, options, ct),
+                _ => await _excel.GenerateBatchExcelAsync(dtos, options, ct)
+            };
+            var isZip = exportMode == "SeparateFiles";
+            result = new ExportResultDto(bytes,
+                isZip ? "application/zip" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                isZip ? "datamint-batch-export.zip" : "datamint-batch-export.xlsx");
+        }
 
         foreach (var document in documents)
             document.Status = DocumentStatus.Exported;
         await _documents.SaveChangesAsync(ct);
 
         foreach (var document in documents)
-            await _audit.LogAsync("Document.BatchExport", document.UserId, "Document", document.Id.ToString(), $"{{\"exportMode\":\"{exportMode}\"}}", true, ct);
+            await _audit.LogAsync("Document.BatchExport", document.UserId, "Document", document.Id.ToString(), $"{{\"exportMode\":\"{exportMode}\",\"format\":\"{options.Format}\"}}", true, ct);
 
-        return Result<byte[]>.Success(bytes);
+        return Result<ExportResultDto>.Success(result);
     }
 
-    public async Task<Result> EmailBatchExportAsync(List<Document> documents, string toAddress, string exportMode = "SingleSheet", CancellationToken ct = default)
+    public async Task<Result> EmailBatchExportAsync(List<Document> documents, string toAddress, string exportMode = "SingleSheet", ExportOptionsDto? options = null, CancellationToken ct = default)
     {
-        var exportResult = await ExportBatchToExcelAsync(documents, exportMode, ct);
+        options ??= DefaultExportOptions;
+        var exportResult = await ExportBatchAsync(documents, exportMode, options, ct);
         if (!exportResult.Succeeded) return Result.Failure(exportResult.Error!, exportResult.ErrorCode!);
 
-        var isZip = exportMode == "SeparateFiles";
-        var extension = isZip ? "zip" : "xlsx";
-        var attachmentName = $"datamint-batch-export.{extension}";
-        var tempPath = Path.Combine(Path.GetTempPath(), $"datamint-batch-export-{Guid.NewGuid()}.{extension}");
-        await File.WriteAllBytesAsync(tempPath, exportResult.Data!, ct);
+        var (data, _, attachmentName) = exportResult.Data!;
+        var tempPath = Path.Combine(Path.GetTempPath(), $"datamint-batch-export-{Guid.NewGuid()}{Path.GetExtension(attachmentName)}");
+        await File.WriteAllBytesAsync(tempPath, data, ct);
 
-        var bodyDescription = exportMode switch
-        {
-            "MultipleSheets" => $"Please find attached one workbook with a separate sheet for each of the {documents.Count} document(s) from {_appName}.",
-            "SeparateFiles" => $"Please find attached a zip file with a separate spreadsheet for each of the {documents.Count} document(s) from {_appName}.",
-            _ => $"Please find attached the combined extracted data for {documents.Count} document(s) from {_appName}."
-        };
+        var bodyDescription = options.Format == ExportFormat.Json
+            ? $"Please find attached the combined extracted data (JSON) for {documents.Count} document(s) from {_appName}."
+            : exportMode switch
+            {
+                "MultipleSheets" => $"Please find attached one workbook with a separate sheet for each of the {documents.Count} document(s) from {_appName}.",
+                "SeparateFiles" => $"Please find attached a zip file with a separate spreadsheet for each of the {documents.Count} document(s) from {_appName}.",
+                _ => $"Please find attached the combined extracted data for {documents.Count} document(s) from {_appName}."
+            };
         var body = EmailTemplateHelper.Wrap(
             appName: _appName,
             title: "Your export is ready",
@@ -345,18 +369,20 @@ public class DocumentProcessingService
         if (File.Exists(tempPath)) File.Delete(tempPath);
 
         foreach (var document in documents)
-            await _audit.LogAsync("Document.BatchEmailSent", document.UserId, "Document", document.Id.ToString(), $"{{\"to\":\"{toAddress}\",\"exportMode\":\"{exportMode}\"}}", sent, ct);
+            await _audit.LogAsync("Document.BatchEmailSent", document.UserId, "Document", document.Id.ToString(), $"{{\"to\":\"{toAddress}\",\"exportMode\":\"{exportMode}\",\"format\":\"{options.Format}\"}}", sent, ct);
 
         return sent ? Result.Success() : Result.Failure("Failed to send email. Please check email service configuration.", "EMAIL_FAILED");
     }
 
-    public async Task<Result> EmailExportAsync(Guid documentId, string toAddress, CancellationToken ct = default)
+    public async Task<Result> EmailExportAsync(Guid documentId, string toAddress, ExportOptionsDto? options = null, CancellationToken ct = default)
     {
-        var exportResult = await ExportToExcelAsync(documentId, ct);
+        options ??= DefaultExportOptions;
+        var exportResult = await ExportDocumentAsync(documentId, options, ct);
         if (!exportResult.Succeeded) return Result.Failure(exportResult.Error!, exportResult.ErrorCode!);
 
-        var tempPath = Path.Combine(Path.GetTempPath(), $"datamint-export-{documentId}.xlsx");
-        await File.WriteAllBytesAsync(tempPath, exportResult.Data!, ct);
+        var (data, _, attachmentName) = exportResult.Data!;
+        var tempPath = Path.Combine(Path.GetTempPath(), $"datamint-export-{documentId}{Path.GetExtension(attachmentName)}");
+        await File.WriteAllBytesAsync(tempPath, data, ct);
 
         var body = EmailTemplateHelper.Wrap(
             appName: _appName,
@@ -369,7 +395,7 @@ public class DocumentProcessingService
             $"Your {_appName} extracted data export",
             body,
             tempPath,
-            "datamint-export.xlsx",
+            attachmentName,
             ct);
 
         if (File.Exists(tempPath)) File.Delete(tempPath);

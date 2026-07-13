@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
-import { BatchExportMode, DocumentSummary, ExtractedFieldEdit } from '../models/models';
+import { BatchExportMode, DocumentSummary, ExportOptions, ExtractedFieldEdit } from '../models/models';
 
 @Injectable({ providedIn: 'root' })
 export class DocumentService {
@@ -33,22 +33,23 @@ export class DocumentService {
       `${environment.apiBaseUrl}/documents/${documentId}/fields`, { fieldId, newValue, newKey });
   }
 
-  exportExcel(documentId: string) {
-    return this.http.get(`${environment.apiBaseUrl}/documents/${documentId}/export`, { responseType: 'blob' });
+  exportDocument(documentId: string, options: ExportOptions = { format: 'Excel', layout: 'RowsPerField' }) {
+    const params = new HttpParams().set('format', options.format).set('layout', options.layout);
+    return this.http.get(`${environment.apiBaseUrl}/documents/${documentId}/export`, { params, responseType: 'blob' });
   }
 
-  sendEmail(documentId: string, toAddress: string, message?: string) {
+  sendEmail(documentId: string, toAddress: string, message?: string, options?: ExportOptions) {
     return this.http.post<{ success: boolean; message: string }>(
-      `${environment.apiBaseUrl}/documents/${documentId}/send-email`, { documentId, toAddress, message });
+      `${environment.apiBaseUrl}/documents/${documentId}/send-email`, { documentId, toAddress, message, options });
   }
 
-  batchExport(documentIds: string[], exportMode: BatchExportMode = 'SingleSheet') {
-    return this.http.post(`${environment.apiBaseUrl}/documents/batch-export`, { documentIds, exportMode }, { responseType: 'blob' });
+  batchExport(documentIds: string[], exportMode: BatchExportMode = 'SingleSheet', options?: ExportOptions) {
+    return this.http.post(`${environment.apiBaseUrl}/documents/batch-export`, { documentIds, exportMode, options }, { responseType: 'blob' });
   }
 
-  batchSendEmail(documentIds: string[], toAddress: string, exportMode: BatchExportMode = 'SingleSheet') {
+  batchSendEmail(documentIds: string[], toAddress: string, exportMode: BatchExportMode = 'SingleSheet', options?: ExportOptions) {
     return this.http.post<{ success: boolean; message: string }>(
-      `${environment.apiBaseUrl}/documents/batch-send-email`, { documentIds, toAddress, exportMode });
+      `${environment.apiBaseUrl}/documents/batch-send-email`, { documentIds, toAddress, exportMode, options });
   }
 
   getMine() {

@@ -8,11 +8,12 @@ import { ExtractedFieldEdit } from '../../core/models/models';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
 import { AutoGrowDirective } from '../../shared/directives/auto-grow.directive';
+import { ExportModalComponent, ExportModalResult } from '../../shared/components/export-modal/export-modal.component';
 
 @Component({
   selector: 'app-preview-edit',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, AutoGrowDirective],
+  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, AutoGrowDirective, ExportModalComponent],
   template: `
     <div class="dm-container page">
       <app-back-button fallbackUrl="/documents" />
@@ -32,18 +33,14 @@ import { AutoGrowDirective } from '../../shared/directives/auto-grow.directive';
           <p class="muted">{{ pageCount }} page(s) · {{ requiresOcr ? 'OCR applied' : 'Text extracted directly' }}</p>
         </div>
         <div class="actions">
-          <button class="dm-btn dm-btn-ghost" (click)="exportExcel()">⬇ Export Excel</button>
-          <button class="dm-btn dm-btn-primary" (click)="showEmailBox = !showEmailBox">✉ Email export</button>
+          <button class="dm-btn dm-btn-ghost" (click)="openExportModal('download')">⬇ Export</button>
+          <button class="dm-btn dm-btn-primary" (click)="openExportModal('email')">✉ Email export</button>
         </div>
       </div>
 
-      @if (showEmailBox) {
-        <div class="dm-card email-box">
-          <input class="dm-input" type="email" [(ngModel)]="emailAddress" placeholder="recipient@company.com" />
-          <button class="dm-btn dm-btn-primary" (click)="sendEmail()" [disabled]="sendingEmail">
-            {{ sendingEmail ? 'Sending…' : 'Send' }}
-          </button>
-        </div>
+      @if (exportModalFor) {
+        <app-export-modal [action]="exportModalFor" [busy]="exportBusy"
+                           (confirmed)="onExportConfirmed($event)" (cancelled)="exportModalFor = null" />
       }
 
       @for (page of pageNumbers; track page) {
@@ -70,7 +67,6 @@ import { AutoGrowDirective } from '../../shared/directives/auto-grow.directive';
     .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     .actions { display: flex; gap: 10px; }
-    .email-box { display: flex; gap: 10px; padding: 16px; margin-bottom: 20px; }
     .not-found-card { max-width: 460px; margin: 60px auto; padding: 40px 32px; text-align: center; }
     .not-found-card .icon { color: var(--dm-text-muted); display: flex; justify-content: center; margin-bottom: 14px; }
     .not-found-card h2 { margin-bottom: 10px; }
@@ -95,9 +91,8 @@ export class PreviewEditComponent implements OnInit {
   pageCount = 0;
   requiresOcr = false;
   fields: ExtractedFieldEdit[] = [];
-  showEmailBox = false;
-  emailAddress = '';
-  sendingEmail = false;
+  exportModalFor: 'download' | 'email' | null = null;
+  exportBusy = false;
   loading = true;
   notFound = false;
 
@@ -151,24 +146,34 @@ export class PreviewEditComponent implements OnInit {
     });
   }
 
-  exportExcel() {
-    this.documentService.exportExcel(this.documentId).subscribe(blob => {
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${this.fileName.replace('.pdf', '')}-export.xlsx`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      this.toast.success('Excel file downloaded.');
-    });
+  openExportModal(action: 'download' | 'email') {
+    this.exportModalFor = this.exportModalFor === action ? null : action;
   }
 
-  sendEmail() {
-    if (!this.emailAddress) return;
-    this.sendingEmail = true;
-    this.documentService.sendEmail(this.documentId, this.emailAddress).subscribe({
-      next: () => { this.toast.success('Export emailed successfully.'); this.showEmailBox = false; this.sendingEmail = false; },
-      error: () => this.sendingEmail = false
+  onExportConfirmed(result: ExportModalResult) {
+    this.exportBusy = true;
+    if (result.toAddress) {
+      this.documentService.sendEmail(this.documentId, result.toAddress, undefined, result.options).subscribe({
+        next: () => { this.toast.success('Export emailed successfully.'); this.exportModalFor = null; this.exportBusy = false; },
+        error: () => { this.toast.error('Could not send that email. Please try again.'); this.exportBusy = false; }
+      });
+      return;
+    }
+
+    this.documentService.exportDocument(this.documentId, result.options).subscribe({
+      next: blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const ext = result.options.format === 'Json' ? 'json' : 'xlsx';
+        a.download = `${this.fileName.replace(/\.[^.]+$/, '')}-export.${ext}`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        this.exportModalFor = null;
+        this.exportBusy = false;
+        this.toast.success('Export downloaded.');
+      },
+      error: () => { this.exportBusy = false; this.toast.error('Could not export. Please try again.'); }
     });
   }
 }

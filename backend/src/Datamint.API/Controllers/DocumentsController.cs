@@ -260,14 +260,18 @@ public class DocumentsController : ControllerBase
     }
 
     [HttpGet("{id:guid}/export")]
-    public async Task<IActionResult> Export(Guid id, CancellationToken ct)
+    public async Task<IActionResult> Export(Guid id, [FromQuery] string format = "Excel", [FromQuery] string layout = "RowsPerField", CancellationToken ct = default)
     {
         var (_, error) = await GetOwnedDocumentAsync(id, ct);
         if (error is not null) return error;
 
-        var result = await _service.ExportToExcelAsync(id, ct);
+        var options = new ExportOptionsDto(
+            Enum.TryParse<ExportFormat>(format, true, out var f) ? f : ExportFormat.Excel,
+            Enum.TryParse<ExportLayout>(layout, true, out var l) ? l : ExportLayout.RowsPerField);
+
+        var result = await _service.ExportDocumentAsync(id, options, ct);
         if (!result.Succeeded) return NotFound(new { success = false, message = result.Error });
-        return File(result.Data!, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "datamint-export.xlsx");
+        return File(result.Data!.Data, result.Data.ContentType, result.Data.FileName);
     }
 
     [HttpPost("{id:guid}/send-email")]
@@ -276,7 +280,7 @@ public class DocumentsController : ControllerBase
         var (_, error) = await GetOwnedDocumentAsync(id, ct);
         if (error is not null) return error;
 
-        var result = await _service.EmailExportAsync(id, dto.ToAddress, ct);
+        var result = await _service.EmailExportAsync(id, dto.ToAddress, dto.Options, ct);
         return result.Succeeded
             ? Ok(new { success = true, message = "Export emailed successfully." })
             : BadRequest(new { success = false, message = result.Error });
@@ -305,12 +309,10 @@ public class DocumentsController : ControllerBase
         var (documents, error) = await GetOwnedDocumentsAsync(dto.DocumentIds, ct);
         if (error is not null) return error;
 
-        var result = await _service.ExportBatchToExcelAsync(documents!, dto.ExportMode, ct);
+        var result = await _service.ExportBatchAsync(documents!, dto.ExportMode, dto.Options, ct);
         if (!result.Succeeded) return NotFound(new { success = false, message = result.Error });
 
-        return dto.ExportMode == "SeparateFiles"
-            ? File(result.Data!, "application/zip", "datamint-batch-export.zip")
-            : File(result.Data!, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "datamint-batch-export.xlsx");
+        return File(result.Data!.Data, result.Data.ContentType, result.Data.FileName);
     }
 
     [HttpPost("batch-send-email")]
@@ -322,7 +324,7 @@ public class DocumentsController : ControllerBase
         var (documents, error) = await GetOwnedDocumentsAsync(dto.DocumentIds, ct);
         if (error is not null) return error;
 
-        var result = await _service.EmailBatchExportAsync(documents!, dto.ToAddress, dto.ExportMode, ct);
+        var result = await _service.EmailBatchExportAsync(documents!, dto.ToAddress, dto.ExportMode, dto.Options, ct);
         return result.Succeeded
             ? Ok(new { success = true, message = "Export emailed successfully." })
             : BadRequest(new { success = false, message = result.Error });

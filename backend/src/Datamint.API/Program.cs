@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json.Serialization;
 using Datamint.API.Json;
 using Datamint.API.Middleware;
 using Datamint.Application.Interfaces;
@@ -62,6 +63,7 @@ else
 
 builder.Services.AddScoped<IEmailService, MailKitEmailService>();
 builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
+builder.Services.AddScoped<IJsonExportService, JsonExportService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 // Payment gateway is a config switch, same pattern as AiProvider:Provider above: set
@@ -159,6 +161,10 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.Converters.Add(new UtcDateTimeConverter());
         options.JsonSerializerOptions.Converters.Add(new UtcNullableDateTimeConverter());
+        // Lets ExportOptionsDto.Format/Layout (and any other enum) bind from/serialize to
+        // their string names ("Json", "ColumnsPerField") instead of the default numeric index -
+        // matches the string literal types already used on the Angular side.
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
