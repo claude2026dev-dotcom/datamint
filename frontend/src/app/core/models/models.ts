@@ -6,6 +6,7 @@ export interface UserProfile {
   isEmailVerified: boolean;
   hasActiveSubscription: boolean;
   isSuperAdmin: boolean;
+  avatarUrl?: string | null;
 }
 
 export interface AuthResponse {

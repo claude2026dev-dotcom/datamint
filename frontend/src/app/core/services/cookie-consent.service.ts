@@ -13,6 +13,14 @@ export type CookieConsent = 'accepted' | 'rejected';
 export class CookieConsentService {
   consent = signal<CookieConsent | null>(this.readStored());
 
+  // Separate from `consent` on purpose: `consent` is "what was decided" (persisted),
+  // this is just "is the banner currently on screen". Without the split, the only way
+  // to let someone revisit their choice later (a "Cookie settings" link, same as every
+  // real cookie banner has) would be to null out their saved choice just to reopen the
+  // banner - which would also silently re-trigger the "accepted" default script-loading
+  // logic below before they'd actually re-decided anything.
+  bannerOpen = signal(this.consent() === null);
+
   private readonly scripts: Record<string, string> = {
     'google-gsi': 'https://accounts.google.com/gsi/client',
     'razorpay-checkout': 'https://checkout.razorpay.com/v1/checkout.js'
@@ -32,12 +40,20 @@ export class CookieConsentService {
   accept() {
     localStorage.setItem(CONSENT_KEY, 'accepted');
     this.consent.set('accepted');
+    this.bannerOpen.set(false);
     this.loadThirdPartyScripts();
   }
 
   reject() {
     localStorage.setItem(CONSENT_KEY, 'rejected');
     this.consent.set('rejected');
+    this.bannerOpen.set(false);
+  }
+
+  /// Reopens the banner so an already-decided choice can be changed - reachable any
+  /// time via the "Cookie settings" link in the footer, not just on first visit.
+  reopen() {
+    this.bannerOpen.set(true);
   }
 
   private loadThirdPartyScripts() {

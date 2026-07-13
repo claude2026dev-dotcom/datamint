@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { IconComponent } from '../icon/icon.component';
+import { CookieConsentService } from '../../../core/services/cookie-consent.service';
 
 @Component({
   selector: 'app-footer',
@@ -15,6 +16,7 @@ import { IconComponent } from '../icon/icon.component';
         <nav class="footer-links">
           <a routerLink="/terms">Terms</a>
           <a routerLink="/privacy">Privacy</a>
+          <button type="button" class="link-btn" (click)="cookieConsent.reopen()">Cookie settings</button>
           <a href="mailto:claude2026dev@gmail.com" class="contact-link">
             <app-icon name="inbox" [size]="14" /> Contact us
           </a>
@@ -37,6 +39,11 @@ import { IconComponent } from '../icon/icon.component';
     .footer-links { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
     .footer-links a { color: var(--dm-text-muted); text-decoration: none; font-size: 0.85rem; transition: color 0.15s ease; }
     .footer-links a:hover { color: var(--dm-text); }
+    .link-btn {
+      background: none; border: none; padding: 0; margin: 0; font: inherit; cursor: pointer;
+      color: var(--dm-text-muted); font-size: 0.85rem; transition: color 0.15s ease;
+    }
+    .link-btn:hover { color: var(--dm-text); }
     .contact-link { display: inline-flex; align-items: center; gap: 6px; }
     .copyright { color: var(--dm-text-muted); font-size: 0.82rem; }
     @media (max-width: 560px) { .footer-inner { flex-direction: column; align-items: flex-start; } }
@@ -44,4 +51,6 @@ import { IconComponent } from '../icon/icon.component';
 })
 export class FooterComponent {
   year = new Date().getFullYear();
+
+  constructor(public cookieConsent: CookieConsentService) {}
 }

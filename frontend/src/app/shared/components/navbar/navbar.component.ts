@@ -39,12 +39,16 @@ import { IconComponent } from '../icon/icon.component';
           @if (auth.isLoggedIn()) {
             <div class="profile-menu">
               <button class="avatar-btn" (click)="toggleProfile()" aria-label="Account menu">
-                <span class="avatar">{{ initials() }}</span>
+                <span class="avatar">
+                  @if (auth.currentUser()?.avatarUrl; as avatarUrl) { <img [src]="avatarUrl" alt="" /> } @else { {{ initials() }} }
+                </span>
               </button>
               @if (profileOpen) {
                 <div class="profile-dropdown dm-card">
                   <div class="profile-header">
-                    <span class="avatar avatar-lg">{{ initials() }}</span>
+                    <span class="avatar avatar-lg">
+                      @if (auth.currentUser()?.avatarUrl; as avatarUrl) { <img [src]="avatarUrl" alt="" /> } @else { {{ initials() }} }
+                    </span>
                     <div>
                       <div class="name">{{ auth.currentUser()?.displayName || 'Datamint user' }}</div>
                       <div class="email">{{ auth.currentUser()?.email }}</div>
@@ -115,8 +119,9 @@ import { IconComponent } from '../icon/icon.component';
     .avatar {
       display: flex; align-items: center; justify-content: center;
       width: 36px; height: 36px; border-radius: 50%; background: var(--dm-gradient-primary);
-      color: white; font-weight: 700; font-size: 0.85rem; letter-spacing: 0.02em;
+      color: white; font-weight: 700; font-size: 0.85rem; letter-spacing: 0.02em; overflow: hidden;
     }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
     .avatar-lg { width: 44px; height: 44px; font-size: 1rem; flex-shrink: 0; }
     .profile-dropdown {
       position: absolute; top: calc(100% + 10px); right: 0; width: min(260px, calc(100vw - 32px)); padding: 8px;

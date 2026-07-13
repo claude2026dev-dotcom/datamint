@@ -23,14 +23,17 @@ public class AuthController : ControllerBase
     private readonly ISessionService _sessions;
     private readonly IAuthService _authService;
     private readonly DatamintDbContext _db;
+    private readonly IAvatarImageService _avatarImage;
+    private readonly IConfiguration _config;
 
     // "Remember me" ticked: refresh token (and therefore the session) survives
     // for this long. Not ticked: a much shorter ceiling, so an un-remembered
     // session naturally requires signing in again well within a day.
     private const int RememberMeDays = 10;
     private const int NotRememberedDays = 1;
+    private const int MaxAvatarUploadMb = 5;
 
-    public AuthController(IUserRepository users, IJwtTokenService jwt, IGoogleAuthService google, IAuditService audit, ICurrentUserService currentUser, IAuthNotificationService notify, IPasswordResetService passwordReset, ISessionService sessions, IAuthService authService, DatamintDbContext db)
+    public AuthController(IUserRepository users, IJwtTokenService jwt, IGoogleAuthService google, IAuditService audit, ICurrentUserService currentUser, IAuthNotificationService notify, IPasswordResetService passwordReset, ISessionService sessions, IAuthService authService, DatamintDbContext db, IAvatarImageService avatarImage, IConfiguration config)
     {
         _users = users;
         _jwt = jwt;
@@ -42,6 +45,8 @@ public class AuthController : ControllerBase
         _sessions = sessions;
         _authService = authService;
         _db = db;
+        _avatarImage = avatarImage;
+        _config = config;
     }
 
     /// <summary>Register with email + password. Password is stored as a BCrypt hash — never in plain text.</summary>
@@ -254,6 +259,105 @@ public class AuthController : ControllerBase
         return Ok(new { success = true, profile = ToProfileDto(user) });
     }
 
+    /// <summary>
+    /// Replaces the caller's profile picture. The upload is never trusted as-is - see
+    /// IAvatarImageService for why - and any previous picture is deleted only after the
+    /// new one is safely on disk, so a failed upload never leaves the account with none.
+    /// </summary>
+    [HttpPost("me/avatar")]
+    [Authorize]
+    [RequestSizeLimit(MaxAvatarUploadMb * 1024 * 1024)]
+    public async Task<IActionResult> UploadAvatar([FromForm] IFormFile file, CancellationToken ct)
+    {
+        var user = await _users.GetByIdAsync(_currentUser.UserId!.Value, ct);
+        if (user is null) return NotFound(new { success = false, message = "User not found." });
+
+        if (file is null || file.Length == 0)
+            return BadRequest(new { success = false, message = "Choose an image to upload." });
+        if (file.Length > MaxAvatarUploadMb * 1024 * 1024)
+            return BadRequest(new { success = false, message = $"Please choose an image under {MaxAvatarUploadMb}MB." });
+
+        ProcessedAvatarImage processed;
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            processed = await _avatarImage.ProcessAsync(stream, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+
+        var avatarsRoot = Path.Combine(_config["FileStorage:UploadsRootPath"] ?? "./uploads", "avatars");
+        Directory.CreateDirectory(avatarsRoot);
+
+        var fileName = $"{Guid.NewGuid():N}{processed.Extension}";
+        await System.IO.File.WriteAllBytesAsync(Path.Combine(avatarsRoot, fileName), processed.Bytes, ct);
+
+        var previousFileName = user.AvatarFileName;
+        user.AvatarFileName = fileName;
+        await _users.SaveChangesAsync(ct);
+
+        if (previousFileName is not null)
+        {
+            var previousPath = Path.Combine(avatarsRoot, previousFileName);
+            try { if (System.IO.File.Exists(previousPath)) System.IO.File.Delete(previousPath); }
+            catch { /* best-effort cleanup - a stray old file isn't worth failing the request over */ }
+        }
+
+        await _audit.LogAsync("Auth.AvatarChanged", user.Id, ct: ct);
+        return Ok(new { success = true, profile = ToProfileDto(user) });
+    }
+
+    /// <summary>Removes the caller's profile picture - the frontend falls back to initials.</summary>
+    [HttpDelete("me/avatar")]
+    [Authorize]
+    public async Task<IActionResult> RemoveAvatar(CancellationToken ct)
+    {
+        var user = await _users.GetByIdAsync(_currentUser.UserId!.Value, ct);
+        if (user is null) return NotFound(new { success = false, message = "User not found." });
+
+        if (user.AvatarFileName is not null)
+        {
+            var avatarsRoot = Path.Combine(_config["FileStorage:UploadsRootPath"] ?? "./uploads", "avatars");
+            var path = Path.Combine(avatarsRoot, user.AvatarFileName);
+            try { if (System.IO.File.Exists(path)) System.IO.File.Delete(path); }
+            catch { /* best-effort - the DB field is the source of truth either way */ }
+
+            user.AvatarFileName = null;
+            await _users.SaveChangesAsync(ct);
+            await _audit.LogAsync("Auth.AvatarRemoved", user.Id, ct: ct);
+        }
+
+        return Ok(new { success = true, profile = ToProfileDto(user) });
+    }
+
+    /// <summary>
+    /// Serves a profile picture by its stored (GUID) file name. Deliberately not behind
+    /// [Authorize] - an &lt;img src&gt; tag can't attach an Authorization header, and profile
+    /// pictures are low-sensitivity, unguessable-URL public content, the same way most
+    /// real apps serve them (Gravatar, S3 public buckets, etc.). Reads directly off disk
+    /// rather than through EF, so this never touches the database at all.
+    /// </summary>
+    [HttpGet("avatar/{fileName}")]
+    [AllowAnonymous]
+    [ResponseCache(Duration = 3600)]
+    public IActionResult GetAvatar(string fileName)
+    {
+        // fileName is always exactly a GUID + ".jpg" (AvatarImageService controls the
+        // extension, AuthController controls the GUID) - reject anything else outright
+        // rather than letting a crafted path segment (e.g. "../../appsettings.json")
+        // anywhere near a Path.Combine call.
+        if (!System.Text.RegularExpressions.Regex.IsMatch(fileName, "^[0-9a-fA-F]{32}\\.jpg$"))
+            return NotFound();
+
+        var avatarsRoot = Path.Combine(_config["FileStorage:UploadsRootPath"] ?? "./uploads", "avatars");
+        var path = Path.Combine(avatarsRoot, fileName);
+        if (!System.IO.File.Exists(path)) return NotFound();
+
+        return PhysicalFile(Path.GetFullPath(path), "image/jpeg");
+    }
+
     /// <summary>Self-service password change from the profile page. Signs the user out everywhere as a precaution.</summary>
     [HttpPut("change-password")]
     [Authorize]
@@ -320,7 +424,13 @@ public class AuthController : ControllerBase
     private Task CancelActiveSubscriptionsAsync(Guid userId, CancellationToken ct) => CancelActiveSubscriptionsAsync(_db, userId, ct);
 
     private static ProfileDto ToProfileDto(ApplicationUser user) =>
-        new(user.Id, user.Email, user.DisplayName, user.Role, user.IsEmailVerified, user.CreatedAtUtc, user.PasswordHash is not null, user.IsSuperAdmin);
+        new(user.Id, user.Email, user.DisplayName, user.Role, user.IsEmailVerified, user.CreatedAtUtc, user.PasswordHash is not null, user.IsSuperAdmin, BuildAvatarUrl(user.AvatarFileName));
+
+    // Relative on purpose (not an absolute https://host/... URL) - same reasoning as
+    // environment.apiBaseUrl on the frontend: a relative path resolves against whatever
+    // origin actually served the page, so it keeps working unchanged behind a tunnel or
+    // once this moves to a real domain, instead of baking today's host into stored data.
+    private static string? BuildAvatarUrl(string? fileName) => fileName is null ? null : $"/api/auth/avatar/{fileName}";
 
     /// <summary>Maps an IAuthService failure's error code to the HTTP status the frontend already expects.</summary>
     private IActionResult AuthError(string errorCode, string message) => errorCode switch
@@ -364,7 +474,7 @@ public class AuthController : ControllerBase
         await _db.SaveChangesAsync(ct);
 
         var profile = new UserProfileDto(user.Id, user.Email, user.DisplayName, user.Role,
-            user.IsEmailVerified, hasActiveSubscription, user.IsSuperAdmin);
+            user.IsEmailVerified, hasActiveSubscription, user.IsSuperAdmin, BuildAvatarUrl(user.AvatarFileName));
 
         return new AuthResponseDto(access, rawRefresh, DateTime.UtcNow.AddMinutes(30), profile);
     }

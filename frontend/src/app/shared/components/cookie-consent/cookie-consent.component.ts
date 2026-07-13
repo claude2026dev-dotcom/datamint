@@ -11,15 +11,18 @@ import { CookieConsentService } from '../../../core/services/cookie-consent.serv
   standalone: true,
   imports: [RouterLink],
   template: `
-    @if (cookieConsent.consent() === null) {
+    @if (cookieConsent.bannerOpen()) {
       <div class="dm-card cookie-banner" role="dialog" aria-label="Cookie consent">
         <p>
           Signing in and using Datamint only needs a session token - no cookie banner would even be required for that alone.
           We're asking because two <em>optional</em> features load third-party scripts that set their own cookies:
           <strong>Google Sign-In</strong> and <strong>Razorpay Checkout</strong>. Accept to enable both; reject and everything
-          else - email/password login, uploads, editing, exports - still works exactly the same. See our
-          <a routerLink="/privacy">Privacy Policy</a> for details.
+          else - email/password login, uploads, editing, exports - still works exactly the same. You can change your mind
+          any time from "Cookie settings" in the footer. See our <a routerLink="/privacy">Privacy Policy</a> for details.
         </p>
+        @if (cookieConsent.consent(); as current) {
+          <p class="current-choice">Current choice: <strong>{{ current === 'accepted' ? 'Accepted' : 'Rejected' }}</strong></p>
+        }
         <div class="cookie-actions">
           <button class="dm-btn dm-btn-ghost" (click)="cookieConsent.reject()">Reject non-essential</button>
           <button class="dm-btn dm-btn-ghost accept-btn" (click)="cookieConsent.accept()">Accept</button>
@@ -34,6 +37,7 @@ import { CookieConsentService } from '../../../core/services/cookie-consent.serv
       box-shadow: var(--dm-shadow);
     }
     .cookie-banner p { margin: 0; font-size: 0.86rem; color: var(--dm-text-muted); line-height: 1.5; }
+    .current-choice { font-size: 0.8rem !important; }
     .cookie-banner a { color: var(--dm-primary-light); }
     .cookie-actions { display: flex; gap: 10px; justify-content: flex-end; }
     /* Both buttons are deliberately the same size/weight - only the border color tells

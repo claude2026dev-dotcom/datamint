@@ -20,11 +20,12 @@ public record UserProfileDto(
     string Role,
     bool IsEmailVerified,
     bool HasActiveSubscription,
-    bool IsSuperAdmin);
+    bool IsSuperAdmin,
+    string? AvatarUrl);
 
 public record GoogleUserInfoDto(string GoogleId, string Email, string? Name, bool EmailVerified);
 
-public record ProfileDto(Guid Id, string Email, string? DisplayName, string Role, bool IsEmailVerified, DateTime CreatedAtUtc, bool HasPassword, bool IsSuperAdmin);
+public record ProfileDto(Guid Id, string Email, string? DisplayName, string Role, bool IsEmailVerified, DateTime CreatedAtUtc, bool HasPassword, bool IsSuperAdmin, string? AvatarUrl);
 
 public record UpdateProfileRequestDto(string? DisplayName);
 

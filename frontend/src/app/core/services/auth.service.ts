@@ -74,7 +74,7 @@ export class AuthService {
   }
 
   getProfile() {
-    return this.http.get<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string; hasPassword: boolean; isSuperAdmin: boolean } }>(
+    return this.http.get<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string; hasPassword: boolean; isSuperAdmin: boolean; avatarUrl?: string | null } }>(
       `${environment.apiBaseUrl}/auth/me`);
   }
 
@@ -95,7 +95,7 @@ export class AuthService {
   }
 
   updateProfile(displayName: string) {
-    return this.http.put<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string; hasPassword: boolean; isSuperAdmin: boolean } }>(
+    return this.http.put<{ success: boolean; profile: { id: string; email: string; displayName?: string; role: string; isEmailVerified: boolean; createdAtUtc: string; hasPassword: boolean; isSuperAdmin: boolean; avatarUrl?: string | null } }>(
       `${environment.apiBaseUrl}/auth/me`, { displayName }).pipe(
       tap(res => {
         // Keep the cached session in sync so the navbar/anywhere else reflects
@@ -108,6 +108,31 @@ export class AuthService {
         }
       })
     );
+  }
+
+  uploadAvatar(file: File) {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<{ success: boolean; profile: { avatarUrl?: string | null } }>(
+      `${environment.apiBaseUrl}/auth/me/avatar`, form
+    ).pipe(tap(res => this.syncAvatar(res.profile.avatarUrl)));
+  }
+
+  removeAvatar() {
+    return this.http.delete<{ success: boolean; profile: { avatarUrl?: string | null } }>(
+      `${environment.apiBaseUrl}/auth/me/avatar`
+    ).pipe(tap(res => this.syncAvatar(res.profile.avatarUrl)));
+  }
+
+  /// Keeps the cached session (navbar avatar, etc.) in sync with the server's answer
+  /// right after an avatar change, the same way updateProfile() does for displayName -
+  /// without this the new/removed picture wouldn't show up anywhere until next login.
+  private syncAvatar(avatarUrl: string | null | undefined) {
+    const current = this.userSignal();
+    if (!current) return;
+    const updated = { ...current, avatarUrl: avatarUrl ?? undefined };
+    localStorage.setItem(USER_KEY, JSON.stringify(updated));
+    this.userSignal.set(updated);
   }
 
   /** Call after any successful auth HTTP response to persist the session and route the user onward. */

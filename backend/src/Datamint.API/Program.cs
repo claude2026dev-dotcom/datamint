@@ -64,6 +64,7 @@ builder.Services.AddScoped<IAuthNotificationService, AuthNotificationService>();
 builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IAvatarImageService, AvatarImageService>();
 
 // Sweeps deactivated accounts past their DeactivationGraceDays window and erases them.
 builder.Services.AddHostedService<Datamint.Infrastructure.Services.AccountPurgeService>();

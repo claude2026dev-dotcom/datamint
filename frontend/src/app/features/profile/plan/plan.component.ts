@@ -27,7 +27,7 @@ import { BackButtonComponent } from '../../../shared/components/back-button/back
             <div class="plan-name-row">
               <span class="plan-name">{{ planStatus?.planName }}</span>
               @if (planStatus?.cancelAtPeriodEnd) {
-                <span class="badge badge-cancel">Ending {{ planStatus?.endAtUtc | date:'MMM d' }}</span>
+                <span class="badge badge-cancel">Ending {{ planStatus?.endAtUtc | date:'MMM d, h:mm a' }}</span>
               } @else {
                 <span class="badge badge-active">Active</span>
               }
@@ -43,9 +43,9 @@ import { BackButtonComponent } from '../../../shared/components/back-button/back
             <p class="muted small">{{ usageLabel() }}</p>
 
             @if (planStatus?.cancelAtPeriodEnd) {
-              <p class="muted small">Your plan won't renew — you'll keep access until {{ planStatus?.endAtUtc | date:'mediumDate' }}, then you'll be moved to Free.</p>
+              <p class="muted small">Your plan won't renew — you'll keep access until {{ planStatus?.endAtUtc | date:'medium' }}, then you'll be moved to Free.</p>
             } @else if (planStatus?.endAtUtc) {
-              <p class="muted small">Renews {{ planStatus?.endAtUtc | date:'mediumDate' }}</p>
+              <p class="muted small">Renews {{ planStatus?.endAtUtc | date:'medium' }}</p>
             }
 
             <div class="card-footer plan-actions">
@@ -127,7 +127,7 @@ export class PlanComponent implements OnInit {
   async cancelPlan() {
     const confirmed = await this.confirmDialog.ask({
       title: 'Cancel your plan?',
-      message: `You'll keep access until ${this.planStatus?.endAtUtc ? new Date(this.planStatus.endAtUtc).toLocaleDateString() : 'the end of this cycle'}, then move to the Free plan. You can resubscribe any time.`,
+      message: `You'll keep access until ${this.planStatus?.endAtUtc ? new Date(this.planStatus.endAtUtc).toLocaleString() : 'the end of this cycle'}, then move to the Free plan. You can resubscribe any time.`,
       confirmLabel: 'Cancel plan',
       danger: true
     });

@@ -19,6 +19,12 @@ public class ApplicationUser : BaseEntity
     public bool IsActive { get; set; } = true;
     public DateTime? LastLoginAtUtc { get; set; }
 
+    // Just the stored file's name (a GUID + extension, e.g. "3f9e...-a1b2.jpg"), not a full
+    // URL - AuthController builds the actual /api/auth/avatar/{fileName} URL on the way out,
+    // so switching hosts/domains never means a stale absolute URL baked into old rows. Null
+    // when the user has no custom picture (frontend falls back to initials, as it always did).
+    public string? AvatarFileName { get; set; }
+
     // Set the moment a user deactivates their own account (or an admin deletes one) -
     // null while active, and cleared back to null on reactivation. Drives the
     // DeactivationGraceDays window: logging back in (or an admin reactivating) before

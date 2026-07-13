@@ -115,7 +115,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
                   </td>
                   <td data-label="Plan">{{ u.currentPlan ?? 'Free' }}</td>
                   <td data-label="Status"><span class="badge" [class.badge-ok]="u.isActive" [class.badge-fail]="!u.isActive">{{ u.isActive ? 'Active' : 'Disabled' }}</span></td>
-                  <td class="nowrap" data-label="Joined">{{ u.createdAtUtc | date:'mediumDate' }}</td>
+                  <td class="nowrap" data-label="Joined">{{ u.createdAtUtc | date:'medium' }}</td>
                   <td class="nowrap" data-label="Last login">{{ u.lastLoginAtUtc ? (u.lastLoginAtUtc | date:'medium') : '—' }}</td>
                   <td class="actions-col" data-label="Actions">
                     @if (editingId === u.id) {
@@ -147,7 +147,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
                   </td>
                   <td data-label="Name">{{ u.displayName || '—' }}</td>
                   <td data-label="Role"><span class="badge" [class.badge-admin]="u.role === 'Admin'">{{ u.role }}</span></td>
-                  <td class="nowrap" data-label="Deactivated on">{{ u.deactivatedAtUtc ? (u.deactivatedAtUtc | date:'mediumDate') : '—' }}</td>
+                  <td class="nowrap" data-label="Deactivated on">{{ u.deactivatedAtUtc ? (u.deactivatedAtUtc | date:'medium') : '—' }}</td>
                   <td class="nowrap" data-label="Time left">
                     @if (u.daysUntilPurge === null || u.daysUntilPurge === undefined) {
                       —
