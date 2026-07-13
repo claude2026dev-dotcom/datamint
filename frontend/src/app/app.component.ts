@@ -6,6 +6,7 @@ import { ToastComponent } from './shared/components/toast/toast.component';
 import { ConfirmDialogComponent } from './shared/components/confirm-dialog/confirm-dialog.component';
 import { FooterComponent } from './shared/components/footer/footer.component';
 import { environment } from '../environments/environment';
+import { AuthService } from './core/services/auth.service';
 
 @Component({
   selector: 'app-root',
@@ -22,7 +23,10 @@ import { environment } from '../environments/environment';
 export class AppComponent {
   // index.html's static <title> is a build-time fallback for pre-JS crawlers; this is the
   // single source of truth once Angular boots, so a project rename only needs environment.appName.
-  constructor(titleService: Title) {
+  constructor(titleService: Title, auth: AuthService) {
     titleService.setTitle(`${environment.appName} — Extract PDF Data with AI`);
+    // Reconcile the cached session (used for an instant navbar render) against the
+    // server once per app load - see AuthService.refreshCurrentUser for why this can drift.
+    auth.refreshCurrentUser();
   }
 }

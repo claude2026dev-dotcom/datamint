@@ -1,4 +1,4 @@
-import { Component, ElementRef, NgZone, OnDestroy, OnInit } from '@angular/core';
+import { Component, ElementRef, NgZone, OnDestroy, OnInit, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink, RouterLinkActive } from '@angular/router';
@@ -41,7 +41,7 @@ import { environment } from '../../../../environments/environment';
             <div class="profile-menu">
               <button class="avatar-btn" (click)="toggleProfile()" aria-label="Account menu">
                 <span class="avatar">
-                  @if (auth.currentUser()?.avatarUrl; as avatarUrl) { <img [src]="avatarUrl" alt="" /> } @else { {{ initials() }} }
+                  @if (!avatarError && auth.currentUser()?.avatarUrl; as avatarUrl) { <img [src]="avatarUrl" alt="" (error)="avatarError = true" /> } @else { {{ initials() }} }
                 </span>
               </button>
               @if (profileOpen) {
@@ -161,13 +161,20 @@ export class NavbarComponent implements OnInit, OnDestroy {
   menuOpen = false;
   profileOpen = false;
   readonly appName = environment.appName;
+  // Set once the cached avatarUrl 404s (e.g. it was removed/changed elsewhere and this
+  // tab's cached user record hasn't caught up yet) so the template falls back to
+  // initials instead of the browser's broken-image glyph. Reset below whenever the
+  // underlying URL actually changes, so a fresh upload always gets a fresh attempt.
+  avatarError = false;
 
   // Bound once so addEventListener/removeEventListener refer to the exact same
   // function reference (an inline arrow passed to each call would never match,
   // silently leaking the listener instead of actually removing it).
   private readonly documentClickHandler = (event: MouseEvent) => this.onDocumentClick(event);
 
-  constructor(public auth: AuthService, public theme: ThemeService, private elementRef: ElementRef, private zone: NgZone) {}
+  constructor(public auth: AuthService, public theme: ThemeService, private elementRef: ElementRef, private zone: NgZone) {
+    effect(() => { this.auth.currentUser()?.avatarUrl; this.avatarError = false; });
+  }
 
   ngOnInit() {
     // Registered on the CAPTURE phase (the `true` third argument), not bubble -

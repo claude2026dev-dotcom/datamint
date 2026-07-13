@@ -135,6 +135,27 @@ export class AuthService {
     this.userSignal.set(updated);
   }
 
+  /// The cached session (localStorage) exists purely so the navbar/etc. have something
+  /// to render instantly on app load instead of a blank flash - it's a snapshot from
+  /// whenever the user last logged in or explicitly changed something through this same
+  /// service, so it can drift from the server (e.g. an avatar removed but the network
+  /// response never landed before the tab closed, or a change made on another device).
+  /// Called once on app bootstrap to reconcile it; failures are ignored since the stale
+  /// cache is still a reasonable fallback and this must never block app startup.
+  refreshCurrentUser() {
+    if (!this.userSignal()) return;
+    this.getProfile().subscribe({
+      next: res => {
+        const current = this.userSignal();
+        if (!current) return;
+        const updated = { ...current, displayName: res.profile.displayName, avatarUrl: res.profile.avatarUrl ?? undefined };
+        localStorage.setItem(USER_KEY, JSON.stringify(updated));
+        this.userSignal.set(updated);
+      },
+      error: () => {}
+    });
+  }
+
   /** Call after any successful auth HTTP response to persist the session and route the user onward. */
   completeLogin(res: AuthResponse, rememberMe: boolean, redirectTo = '/home') {
     this.persistSession(res);

@@ -26,8 +26,8 @@ const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gi
           <h3>Profile picture</h3>
           <div class="avatar-row">
             <span class="avatar-preview">
-              @if (avatarUrl) {
-                <img [src]="avatarUrl" alt="Your profile picture" />
+              @if (avatarUrl && !avatarError) {
+                <img [src]="avatarUrl" alt="Your profile picture" (error)="avatarError = true" />
               } @else {
                 {{ initials() }}
               }
@@ -107,6 +107,7 @@ export class ProfileComponent implements OnInit {
   email = '';
   displayName = '';
   avatarUrl: string | null = null;
+  avatarError = false;
   maxAvatarMb = MAX_AVATAR_MB;
 
   constructor(
@@ -159,6 +160,7 @@ export class ProfileComponent implements OnInit {
       next: res => {
         this.uploading = false;
         this.avatarUrl = res.profile.avatarUrl ?? null;
+        this.avatarError = false;
         this.toast.success('Profile picture updated.');
       },
       error: err => {
