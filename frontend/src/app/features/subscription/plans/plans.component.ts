@@ -18,6 +18,16 @@ import { Plan, SubscriptionStatus } from '../../../core/models/models';
         <!-- Pricing values below are placeholders seeded in the DB — set real numbers from Admin > Plans -->
       </div>
 
+      @if (error) {
+        <div class="dm-card error-banner">
+          <p>{{ error }}</p>
+          <button class="dm-btn dm-btn-ghost" (click)="load()">Retry</button>
+        </div>
+      } @else if (loading) {
+        <div class="plan-grid">
+          @for (i of [1,2,3]; track i) { <div class="dm-card plan-card skeleton"></div> }
+        </div>
+      } @else {
       <div class="plan-grid">
         @for (plan of plans; track plan.id) {
           <div class="dm-card plan-card" [class.featured]="plan.name === 'Pro'" [class.current]="plan.id === currentPlanId">
@@ -45,6 +55,7 @@ import { Plan, SubscriptionStatus } from '../../../core/models/models';
           </div>
         }
       </div>
+      }
     </div>
   `,
   styles: [`
@@ -64,10 +75,17 @@ import { Plan, SubscriptionStatus } from '../../../core/models/models';
     ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; font-size: 0.88rem; }
     li::before { content: "✓ "; color: var(--dm-success); }
     @media (max-width: 900px) { .plan-grid { grid-template-columns: 1fr; } }
+
+    .error-banner { max-width: 480px; margin: 0 auto; padding: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-color: var(--dm-danger); }
+    .error-banner p { margin: 0; color: var(--dm-danger); font-size: 0.9rem; }
+    .plan-card.skeleton { height: 280px; background: linear-gradient(90deg, var(--dm-surface) 25%, var(--dm-surface-hover) 50%, var(--dm-surface) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
   `]
 })
 export class PlansComponent implements OnInit {
   plans: Plan[] = [];
+  loading = true;
+  error = '';
   activating = false;
   currentPlanId: string | null = null;
   hasAnyPlan = false;
@@ -79,17 +97,29 @@ export class PlansComponent implements OnInit {
     private router: Router
   ) {}
 
-  ngOnInit() {
-    this.subscriptionService.getPlans().subscribe(res => this.plans = res.plans);
+  ngOnInit() { this.load(); }
+
+  load() {
+    this.loading = true;
+    this.error = '';
+    this.subscriptionService.getPlans().subscribe({
+      next: res => { this.plans = res.plans; this.loading = false; },
+      error: () => { this.loading = false; this.error = 'Could not load plans. Please try again.'; }
+    });
 
     // Only logged-in users have anything to compare against - this is the public
     // pricing page too, so it must work fine for a signed-out visitor as well.
+    // A failure here just means "current plan" can't be highlighted - not worth
+    // blocking the whole page, since Plan management is available from Profile too.
     if (this.auth.isLoggedIn()) {
-      this.subscriptionService.getStatus().subscribe(res => {
-        if (res.status.hasActiveSubscription) {
-          this.currentPlanId = res.status.planId ?? null;
-          this.hasAnyPlan = true;
-        }
+      this.subscriptionService.getStatus().subscribe({
+        next: res => {
+          if (res.status.hasActiveSubscription) {
+            this.currentPlanId = res.status.planId ?? null;
+            this.hasAnyPlan = true;
+          }
+        },
+        error: () => {}
       });
     }
   }

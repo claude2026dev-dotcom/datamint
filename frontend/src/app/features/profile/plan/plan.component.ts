@@ -21,6 +21,11 @@ import { BackButtonComponent } from '../../../shared/components/back-button/back
 
       @if (loading) {
         <p class="muted">Loading…</p>
+      } @else if (error) {
+        <div class="dm-card error-banner">
+          <p>{{ error }}</p>
+          <button class="dm-btn dm-btn-ghost" (click)="load()">Retry</button>
+        </div>
       } @else {
         <div class="dm-card section">
           @if (planStatus?.hasActiveSubscription) {
@@ -72,6 +77,8 @@ import { BackButtonComponent } from '../../../shared/components/back-button/back
     .section { padding: 24px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     .small { font-size: 0.8rem; }
+    .error-banner { padding: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-color: var(--dm-danger); }
+    .error-banner p { margin: 0; color: var(--dm-danger); font-size: 0.9rem; }
 
     .plan-name-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
     .plan-name { font-size: 1.15rem; font-weight: 700; }
@@ -96,6 +103,7 @@ import { BackButtonComponent } from '../../../shared/components/back-button/back
 })
 export class PlanComponent implements OnInit {
   loading = true;
+  error = '';
   planStatus: SubscriptionStatus | null = null;
   cancelling = false;
 
@@ -105,10 +113,14 @@ export class PlanComponent implements OnInit {
     private confirmDialog: ConfirmDialogService
   ) {}
 
-  ngOnInit() {
-    this.subscriptionService.getStatus().subscribe(res => {
-      this.planStatus = res.status;
-      this.loading = false;
+  ngOnInit() { this.load(); }
+
+  load() {
+    this.loading = true;
+    this.error = '';
+    this.subscriptionService.getStatus().subscribe({
+      next: res => { this.planStatus = res.status; this.loading = false; },
+      error: () => { this.loading = false; this.error = 'Could not load your plan. Please try again.'; }
     });
   }
 
@@ -138,7 +150,7 @@ export class PlanComponent implements OnInit {
       next: res => {
         this.cancelling = false;
         this.toast.success(res.message);
-        this.subscriptionService.getStatus().subscribe(r => this.planStatus = r.status);
+        this.load();
       },
       error: err => {
         this.cancelling = false;
