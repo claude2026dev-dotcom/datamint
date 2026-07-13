@@ -152,6 +152,11 @@ public class DocumentProcessingService
                     FieldValue = field.Value,
                     OriginalAiValue = field.Value,
                     PageNumber = field.PageNumber,
+                    // Fall back to "Generic"/"General" here (not left null) so every newly-
+                    // extracted row has a predictable, non-null value downstream - only rows
+                    // extracted before this column existed stay genuinely null.
+                    SemanticType = string.IsNullOrWhiteSpace(field.SemanticType) ? "Generic" : field.SemanticType,
+                    SectionLabel = string.IsNullOrWhiteSpace(field.SectionLabel) ? "General" : field.SectionLabel,
                     SortOrder = order++
                 });
             }
@@ -259,8 +264,7 @@ public class DocumentProcessingService
         });
         await _audit.LogAsync("Document.FieldUpdated", document.UserId, "Document", documentId.ToString(), diff, ct: ct);
 
-        return Result<ExtractedFieldEditDto>.Success(new ExtractedFieldEditDto(
-            field.Id, field.FieldKey, field.OriginalFieldKey, field.FieldValue, field.PageNumber, field.WasEditedByUser));
+        return Result<ExtractedFieldEditDto>.Success(ToEditDto(field));
     }
 
     public async Task<Result<byte[]>> ExportToExcelAsync(Guid documentId, CancellationToken ct = default)
@@ -377,6 +381,15 @@ public class DocumentProcessingService
         return sent ? Result.Success() : Result.Failure("Failed to send email. Please check email service configuration.", "EMAIL_FAILED");
     }
 
+    // Single place pre-existing (pre-migration) null SemanticType/SectionLabel rows fall back to
+    // "Generic"/"General" for every reader (frontend grouping, both export formats) - newly
+    // extracted rows already have a concrete value baked in by ProcessDocumentAsync's merge loop.
+    private static ExtractedFieldEditDto ToEditDto(ExtractedField f) => new(
+        f.Id, f.FieldKey, f.OriginalFieldKey, f.FieldValue, f.PageNumber, f.WasEditedByUser,
+        string.IsNullOrWhiteSpace(f.SemanticType) ? "Generic" : f.SemanticType,
+        string.IsNullOrWhiteSpace(f.SectionLabel) ? "General" : f.SectionLabel,
+        f.IncludeInExport, f.SortOrder);
+
     private static DocumentDetailDto MapToDetailDto(Document document) => new(
         document.Id,
         document.OriginalFileName,
@@ -385,6 +398,6 @@ public class DocumentProcessingService
         document.Status.ToString(),
         document.ExtractedFields
             .OrderBy(f => f.SortOrder)
-            .Select(f => new ExtractedFieldEditDto(f.Id, f.FieldKey, f.OriginalFieldKey, f.FieldValue, f.PageNumber, f.WasEditedByUser))
+            .Select(ToEditDto)
             .ToList());
 }

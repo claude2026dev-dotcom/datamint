@@ -25,6 +25,16 @@ internal static class AiExtractionPromptHelper
     /// Grouping the requested output by page instead makes that conflation structurally
     /// impossible - use ParsePageGroupedFieldsJson on the reply.
     /// </summary>
+    /// <summary>
+    /// Shared by every prompt that asks the model to classify fields - kept generic/domain-agnostic
+    /// on purpose so the same taxonomy organizes invoices, shipping/logistics manifests, contracts,
+    /// medical forms, or any other document type equally well, not just invoices.
+    /// </summary>
+    private const string TypeAndSectionInstructions = """
+        - Classify each field with a "type" from this fixed list: "Address", "Date", "Amount", "Name", "Reference", "Contact", "Quantity", "Generic". Use "Generic" whenever a field doesn't clearly fit one of the other types - never invent a new type name.
+        - Assign each field a short "section" label that groups it with other fields on the same page that logically belong together (e.g. "Shipping Details", "Billing Info", "Line Items", "Party Information"). Reuse the exact same section label, character for character, across every field that belongs to that group. If a field doesn't obviously belong to a named group, use "General".
+        """;
+
     public static string BuildPrompt(IEnumerable<PdfPageTextDto> pages, IReadOnlyList<string>? requestedFields = null)
     {
         var combinedText = new StringBuilder();
@@ -43,8 +53,9 @@ internal static class AiExtractionPromptHelper
                 - If a requested field is not present anywhere in the document, still include it in your response with "value": null. Do not omit it.
                 - Do not add any field that isn't in the list above.
                 - If a field appears on a specific page, set "page" to that page number; otherwise omit "page" or set it to null.
+                {{TypeAndSectionInstructions}}
                 - Respond with ONLY a JSON array, no prose, no markdown fences, in this exact shape:
-                [{"key": "Invoice No.", "value": "INV-2024-001", "page": 1}, ...]
+                [{"key": "Invoice No.", "value": "INV-2024-001", "page": 1, "type": "Reference", "section": "Billing Info"}, ...]
 
                 DOCUMENT TEXT:
                 {{combinedText}}
@@ -61,8 +72,9 @@ internal static class AiExtractionPromptHelper
             - Do not paraphrase, translate, or invent a different name for a field that already has a label in the document.
             - The SAME field label can legitimately appear on more than one page, meaning something different each time (a multi-page document repeating a label like "Tax Category" or "Amount" per page, with a different value on each page). Report every page's occurrence under that page's own entry below - never merge, average, or drop one occurrence in favor of another just because the label repeats.
             - If a field spans the whole document rather than belonging to one page, put it under the first page it appears on.
+            {{TypeAndSectionInstructions}}
             - Respond with ONLY a JSON array, no prose, no markdown fences, with exactly ONE object per page (matching the "--- Page N ---" markers below), in this exact shape:
-            [{"page": 1, "fields": [{"key": "Invoice No.", "value": "INV-2024-001"}, {"key": "Tax Category", "value": "..."}]}, {"page": 2, "fields": [{"key": "Tax Category", "value": "..."}]}]
+            [{"page": 1, "fields": [{"key": "Invoice No.", "value": "INV-2024-001", "type": "Reference", "section": "Billing Info"}, {"key": "Tax Category", "value": "...", "type": "Generic", "section": "General"}]}, {"page": 2, "fields": [{"key": "Tax Category", "value": "...", "type": "Generic", "section": "General"}]}]
 
             DOCUMENT TEXT:
             {{combinedText}}
@@ -87,7 +99,7 @@ internal static class AiExtractionPromptHelper
         {
             var grouped = initialFields
                 .GroupBy(f => f.PageNumber ?? 0)
-                .Select(g => new { page = g.Key, fields = g.Select(f => new { key = f.Key, value = f.Value }).ToList() });
+                .Select(g => new { page = g.Key, fields = g.Select(f => new { key = f.Key, value = f.Value, type = f.SemanticType, section = f.SectionLabel }).ToList() });
             var fieldsJson = JsonSerializer.Serialize(grouped);
 
             return $$"""
@@ -104,6 +116,8 @@ internal static class AiExtractionPromptHelper
                 - If a value is missing (null) but the field is actually present on that page, fill it in.
                 - If a field genuinely isn't on that page, leave its value null.
                 - Keep the same pages and the same keys within each page - do not add, remove, or rename any. Same-named fields on different pages are intentional and must both be kept, with their own correct values.
+                - "type" and "section" may be corrected if clearly wrong (unlike keys, which must stay stable) - otherwise keep them as given.
+                {{TypeAndSectionInstructions}}
 
                 YOUR FIRST-PASS EXTRACTION (grouped by page):
                 {{fieldsJson}}
@@ -112,11 +126,11 @@ internal static class AiExtractionPromptHelper
                 {{combinedText}}
 
                 Respond with ONLY the corrected JSON array, no prose, no markdown fences, same shape:
-                [{"page": 1, "fields": [{"key": "Invoice No.", "value": "INV-2024-001"}]}, ...]
+                [{"page": 1, "fields": [{"key": "Invoice No.", "value": "INV-2024-001", "type": "Reference", "section": "Billing Info"}]}, ...]
                 """;
         }
 
-        var flatFieldsJson = JsonSerializer.Serialize(initialFields.Select(f => new { key = f.Key, value = f.Value, page = f.PageNumber }));
+        var flatFieldsJson = JsonSerializer.Serialize(initialFields.Select(f => new { key = f.Key, value = f.Value, page = f.PageNumber, type = f.SemanticType, section = f.SectionLabel }));
 
         return $$"""
             You previously extracted the fields below from the document text that follows.
@@ -131,6 +145,8 @@ internal static class AiExtractionPromptHelper
             - If a value is missing (null) but the field is actually present in the text, fill it in.
             - If a field genuinely isn't in the document, leave its value null.
             - Keep the exact same set of keys, in the exact same order - do not add, remove, or rename any.
+            - "type" and "section" may be corrected if clearly wrong (unlike keys, which must stay stable) - otherwise keep them as given.
+            {{TypeAndSectionInstructions}}
 
             YOUR FIRST-PASS EXTRACTION:
             {{flatFieldsJson}}
@@ -139,7 +155,7 @@ internal static class AiExtractionPromptHelper
             {{combinedText}}
 
             Respond with ONLY the corrected JSON array, no prose, no markdown fences, same shape:
-            [{"key": "Invoice No.", "value": "INV-2024-001", "page": 1}, ...]
+            [{"key": "Invoice No.", "value": "INV-2024-001", "page": 1, "type": "Reference", "section": "Billing Info"}, ...]
             """;
     }
 
@@ -197,7 +213,7 @@ internal static class AiExtractionPromptHelper
         var parsed = JsonSerializer.Deserialize<List<FlatFieldJson>>(cleaned, JsonOptions)
                      ?? new List<FlatFieldJson>();
 
-        return parsed.Select(f => new ExtractedFieldDto(f.Key, f.Value, f.Page)).ToList();
+        return parsed.Select(f => new ExtractedFieldDto(f.Key, f.Value, f.Page, f.Type, f.Section)).ToList();
     }
 
     /// <summary>Page-grouped response parser - used for Dynamic mode, flattened back into the same ExtractedFieldDto shape the rest of the app uses.</summary>
@@ -212,7 +228,7 @@ internal static class AiExtractionPromptHelper
         {
             if (group.Fields is null) continue;
             foreach (var field in group.Fields)
-                result.Add(new ExtractedFieldDto(field.Key, field.Value, group.Page));
+                result.Add(new ExtractedFieldDto(field.Key, field.Value, group.Page, field.Type, field.Section));
         }
         return result;
     }
@@ -228,6 +244,8 @@ internal static class AiExtractionPromptHelper
         public string Key { get; set; } = default!;
         public string? Value { get; set; }
         public int? Page { get; set; }
+        public string? Type { get; set; }
+        public string? Section { get; set; }
     }
 
     private class PageGroupJson
@@ -240,5 +258,7 @@ internal static class AiExtractionPromptHelper
     {
         public string Key { get; set; } = default!;
         public string? Value { get; set; }
+        public string? Type { get; set; }
+        public string? Section { get; set; }
     }
 }

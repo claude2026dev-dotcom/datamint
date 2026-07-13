@@ -4,7 +4,7 @@ public record PdfPageTextDto(int PageNumber, string Text, bool UsedOcr);
 
 public record PdfTextExtractionResultDto(int PageCount, bool RequiredOcr, List<PdfPageTextDto> Pages);
 
-public record ExtractedFieldDto(string Key, string? Value, int? PageNumber);
+public record ExtractedFieldDto(string Key, string? Value, int? PageNumber, string? SemanticType = null, string? SectionLabel = null);
 
 public record AiExtractionResultDto(List<ExtractedFieldDto> Fields, bool Success, string? ErrorMessage);
 
@@ -19,7 +19,8 @@ public record DocumentSummaryDto(
     long FileSizeBytes = 0,
     Guid UploadBatchId = default);
 
-public record ExtractedFieldEditDto(Guid Id, string FieldKey, string OriginalFieldKey, string? FieldValue, int? PageNumber, bool WasEditedByUser);
+public record ExtractedFieldEditDto(Guid Id, string FieldKey, string OriginalFieldKey, string? FieldValue, int? PageNumber, bool WasEditedByUser,
+    string SemanticType, string SectionLabel, bool IncludeInExport, int SortOrder);
 
 public record DocumentDetailDto(
     Guid Id,

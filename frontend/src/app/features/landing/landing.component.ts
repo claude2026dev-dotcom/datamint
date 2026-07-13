@@ -38,7 +38,7 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           </div>
           <div class="mock-arrow"><app-icon name="arrow-right" [size]="26" /></div>
           <div class="mock-table">
-            <div class="row"><span>Invoice #</span><span>INV-2026-014</span></div>
+            <div class="row"><span>Reference #</span><span>REF-2026-014</span></div>
             <div class="row"><span>Amount</span><span>₹24,500</span></div>
             <div class="row"><span>Date</span><span>05 Jul 2026</span></div>
           </div>

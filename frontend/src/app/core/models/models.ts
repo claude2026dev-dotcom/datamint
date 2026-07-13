@@ -37,6 +37,13 @@ export interface ExtractedFieldEdit {
   fieldValue: string | null;
   pageNumber: number | null;
   wasEditedByUser: boolean;
+  // AI-suggested classification (e.g. "Address"/"Date"/"Amount"/"Generic") - always a concrete
+  // string, backend falls back to "Generic" for rows extracted before this existed.
+  semanticType: string;
+  // AI-suggested group name (e.g. "Shipping Details") - falls back to "General".
+  sectionLabel: string;
+  includeInExport: boolean;
+  sortOrder: number;
 }
 
 export interface Plan {
