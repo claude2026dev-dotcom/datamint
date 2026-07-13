@@ -5,6 +5,10 @@ public class PaymentTransaction : BaseEntity
     public Guid UserId { get; set; }
     public ApplicationUser User { get; set; } = default!;
     public Guid? SubscriptionId { get; set; }
+    // Which plan this order was for - needed to build the "finish subscribing" link back to
+    // /checkout/{planId} for the abandoned-checkout follow-up email (and generally useful,
+    // since a transaction otherwise only knows the amount/currency it charged, not the plan).
+    public Guid PlanId { get; set; }
 
     // Which IPaymentService implementation processed this transaction (e.g. "Fake", "Razorpay") -
     // recorded per-row (not just read from current config) so history stays accurate even after
@@ -21,4 +25,8 @@ public class PaymentTransaction : BaseEntity
     public decimal? RefundAmount { get; set; }
     public string? RefundReason { get; set; }
     public string? ProviderRefundId { get; set; }
+
+    // Set once the abandoned-checkout follow-up email has gone out for this order, so the
+    // background job never sends it twice for the same never-completed transaction.
+    public DateTime? AbandonedCheckoutEmailSentAtUtc { get; set; }
 }

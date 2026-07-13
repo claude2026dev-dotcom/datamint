@@ -68,9 +68,10 @@
     "AllowedOrigins": [ "https://localhost:4200" ]
   },
 
-  "// 7": "----- APP: Name is the single source of truth for product branding in emails/PDF-export text - change it here if the project is ever renamed, nothing else needs editing. FrontendBaseUrl is a fallback only used when a request has no Origin/Referer (e.g. a background job) - normal requests build the link from the browser's own Origin/Referer header, so this never goes stale behind a tunnel or a real domain -----",
+  "// 7": "----- APP: Name is the single source of truth for product branding in emails/PDF-export text - change it here if the project is ever renamed, nothing else needs editing. LogoUrl is null until a real logo exists - every email falls back to a plain letter mark until then; set it to a publicly-reachable image URL to switch every email over automatically. FrontendBaseUrl is a fallback only used when a request has no Origin/Referer (e.g. a background job) - normal requests build the link from the browser's own Origin/Referer header, so this never goes stale behind a tunnel or a real domain -----",
   "App": {
     "Name": "Datamint",
-    "FrontendBaseUrl": "https://localhost:4200"
+    "FrontendBaseUrl": "https://localhost:4200",
+    "LogoUrl": null
   }
 }

@@ -23,8 +23,9 @@ public class AdminController : ControllerBase
     private readonly IPasswordResetService _passwordReset;
     private readonly ISessionService _sessions;
     private readonly IPaymentService _payments;
+    private readonly IBillingNotificationService _billing;
 
-    public AdminController(DatamintDbContext db, IAuditService audit, ICurrentUserService currentUser, IAuthNotificationService notify, IPasswordResetService passwordReset, ISessionService sessions, IPaymentService payments)
+    public AdminController(DatamintDbContext db, IAuditService audit, ICurrentUserService currentUser, IAuthNotificationService notify, IPasswordResetService passwordReset, ISessionService sessions, IPaymentService payments, IBillingNotificationService billing)
     {
         _db = db;
         _audit = audit;
@@ -33,6 +34,7 @@ public class AdminController : ControllerBase
         _passwordReset = passwordReset;
         _sessions = sessions;
         _payments = payments;
+        _billing = billing;
     }
 
     [HttpGet("dashboard")]
@@ -438,6 +440,11 @@ public class AdminController : ControllerBase
         await _db.SaveChangesAsync(ct);
         await _audit.LogAsync("Admin.RefundIssued", _currentUser.UserId, "PaymentTransaction", transaction.Id.ToString(),
             BuildDiff(("amount", 0m, transaction.RefundAmount), ("reason", null, dto.Reason)), ct: ct);
+
+        var refundedUser = await _db.Users.FindAsync(new object[] { transaction.UserId }, ct);
+        var refundedPlan = await _db.Plans.FindAsync(new object[] { transaction.PlanId }, ct);
+        if (refundedUser is not null)
+            await _billing.SendRefundConfirmationEmailAsync(refundedUser, refundedPlan?.Name ?? "your", transaction.RefundAmount.Value, transaction.Currency, ct);
 
         return Ok(new { success = true, message = "Refund issued and access revoked." });
     }

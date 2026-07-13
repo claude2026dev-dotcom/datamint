@@ -15,7 +15,11 @@ import { environment } from '../../../../environments/environment';
     <nav class="dm-nav">
       <div class="dm-container dm-nav-inner">
         <a routerLink="/" class="brand">
-          <span class="brand-mark">{{ appName[0] }}</span>
+          @if (logoUrl) {
+            <img [src]="logoUrl" [alt]="appName" class="brand-logo" (error)="logoUrl = null" />
+          } @else {
+            <span class="brand-mark">{{ appName[0] }}</span>
+          }
           <span>{{ appName }}</span>
         </a>
 
@@ -103,6 +107,7 @@ import { environment } from '../../../../environments/environment';
     .dm-nav-inner { display: flex; align-items: center; gap: 24px; height: 64px; position: relative; }
     .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.1rem; color: var(--dm-text); text-decoration: none; }
     .brand-mark { width: 30px; height: 30px; border-radius: 8px; background: var(--dm-gradient-primary); display: flex; align-items: center; justify-content: center; font-weight: 800; color: white; }
+    .brand-logo { height: 30px; width: auto; }
     .links { display: flex; gap: 18px; flex: 1; }
     .links a { color: var(--dm-text-muted); text-decoration: none; font-weight: 500; font-size: 0.92rem; transition: color 0.15s; }
     .links a:hover, .links a.active { color: var(--dm-text); }
@@ -161,6 +166,7 @@ export class NavbarComponent implements OnInit, OnDestroy {
   menuOpen = false;
   profileOpen = false;
   readonly appName = environment.appName;
+  logoUrl = environment.logoUrl;
   // Set once the cached avatarUrl 404s (e.g. it was removed/changed elsewhere and this
   // tab's cached user record hasn't caught up yet) so the template falls back to
   // initials instead of the browser's broken-image glyph. Reset below whenever the

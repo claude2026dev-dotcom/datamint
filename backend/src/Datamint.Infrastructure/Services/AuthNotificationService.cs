@@ -1,4 +1,3 @@
-using Datamint.Application.Common;
 using Datamint.Application.Interfaces;
 using Datamint.Domain.Entities;
 using Datamint.Infrastructure.Persistence;
@@ -8,61 +7,23 @@ using Microsoft.Extensions.Logging;
 
 namespace Datamint.Infrastructure.Services;
 
-public class AuthNotificationService : IAuthNotificationService
+public class AuthNotificationService : NotificationServiceBase, IAuthNotificationService
 {
-    private readonly IEmailService _email;
-    private readonly DatamintDbContext _db;
-    private readonly ILogger<AuthNotificationService> _logger;
-    private readonly IHttpContextAccessor _httpContextAccessor;
-    // Only used when there's no request to read Origin/Referer from (e.g. a background
-    // job with no HttpContext) - see ResolveFrontendBaseUrl. Not used for a live request.
-    private readonly string _fallbackFrontendBaseUrl;
-    private readonly string _appName;
-
     public AuthNotificationService(IEmailService email, DatamintDbContext db, ILogger<AuthNotificationService> logger, IConfiguration config, IHttpContextAccessor httpContextAccessor)
+        : base(email, db, logger, config, httpContextAccessor)
     {
-        _email = email;
-        _db = db;
-        _logger = logger;
-        _httpContextAccessor = httpContextAccessor;
-        _fallbackFrontendBaseUrl = (config["App:FrontendBaseUrl"] ?? "https://localhost:4200").TrimEnd('/');
-        _appName = config["App:Name"] ?? "Datamint";
-    }
-
-    /// <summary>
-    /// The frontend is reachable at whatever host the browser is currently using - localhost
-    /// during dev, an ngrok tunnel while sharing a build, or the real domain in production -
-    /// so a link baked in at startup from config would go stale the moment that changes.
-    /// The browser's own request already carries that host: same-origin POSTs still send an
-    /// Origin header (per the Fetch spec, for any non-GET request), and Referer carries it as
-    /// a fallback for any HTTP client that omits Origin. Config is the last resort, for calls
-    /// with no HttpContext at all (e.g. a background job).
-    /// </summary>
-    private string ResolveFrontendBaseUrl()
-    {
-        var request = _httpContextAccessor.HttpContext?.Request;
-        if (request is null) return _fallbackFrontendBaseUrl;
-
-        var origin = request.Headers.Origin.ToString();
-        if (!string.IsNullOrWhiteSpace(origin)) return origin.TrimEnd('/');
-
-        var referer = request.Headers.Referer.ToString();
-        if (!string.IsNullOrWhiteSpace(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var refererUri))
-            return $"{refererUri.Scheme}://{refererUri.Authority}";
-
-        return _fallbackFrontendBaseUrl;
     }
 
     public Task SendWelcomeEmailAsync(ApplicationUser user, CancellationToken ct = default)
     {
         var body = Wrap(
-            title: $"Welcome to {_appName}",
+            title: $"Welcome to {AppName}",
             greeting: Greeting(user),
-            bodyHtml: $"<p>Your account is ready. Upload a PDF and {_appName}'s AI will pull out the fields you need in seconds.</p>",
+            bodyHtml: $"<p>Your account is ready. Upload a PDF and {AppName}'s AI will pull out the fields you need in seconds.</p>",
             ctaLabel: "Start extracting",
             ctaPath: "/upload"
         );
-        return SendAndLog(user.Id, user.Email, $"Welcome to {_appName}", body, ct);
+        return SendAndLog(user.Id, user.Email, $"Welcome to {AppName}", body, ct);
     }
 
     public Task SendPasswordResetEmailAsync(ApplicationUser user, string rawToken, bool triggeredByAdmin, CancellationToken ct = default)
@@ -70,7 +31,7 @@ public class AuthNotificationService : IAuthNotificationService
         var resetLink = $"{ResolveFrontendBaseUrl()}/reset-password?token={Uri.EscapeDataString(rawToken)}";
         var intro = triggeredByAdmin
             ? "<p>An administrator started a password reset for your account. Use the button below to set a new password.</p>"
-            : $"<p>We received a request to reset your {_appName} password. Use the button below to choose a new one.</p>";
+            : $"<p>We received a request to reset your {AppName} password. Use the button below to choose a new one.</p>";
 
         var body = Wrap(
             title: "Reset your password",
@@ -79,7 +40,7 @@ public class AuthNotificationService : IAuthNotificationService
             ctaLabel: "Choose a new password",
             ctaAbsoluteUrl: resetLink
         );
-        return SendAndLog(user.Id, user.Email, $"Reset your {_appName} password", body, ct);
+        return SendAndLog(user.Id, user.Email, $"Reset your {AppName} password", body, ct);
     }
 
     public Task SendPasswordChangedEmailAsync(ApplicationUser user, CancellationToken ct = default)
@@ -87,12 +48,12 @@ public class AuthNotificationService : IAuthNotificationService
         var body = Wrap(
             title: "Your password was changed",
             greeting: Greeting(user),
-            bodyHtml: $"<p>Your {_appName} password was just changed. You've been signed out of all devices as a precaution — sign in again with your new password.</p>" +
+            bodyHtml: $"<p>Your {AppName} password was just changed. You've been signed out of all devices as a precaution — sign in again with your new password.</p>" +
                       "<p style=\"color:#767b93;font-size:13px;\">If you didn't make this change, reset your password immediately and contact support.</p>",
             ctaLabel: "Sign in",
             ctaPath: "/login"
         );
-        return SendAndLog(user.Id, user.Email, $"Your {_appName} password was changed", body, ct);
+        return SendAndLog(user.Id, user.Email, $"Your {AppName} password was changed", body, ct);
     }
 
     public Task SendAccountStatusChangedEmailAsync(ApplicationUser user, bool isActive, CancellationToken ct = default)
@@ -101,12 +62,12 @@ public class AuthNotificationService : IAuthNotificationService
             title: isActive ? "Your account has been re-enabled" : "Your account has been disabled",
             greeting: Greeting(user),
             bodyHtml: isActive
-                ? $"<p>Good news — an administrator re-enabled your {_appName} account. You can sign in again.</p>"
-                : $"<p>An administrator has disabled your {_appName} account. You won't be able to sign in until it's re-enabled.</p><p style=\"color:#767b93;font-size:13px;\">If you believe this is a mistake, please contact support.</p>",
+                ? $"<p>Good news — an administrator re-enabled your {AppName} account. You can sign in again.</p>"
+                : $"<p>An administrator has disabled your {AppName} account. You won't be able to sign in until it's re-enabled.</p><p style=\"color:#767b93;font-size:13px;\">If you believe this is a mistake, please contact support.</p>",
             ctaLabel: isActive ? "Sign in" : null,
             ctaPath: isActive ? "/login" : null
         );
-        return SendAndLog(user.Id, user.Email, isActive ? $"Your {_appName} account was re-enabled" : $"Your {_appName} account was disabled", body, ct);
+        return SendAndLog(user.Id, user.Email, isActive ? $"Your {AppName} account was re-enabled" : $"Your {AppName} account was disabled", body, ct);
     }
 
     public Task SendAccountDeletedEmailAsync(string toAddress, string? displayName, CancellationToken ct = default)
@@ -114,7 +75,7 @@ public class AuthNotificationService : IAuthNotificationService
         var body = Wrap(
             title: "Your account has been deactivated",
             greeting: string.IsNullOrWhiteSpace(displayName) ? "Hi," : $"Hi {displayName},",
-            bodyHtml: $"<p>Your {_appName} account has been deactivated and any paid subscription has been cancelled. " +
+            bodyHtml: $"<p>Your {AppName} account has been deactivated and any paid subscription has been cancelled. " +
                       $"Your documents are kept for {ApplicationUser.DeactivationGraceDays} days in case this wasn't intentional — " +
                       $"simply sign in again within that window to reactivate your account exactly as it was.</p>" +
                       $"<p style=\"color:#767b93;font-size:13px;\">After {ApplicationUser.DeactivationGraceDays} days, your account and documents are permanently erased and can't be recovered. " +
@@ -122,32 +83,6 @@ public class AuthNotificationService : IAuthNotificationService
             ctaLabel: "Sign in to reactivate",
             ctaPath: "/login"
         );
-        return SendAndLog(null, toAddress, $"Your {_appName} account has been deactivated", body, ct);
-    }
-
-    private static string Greeting(ApplicationUser user) =>
-        string.IsNullOrWhiteSpace(user.DisplayName) ? "Hi," : $"Hi {user.DisplayName},";
-
-    private async Task SendAndLog(Guid? userId, string toAddress, string subject, string htmlBody, CancellationToken ct)
-    {
-        var sent = await _email.SendAsync(toAddress, subject, htmlBody, ct: ct);
-        _db.EmailLogs.Add(new EmailLog
-        {
-            UserId = userId,
-            ToAddress = toAddress,
-            Subject = subject,
-            IsSuccess = sent,
-            ErrorMessage = sent ? null : "See application logs for the underlying SMTP error."
-        });
-        await _db.SaveChangesAsync(ct);
-
-        if (!sent)
-            _logger.LogWarning("Auth notification email {Subject} to {ToAddress} was not sent (see EmailLogs).", subject, toAddress);
-    }
-
-    private string Wrap(string title, string greeting, string bodyHtml, string? ctaLabel, string? ctaPath = null, string? ctaAbsoluteUrl = null)
-    {
-        var ctaUrl = ctaAbsoluteUrl ?? (ctaPath is not null ? $"{ResolveFrontendBaseUrl()}{ctaPath}" : null);
-        return EmailTemplateHelper.Wrap(_appName, title, greeting, bodyHtml, ctaLabel, ctaUrl);
+        return SendAndLog(null, toAddress, $"Your {AppName} account has been deactivated", body, ct);
     }
 }

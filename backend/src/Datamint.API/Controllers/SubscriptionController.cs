@@ -17,13 +17,15 @@ public class SubscriptionController : ControllerBase
     private readonly IPaymentService _payments;
     private readonly ICurrentUserService _currentUser;
     private readonly IAuditService _audit;
+    private readonly IBillingNotificationService _billing;
 
-    public SubscriptionController(DatamintDbContext db, IPaymentService payments, ICurrentUserService currentUser, IAuditService audit)
+    public SubscriptionController(DatamintDbContext db, IPaymentService payments, ICurrentUserService currentUser, IAuditService audit, IBillingNotificationService billing)
     {
         _db = db;
         _payments = payments;
         _currentUser = currentUser;
         _audit = audit;
+        _billing = billing;
     }
 
     /// <summary>Public plans list for the pricing page. Prices are data-driven — edit from Admin > Plans once decided.
@@ -142,6 +144,9 @@ public class SubscriptionController : ControllerBase
         await _db.SaveChangesAsync(ct);
         await _audit.LogAsync("Subscription.Activated", userId, "Subscription", subscription.Id.ToString(), "Zero-cost plan activated without payment.", ct: ct);
 
+        var user = await _db.Users.FindAsync(new object[] { userId }, ct);
+        if (user is not null) await _billing.SendPlanActivatedEmailAsync(user, plan.Name, ct);
+
         return Ok(new { success = true, message = $"{plan.Name} plan activated." });
     }
 
@@ -161,6 +166,7 @@ public class SubscriptionController : ControllerBase
         _db.PaymentTransactions.Add(new PaymentTransaction
         {
             UserId = userId,
+            PlanId = plan.Id,
             Provider = _payments.ProviderName,
             ProviderOrderId = order.OrderId,
             Amount = plan.Price,
@@ -185,19 +191,25 @@ public class SubscriptionController : ControllerBase
         var transaction = await _db.PaymentTransactions.FirstOrDefaultAsync(t => t.ProviderOrderId == dto.ProviderOrderId && t.UserId == userId, ct);
         if (transaction is null) return NotFound(new { success = false, message = "Transaction not found." });
 
+        var user = await _db.Users.FindAsync(new object[] { userId }, ct);
+        var plan = await _db.Plans.FirstOrDefaultAsync(p => p.Id == dto.PlanId, ct);
+
         if (!valid)
         {
             transaction.Status = "failed";
             await _db.SaveChangesAsync(ct);
             await _audit.LogAsync("Subscription.PaymentVerify", userId, isSuccess: false, ct: ct);
+            if (user is not null && plan is not null)
+                await _billing.SendPaymentFailedEmailAsync(user, plan.Name, transaction.Amount, transaction.Currency, ct);
             return BadRequest(new { success = false, message = "Payment verification failed. Please contact support if the amount was debited." });
         }
+
+        if (plan is null) return NotFound(new { success = false, message = "Selected plan was not found." });
 
         transaction.Status = "paid";
         transaction.ProviderPaymentId = dto.ProviderPaymentId;
         transaction.ProviderSignature = dto.ProviderSignature;
 
-        var plan = await _db.Plans.FirstAsync(p => p.Id == dto.PlanId, ct);
         var startAt = DateTime.UtcNow;
         var subscription = new Subscription
         {
@@ -212,6 +224,12 @@ public class SubscriptionController : ControllerBase
 
         await _db.SaveChangesAsync(ct);
         await _audit.LogAsync("Subscription.Activated", userId, "Subscription", subscription.Id.ToString(), ct: ct);
+
+        if (user is not null)
+        {
+            var invoiceNumber = $"INV-{transaction.CreatedAtUtc:yyyyMMdd}-{transaction.Id.ToString("N")[..8].ToUpperInvariant()}";
+            await _billing.SendPaymentSuccessEmailAsync(user, plan.Name, transaction.Amount, transaction.Currency, invoiceNumber, DateTime.UtcNow, ct);
+        }
 
         return Ok(new { success = true, message = "Subscription activated successfully." });
     }

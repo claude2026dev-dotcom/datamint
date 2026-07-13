@@ -72,6 +72,7 @@ else
 }
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IAuthNotificationService, AuthNotificationService>();
+builder.Services.AddScoped<IBillingNotificationService, BillingNotificationService>();
 builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -79,6 +80,10 @@ builder.Services.AddScoped<IAvatarImageService, AvatarImageService>();
 
 // Sweeps deactivated accounts past their DeactivationGraceDays window and erases them.
 builder.Services.AddHostedService<Datamint.Infrastructure.Services.AccountPurgeService>();
+// Warns users a few days before their plan's EndAtUtc, and follows up on checkouts that
+// were started (an order/PaymentTransaction created) but never completed.
+builder.Services.AddHostedService<Datamint.Infrastructure.Services.PlanExpiryAlertService>();
+builder.Services.AddHostedService<Datamint.Infrastructure.Services.AbandonedCheckoutFollowUpService>();
 
 // ---------- Current user (claims wrapper) ----------
 builder.Services.AddHttpContextAccessor();

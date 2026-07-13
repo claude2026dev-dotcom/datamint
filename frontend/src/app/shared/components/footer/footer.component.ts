@@ -11,7 +11,12 @@ import { environment } from '../../../../environments/environment';
     <footer class="dm-footer">
       <div class="dm-container footer-inner">
         <span class="brand">
-          <span class="brand-mark">{{ appName[0] }}</span> {{ appName }}
+          @if (logoUrl) {
+            <img [src]="logoUrl" [alt]="appName" class="brand-logo" (error)="logoUrl = null" />
+          } @else {
+            <span class="brand-mark">{{ appName[0] }}</span>
+          }
+          {{ appName }}
         </span>
         <nav class="footer-links">
           <a routerLink="/terms">Terms</a>
@@ -35,6 +40,7 @@ import { environment } from '../../../../environments/environment';
     .footer-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; }
     .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--dm-text-muted); font-size: 0.88rem; }
     .brand-mark { width: 20px; height: 20px; border-radius: 5px; background: var(--dm-gradient-primary); display: flex; align-items: center; justify-content: center; font-weight: 800; color: white; font-size: 0.7rem; }
+    .brand-logo { height: 20px; width: auto; }
     .footer-links { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
     .footer-links a { color: var(--dm-text-muted); text-decoration: none; font-size: 0.85rem; transition: color 0.15s ease; }
     .footer-links a:hover { color: var(--dm-text); }
@@ -46,4 +52,5 @@ import { environment } from '../../../../environments/environment';
 export class FooterComponent {
   year = new Date().getFullYear();
   readonly appName = environment.appName;
+  logoUrl = environment.logoUrl;
 }
