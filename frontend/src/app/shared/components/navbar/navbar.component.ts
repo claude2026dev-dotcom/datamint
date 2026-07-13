@@ -145,10 +145,16 @@ import { environment } from '../../../../environments/environment';
     .dropdown-item app-icon { color: var(--dm-text-muted); flex-shrink: 0; }
     .dropdown-item:hover { background: var(--dm-surface); }
     .dropdown-item.theme-row:hover { background: none; cursor: default; }
-    .theme-row span { flex: 1; }
+    .theme-row { flex-wrap: nowrap; }
+    .theme-row span { flex: 1; min-width: 0; }
     .theme-select {
       background: var(--dm-bg-elevated); color: var(--dm-text); border: 1px solid var(--dm-border);
-      border-radius: var(--dm-radius-sm); font-size: 0.82rem; padding: 5px 8px; cursor: pointer;
+      border-radius: var(--dm-radius-sm); font-size: 0.82rem; padding: 5px 6px; cursor: pointer;
+      /* A native <select> ignores flexbox's default shrink behavior and renders at
+         whatever width its own content/platform chrome demands, which can be wider
+         than this narrow dropdown - without an explicit cap it pushes the row (and
+         the whole panel) wider than the dropdown, overflowing its right edge. */
+      width: 88px; max-width: 88px; flex-shrink: 0;
     }
     .dropdown-item.signout { color: var(--dm-danger); }
     .dropdown-item.signout app-icon { color: var(--dm-danger); }
