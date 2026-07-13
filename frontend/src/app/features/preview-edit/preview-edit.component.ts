@@ -7,13 +7,13 @@ import { ToastService } from '../../core/services/toast.service';
 import { ExtractedFieldEdit } from '../../core/models/models';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
-import { AutoGrowDirective } from '../../shared/directives/auto-grow.directive';
 import { ExportModalComponent, ExportModalResult } from '../../shared/components/export-modal/export-modal.component';
+import { FieldSectionEditorComponent } from '../../shared/components/field-section-editor/field-section-editor.component';
 
 @Component({
   selector: 'app-preview-edit',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, AutoGrowDirective, ExportModalComponent],
+  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, ExportModalComponent, FieldSectionEditorComponent],
   template: `
     <div class="dm-container page">
       <app-back-button fallbackUrl="/documents" />
@@ -43,22 +43,9 @@ import { ExportModalComponent, ExportModalResult } from '../../shared/components
                            (confirmed)="onExportConfirmed($event)" (cancelled)="exportModalFor = null" />
       }
 
-      @for (page of pageNumbers; track page) {
-        <div class="dm-card page-block">
-          <h3>Page {{ page === 0 ? '— (document level)' : page }}</h3>
-          <div class="field-grid">
-            @for (field of fieldsForPage(page); track field.id) {
-              <div class="field-row">
-                <div class="original-label" [title]="'Detected label: ' + field.originalFieldKey">{{ field.originalFieldKey }}</div>
-                <input class="dm-input field-key" [(ngModel)]="field.fieldKey" (blur)="saveField(field)"
-                       placeholder="Custom field name" title="Rename this field — used when exporting to Excel" />
-                <textarea class="dm-input field-value" rows="1" appAutoGrow [(ngModel)]="field.fieldValue" (blur)="saveField(field)"></textarea>
-                @if (field.wasEditedByUser) { <span class="edited-badge">edited</span> }
-              </div>
-            }
-          </div>
-        </div>
-      }
+      <app-field-section-editor [fields]="fields" (fieldSaved)="saveField($event)"
+                                 (includeToggled)="toggleInclude($event)" (reordered)="onReordered($event)"
+                                 (sectionRenamed)="onSectionRenamed($event)" />
       }
     </div>
   `,
@@ -71,18 +58,7 @@ import { ExportModalComponent, ExportModalResult } from '../../shared/components
     .not-found-card .icon { color: var(--dm-text-muted); display: flex; justify-content: center; margin-bottom: 14px; }
     .not-found-card h2 { margin-bottom: 10px; }
     .not-found-card p { margin-bottom: 20px; }
-    .page-block { padding: 20px; margin-bottom: 18px; }
-    .field-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 12px; }
-    .field-row { display: flex; flex-direction: column; gap: 4px; position: relative; }
-    .original-label { font-size: 0.72rem; color: var(--dm-text-muted); text-transform: uppercase; letter-spacing: 0.03em; padding: 0 4px; }
-    .field-key { font-size: 0.85rem; font-weight: 600; border: none; background: transparent; padding: 2px 4px; margin-bottom: 2px; }
-    .field-key:hover, .field-key:focus { border: 1px solid var(--dm-border); background: var(--dm-surface); }
-    /* A long value (an address, a description) needs to wrap and stay readable
-       instead of scrolling off inside a single-line box - resize: vertical lets
-       the user grow it further if two lines still aren't enough. */
-    .field-value { resize: vertical; min-height: 42px; line-height: 1.4; font-family: inherit; overflow-wrap: break-word; }
-    .edited-badge { position: absolute; top: 0; right: 0; font-size: 0.7rem; color: var(--dm-accent); }
-    @media (max-width: 700px) { .field-grid { grid-template-columns: 1fr; } .header { flex-direction: column; } }
+    @media (max-width: 700px) { .header { flex-direction: column; } }
   `]
 })
 export class PreviewEditComponent implements OnInit {
@@ -98,20 +74,6 @@ export class PreviewEditComponent implements OnInit {
 
   constructor(private route: ActivatedRoute, private documentService: DocumentService, private toast: ToastService) {}
 
-  get pageNumbers(): number[] {
-    const nums = new Set(this.fields.map(f => f.pageNumber ?? 0));
-    return Array.from(nums).sort((a, b) => a - b);
-  }
-
-  fieldsForPage(page: number) {
-    return this.fields.filter(f => (f.pageNumber ?? 0) === page);
-  }
-
-  // Snapshot of each field's key/value as last saved (or as loaded) - lets saveField
-  // tell "the user actually changed this" apart from "this input was merely clicked
-  // into and blurred", which used to save (and mark "edited") on every blur regardless.
-  private lastSaved: Record<string, { key: string; value: string | null }> = {};
-
   ngOnInit() {
     this.documentId = this.route.snapshot.paramMap.get('id')!;
     this.documentService.getDetail(this.documentId).subscribe({
@@ -120,7 +82,6 @@ export class PreviewEditComponent implements OnInit {
         this.pageCount = res.pageCount;
         this.requiresOcr = res.requiresOcr;
         this.fields = res.fields;
-        for (const f of this.fields) this.lastSaved[f.id] = { key: f.fieldKey, value: f.fieldValue };
         this.loading = false;
       },
       // 404 here means "doesn't exist, or belongs to someone else's account" -
@@ -132,17 +93,32 @@ export class PreviewEditComponent implements OnInit {
   }
 
   saveField(field: ExtractedFieldEdit) {
-    const previous = this.lastSaved[field.id];
-    if (previous && previous.key === field.fieldKey && previous.value === field.fieldValue) return;
-
     this.documentService.updateField(this.documentId, field.id, field.fieldValue ?? '', field.fieldKey).subscribe({
       next: res => {
         field.wasEditedByUser = res.field.wasEditedByUser;
         field.fieldKey = res.field.fieldKey;
         field.fieldValue = res.field.fieldValue;
-        this.lastSaved[field.id] = { key: field.fieldKey, value: field.fieldValue };
       },
       error: () => this.toast.error('Could not save that change. Please try again.')
+    });
+  }
+
+  toggleInclude(field: ExtractedFieldEdit) {
+    this.documentService.updateField(this.documentId, field.id, field.fieldValue ?? '', field.fieldKey, field.includeInExport).subscribe({
+      error: () => this.toast.error('Could not save that change. Please try again.')
+    });
+  }
+
+  onReordered(fields: ExtractedFieldEdit[]) {
+    const payload = fields.map(f => ({ fieldId: f.id, sectionLabel: f.sectionLabel, sortOrder: f.sortOrder }));
+    this.documentService.reorderFields(this.documentId, payload).subscribe({
+      error: () => this.toast.error('Could not save the new order. Please try again.')
+    });
+  }
+
+  onSectionRenamed(event: { oldLabel: string; newLabel: string }) {
+    this.documentService.renameSection(this.documentId, event.oldLabel, event.newLabel).subscribe({
+      error: () => this.toast.error('Could not rename that section. Please try again.')
     });
   }
 

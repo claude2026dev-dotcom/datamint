@@ -8,8 +8,8 @@ import { ToastService } from '../../core/services/toast.service';
 import { ExtractedFieldEdit } from '../../core/models/models';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
-import { AutoGrowDirective } from '../../shared/directives/auto-grow.directive';
 import { ExportModalComponent, ExportModalResult } from '../../shared/components/export-modal/export-modal.component';
+import { FieldSectionEditorComponent } from '../../shared/components/field-section-editor/field-section-editor.component';
 
 interface BatchDocument {
   id: string;
@@ -17,15 +17,13 @@ interface BatchDocument {
   fields: ExtractedFieldEdit[];
 }
 
-/// Shown instead of the single-document preview when several files were uploaded
-/// together: one card per document, each with the same page-grouped field editor
-/// as the single-document review page (original label, editable label, editable
-/// value) - a table-of-many-columns doesn't survive mobile widths, so this never
-/// tries to be one.
+/// Shown instead of the single-document preview when several files were uploaded together:
+/// one card per document, each using the same shared, AI-grouped field editor as the
+/// single-document review page.
 @Component({
   selector: 'app-batch-review',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, AutoGrowDirective, ExportModalComponent],
+  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, ExportModalComponent, FieldSectionEditorComponent],
   template: `
     <div class="dm-container page">
       <app-back-button fallbackUrl="/documents" />
@@ -65,22 +63,9 @@ interface BatchDocument {
               <span class="muted small">{{ doc.fields.length }} field(s)</span>
             </div>
 
-            @for (page of pageNumbers(doc); track page) {
-              <div class="page-block">
-                @if (pageNumbers(doc).length > 1) { <h4>Page {{ page === 0 ? '— (document level)' : page }}</h4> }
-                <div class="field-grid">
-                  @for (field of fieldsForPage(doc, page); track field.id) {
-                    <div class="field-row">
-                      <div class="original-label" [title]="'Detected label: ' + field.originalFieldKey">{{ field.originalFieldKey }}</div>
-                      <input class="dm-input field-key" [(ngModel)]="field.fieldKey" (blur)="saveField(doc, field)"
-                             placeholder="Custom field name" title="Rename this field — used when exporting to Excel" />
-                      <textarea class="dm-input field-value" rows="1" appAutoGrow [(ngModel)]="field.fieldValue" (blur)="saveField(doc, field)"></textarea>
-                      @if (field.wasEditedByUser) { <span class="edited-badge">edited</span> }
-                    </div>
-                  }
-                </div>
-              </div>
-            }
+            <app-field-section-editor [fields]="doc.fields" (fieldSaved)="saveField(doc, $event)"
+                                       (includeToggled)="toggleInclude(doc, $event)" (reordered)="onReordered(doc, $event)"
+                                       (sectionRenamed)="onSectionRenamed(doc, $event)" />
           </div>
         }
       }
@@ -102,19 +87,9 @@ interface BatchDocument {
     .doc-card-head { display: flex; align-items: center; gap: 8px; padding-bottom: 14px; margin-bottom: 6px; border-bottom: 1px solid var(--dm-border); }
     .doc-card-head app-icon { color: var(--dm-text-muted); flex-shrink: 0; }
     .doc-name { font-weight: 700; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; }
-    .page-block { margin-top: 14px; }
-    .page-block h4 { font-size: 0.82rem; color: var(--dm-text-muted); margin-bottom: 8px; }
-    .field-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
-    .field-row { display: flex; flex-direction: column; gap: 4px; position: relative; min-width: 0; }
-    .original-label { font-size: 0.72rem; color: var(--dm-text-muted); text-transform: uppercase; letter-spacing: 0.03em; padding: 0 4px; overflow-wrap: break-word; word-break: break-word; }
-    .field-key { font-size: 0.85rem; font-weight: 600; border: none; background: transparent; padding: 2px 4px; margin-bottom: 2px; }
-    .field-key:hover, .field-key:focus { border: 1px solid var(--dm-border); background: var(--dm-surface); }
-    .field-value { resize: vertical; min-height: 42px; line-height: 1.4; font-family: inherit; overflow-wrap: break-word; }
-    .edited-badge { position: absolute; top: 0; right: 0; font-size: 0.7rem; color: var(--dm-accent); }
 
     @media (max-width: 700px) {
       .header { flex-direction: column; }
-      .field-grid { grid-template-columns: 1fr; }
     }
   `]
 })
@@ -125,8 +100,6 @@ export class BatchReviewComponent implements OnInit {
 
   exportChooserFor: 'download' | 'email' | null = null;
   exportBusy = false;
-
-  private lastSaved: Record<string, { key: string; value: string | null }> = {};
 
   constructor(
     private route: ActivatedRoute,
@@ -143,36 +116,39 @@ export class BatchReviewComponent implements OnInit {
     forkJoin(ids.map(id => this.documentService.getDetail(id))).subscribe({
       next: results => {
         this.documents = results.map(res => ({ id: res.id, fileName: res.originalFileName, fields: res.fields }));
-        for (const doc of this.documents) {
-          for (const f of doc.fields) this.lastSaved[f.id] = { key: f.fieldKey, value: f.fieldValue };
-        }
         this.loading = false;
       },
       error: () => { this.loading = false; this.notFound = true; }
     });
   }
 
-  pageNumbers(doc: BatchDocument): number[] {
-    const nums = new Set(doc.fields.map(f => f.pageNumber ?? 0));
-    return Array.from(nums).sort((a, b) => a - b);
-  }
-
-  fieldsForPage(doc: BatchDocument, page: number) {
-    return doc.fields.filter(f => (f.pageNumber ?? 0) === page);
-  }
-
   saveField(doc: BatchDocument, field: ExtractedFieldEdit) {
-    const previous = this.lastSaved[field.id];
-    if (previous && previous.key === field.fieldKey && previous.value === field.fieldValue) return;
-
     this.documentService.updateField(doc.id, field.id, field.fieldValue ?? '', field.fieldKey).subscribe({
       next: res => {
         field.wasEditedByUser = res.field.wasEditedByUser;
         field.fieldKey = res.field.fieldKey;
         field.fieldValue = res.field.fieldValue;
-        this.lastSaved[field.id] = { key: field.fieldKey, value: field.fieldValue };
       },
       error: () => this.toast.error('Could not save that change. Please try again.')
+    });
+  }
+
+  toggleInclude(doc: BatchDocument, field: ExtractedFieldEdit) {
+    this.documentService.updateField(doc.id, field.id, field.fieldValue ?? '', field.fieldKey, field.includeInExport).subscribe({
+      error: () => this.toast.error('Could not save that change. Please try again.')
+    });
+  }
+
+  onReordered(doc: BatchDocument, fields: ExtractedFieldEdit[]) {
+    const payload = fields.map(f => ({ fieldId: f.id, sectionLabel: f.sectionLabel, sortOrder: f.sortOrder }));
+    this.documentService.reorderFields(doc.id, payload).subscribe({
+      error: () => this.toast.error('Could not save the new order. Please try again.')
+    });
+  }
+
+  onSectionRenamed(doc: BatchDocument, event: { oldLabel: string; newLabel: string }) {
+    this.documentService.renameSection(doc.id, event.oldLabel, event.newLabel).subscribe({
+      error: () => this.toast.error('Could not rename that section. Please try again.')
     });
   }
 

@@ -30,7 +30,16 @@ public record DocumentDetailDto(
     string Status,
     List<ExtractedFieldEditDto> Fields);
 
-public record UpdateFieldRequestDto(Guid FieldId, string? NewValue, string? NewKey = null);
+public record UpdateFieldRequestDto(Guid FieldId, string? NewValue, string? NewKey = null, bool? IncludeInExport = null);
+
+/// <param name="Fields">Every field of the document, in the drop's resulting order - the whole
+/// list is renumbered on any single move, not just the dragged field, so SortOrder never gaps
+/// or collides across repeated reorders.</param>
+public record ReorderFieldDto(Guid FieldId, string SectionLabel, int SortOrder);
+
+public record ReorderFieldsRequestDto(List<ReorderFieldDto> Fields);
+
+public record RenameSectionRequestDto(string OldLabel, string NewLabel);
 
 public enum ExportFormat { Excel, Json }
 

@@ -237,7 +237,7 @@ public class DocumentProcessingService
         }
     }
 
-    public async Task<Result<ExtractedFieldEditDto>> UpdateFieldAsync(Guid documentId, Guid fieldId, string? newValue, string? newKey = null, CancellationToken ct = default)
+    public async Task<Result<ExtractedFieldEditDto>> UpdateFieldAsync(Guid documentId, Guid fieldId, string? newValue, string? newKey = null, bool? includeInExport = null, CancellationToken ct = default)
     {
         var document = await _documents.GetWithDetailsAsync(documentId, ct);
         if (document is null) return Result<ExtractedFieldEditDto>.Failure("Document not found.", "NOT_FOUND");
@@ -254,8 +254,11 @@ public class DocumentProcessingService
         // "Edited" means the user actually changed something from what the AI produced -
         // either the value or the label - not just that a save request was sent (the
         // frontend used to mark every field "edited" on blur regardless of any real
-        // change, which is exactly the false-positive this recomputation fixes).
+        // change, which is exactly the false-positive this recomputation fixes). The
+        // include-in-export toggle is deliberately excluded from this - it's an export
+        // preference, not a correction to the extracted content.
         field.WasEditedByUser = field.OriginalAiValue != field.FieldValue || field.OriginalFieldKey != field.FieldKey;
+        if (includeInExport is not null) field.IncludeInExport = includeInExport.Value;
 
         await _documents.SaveChangesAsync(ct);
 
@@ -268,6 +271,60 @@ public class DocumentProcessingService
         await _audit.LogAsync("Document.FieldUpdated", document.UserId, "Document", documentId.ToString(), diff, ct: ct);
 
         return Result<ExtractedFieldEditDto>.Success(ToEditDto(field));
+    }
+
+    /// <summary>
+    /// Persists a drag-and-drop reorder: the whole document's fields are renumbered from the
+    /// dropped order (not just the moved one) so SortOrder stays gap/collision-free across
+    /// repeated moves, and a field's SectionLabel is updated if it was dropped into a
+    /// different section's list.
+    /// </summary>
+    public async Task<Result> ReorderFieldsAsync(Guid documentId, List<ReorderFieldDto> fields, CancellationToken ct = default)
+    {
+        var document = await _documents.GetWithDetailsAsync(documentId, ct);
+        if (document is null) return Result.Failure("Document not found.", "NOT_FOUND");
+
+        var byId = document.ExtractedFields.ToDictionary(f => f.Id);
+        foreach (var item in fields)
+        {
+            if (!byId.TryGetValue(item.FieldId, out var field)) continue;
+            field.SortOrder = item.SortOrder;
+            field.SectionLabel = item.SectionLabel;
+        }
+
+        await _documents.SaveChangesAsync(ct);
+        await _audit.LogAsync("Document.FieldsReordered", document.UserId, "Document", documentId.ToString(), $"{{\"fieldCount\":{fields.Count}}}", true, ct);
+        return Result.Success();
+    }
+
+    /// <summary>Renames a section for this document only - fields already dragged out of it
+    /// under the old name are unaffected, matching how a rename is scoped to "current members".</summary>
+    public async Task<Result> RenameSectionAsync(Guid documentId, string oldLabel, string newLabel, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(newLabel)) return Result.Failure("Section name can't be empty.", "INVALID_NAME");
+
+        var document = await _documents.GetWithDetailsAsync(documentId, ct);
+        if (document is null) return Result.Failure("Document not found.", "NOT_FOUND");
+
+        var trimmed = newLabel.Trim();
+        var renamedCount = 0;
+        foreach (var field in document.ExtractedFields)
+        {
+            var currentLabel = string.IsNullOrWhiteSpace(field.SectionLabel) ? "General" : field.SectionLabel;
+            if (currentLabel == oldLabel)
+            {
+                field.SectionLabel = trimmed;
+                renamedCount++;
+            }
+        }
+
+        if (renamedCount > 0)
+        {
+            await _documents.SaveChangesAsync(ct);
+            await _audit.LogAsync("Document.SectionRenamed", document.UserId, "Document", documentId.ToString(), $"{{\"from\":\"{oldLabel}\",\"to\":\"{trimmed}\"}}", true, ct);
+        }
+
+        return Result.Success();
     }
 
     private static readonly ExportOptionsDto DefaultExportOptions = new();

@@ -255,8 +255,28 @@ public class DocumentsController : ControllerBase
         var (_, error) = await GetOwnedDocumentAsync(id, ct);
         if (error is not null) return error;
 
-        var result = await _service.UpdateFieldAsync(id, dto.FieldId, dto.NewValue, dto.NewKey, ct);
+        var result = await _service.UpdateFieldAsync(id, dto.FieldId, dto.NewValue, dto.NewKey, dto.IncludeInExport, ct);
         return result.Succeeded ? Ok(new { success = true, field = result.Data }) : NotFound(new { success = false, message = result.Error });
+    }
+
+    [HttpPut("{id:guid}/fields/reorder")]
+    public async Task<IActionResult> ReorderFields(Guid id, ReorderFieldsRequestDto dto, CancellationToken ct)
+    {
+        var (_, error) = await GetOwnedDocumentAsync(id, ct);
+        if (error is not null) return error;
+
+        var result = await _service.ReorderFieldsAsync(id, dto.Fields, ct);
+        return result.Succeeded ? Ok(new { success = true }) : NotFound(new { success = false, message = result.Error });
+    }
+
+    [HttpPut("{id:guid}/sections/rename")]
+    public async Task<IActionResult> RenameSection(Guid id, RenameSectionRequestDto dto, CancellationToken ct)
+    {
+        var (_, error) = await GetOwnedDocumentAsync(id, ct);
+        if (error is not null) return error;
+
+        var result = await _service.RenameSectionAsync(id, dto.OldLabel, dto.NewLabel, ct);
+        return result.Succeeded ? Ok(new { success = true }) : BadRequest(new { success = false, message = result.Error });
     }
 
     [HttpGet("{id:guid}/export")]

@@ -13,7 +13,7 @@ export type IconName =
   | 'alert-triangle' | 'dollar-sign' | 'inbox' | 'upload-cloud' | 'cpu'
   | 'sparkles' | 'chevron-left' | 'menu' | 'arrow-right' | 'scan' | 'grid'
   | 'file' | 'shield' | 'close' | 'sun' | 'moon' | 'monitor' | 'eye' | 'eye-off'
-  | 'check-circle' | 'x-circle' | 'flask';
+  | 'check-circle' | 'x-circle' | 'flask' | 'grip';
 
 @Component({
   selector: 'app-icon',
@@ -145,6 +145,11 @@ export type IconName =
         @case ('flask') {
           <path d="M9.5 2.5h5"/><path d="M10.3 3v6.2L4.8 18a1.8 1.8 0 0 0 1.5 2.8h11.4a1.8 1.8 0 0 0 1.5-2.8L13.7 9.2V3"/>
           <line x1="7.5" y1="14.5" x2="16.5" y2="14.5"/>
+        }
+        @case ('grip') {
+          <circle cx="8.5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="6" r="1.3" fill="currentColor" stroke="none"/>
+          <circle cx="8.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="12" r="1.3" fill="currentColor" stroke="none"/>
+          <circle cx="8.5" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="18" r="1.3" fill="currentColor" stroke="none"/>
         }
       }
     </svg>
