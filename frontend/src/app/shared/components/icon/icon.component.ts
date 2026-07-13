@@ -12,7 +12,8 @@ export type IconName =
   | 'tool' | 'log-out' | 'edit' | 'key' | 'pause' | 'play' | 'trash'
   | 'alert-triangle' | 'dollar-sign' | 'inbox' | 'upload-cloud' | 'cpu'
   | 'sparkles' | 'chevron-left' | 'menu' | 'arrow-right' | 'scan' | 'grid'
-  | 'file' | 'shield' | 'close' | 'sun' | 'moon' | 'monitor' | 'eye' | 'eye-off';
+  | 'file' | 'shield' | 'close' | 'sun' | 'moon' | 'monitor' | 'eye' | 'eye-off'
+  | 'check-circle' | 'x-circle' | 'flask';
 
 @Component({
   selector: 'app-icon',
@@ -134,6 +135,16 @@ export type IconName =
           <path d="M10.6 5.2A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a15.6 15.6 0 0 1-3.4 4.3"/>
           <path d="M6.5 6.7C4 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 3.4-.6"/>
           <path d="M9.5 9.7a3.2 3.2 0 0 0 4.4 4.5"/>
+        }
+        @case ('check-circle') {
+          <circle cx="12" cy="12" r="9.5"/><polyline points="7.5 12.5 10.5 15.5 16.5 8.5"/>
+        }
+        @case ('x-circle') {
+          <circle cx="12" cy="12" r="9.5"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/>
+        }
+        @case ('flask') {
+          <path d="M9.5 2.5h5"/><path d="M10.3 3v6.2L4.8 18a1.8 1.8 0 0 0 1.5 2.8h11.4a1.8 1.8 0 0 0 1.5-2.8L13.7 9.2V3"/>
+          <line x1="7.5" y1="14.5" x2="16.5" y2="14.5"/>
         }
       }
     </svg>

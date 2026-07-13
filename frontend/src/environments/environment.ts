@@ -6,8 +6,11 @@ export const environment = {
   // itself is on this machine - relative + same-origin proxying is what lets
   // the app also work through a tunnel (e.g. ngrok) exposing only the frontend port.
   apiBaseUrl: '/api',
+  // Single source of truth for product branding in the UI (navbar, footer, checkout).
+  // Keep in sync with "App:Name" in the backend's appsettings.json if the project is renamed.
+  appName: 'Datamint',
   // >>> Paste the SAME Google OAuth Web Client ID used in the backend appsettings.json <<<
   googleClientId: '1037509001460-5uqo0jqbcrnpne9509s4dac5gfi6t7td.apps.googleusercontent.com',
-  // >>> Razorpay public Key ID (safe to expose client-side) <<<
-  razorpayKeyId: 'YOUR_RAZORPAY_KEY_ID'
+  // >>> Payment gateway public key (safe to expose client-side) <<<
+  paymentPublicKey: 'YOUR_PAYMENT_GATEWAY_PUBLIC_KEY'
 };

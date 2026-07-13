@@ -4,6 +4,7 @@ using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
 using Datamint.Domain.Entities;
 using Datamint.Domain.Enums;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Datamint.Application.Services;
@@ -23,6 +24,7 @@ public class DocumentProcessingService
     private readonly IEmailService _email;
     private readonly IAuditService _audit;
     private readonly ILogger<DocumentProcessingService> _logger;
+    private readonly string _appName;
 
     public DocumentProcessingService(
         IDocumentRepository documents,
@@ -32,7 +34,8 @@ public class DocumentProcessingService
         IExcelExportService excel,
         IEmailService email,
         IAuditService audit,
-        ILogger<DocumentProcessingService> logger)
+        ILogger<DocumentProcessingService> logger,
+        IConfiguration config)
     {
         _documents = documents;
         _users = users;
@@ -42,6 +45,7 @@ public class DocumentProcessingService
         _email = email;
         _audit = audit;
         _logger = logger;
+        _appName = config["App:Name"] ?? "Datamint";
     }
 
     public async Task<Result<DocumentSummaryDto>> UploadAndQueueAsync(
@@ -316,18 +320,19 @@ public class DocumentProcessingService
 
         var bodyDescription = exportMode switch
         {
-            "MultipleSheets" => $"Please find attached one workbook with a separate sheet for each of the {documents.Count} document(s) from Datamint.",
-            "SeparateFiles" => $"Please find attached a zip file with a separate spreadsheet for each of the {documents.Count} document(s) from Datamint.",
-            _ => $"Please find attached the combined extracted data for {documents.Count} document(s) from Datamint."
+            "MultipleSheets" => $"Please find attached one workbook with a separate sheet for each of the {documents.Count} document(s) from {_appName}.",
+            "SeparateFiles" => $"Please find attached a zip file with a separate spreadsheet for each of the {documents.Count} document(s) from {_appName}.",
+            _ => $"Please find attached the combined extracted data for {documents.Count} document(s) from {_appName}."
         };
         var body = EmailTemplateHelper.Wrap(
+            appName: _appName,
             title: "Your export is ready",
             greeting: "Hi,",
             bodyHtml: $"<p>{bodyDescription}</p>");
 
         var sent = await _email.SendAsync(
             toAddress,
-            "Your Datamint extracted data export",
+            $"Your {_appName} extracted data export",
             body,
             tempPath,
             attachmentName,
@@ -350,13 +355,14 @@ public class DocumentProcessingService
         await File.WriteAllBytesAsync(tempPath, exportResult.Data!, ct);
 
         var body = EmailTemplateHelper.Wrap(
+            appName: _appName,
             title: "Your export is ready",
             greeting: "Hi,",
-            bodyHtml: "<p>Please find attached the extracted data exported from Datamint.</p>");
+            bodyHtml: $"<p>Please find attached the extracted data exported from {_appName}.</p>");
 
         var sent = await _email.SendAsync(
             toAddress,
-            "Your Datamint extracted data export",
+            $"Your {_appName} extracted data export",
             body,
             tempPath,
             "datamint-export.xlsx",

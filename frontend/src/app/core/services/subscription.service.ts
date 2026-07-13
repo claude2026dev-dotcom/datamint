@@ -21,11 +21,11 @@ export class SubscriptionService {
   }
 
   createOrder(planId: string) {
-    return this.http.post<{ success: boolean; order: { orderId: string; amount: number; currency: string; keyId: string } }>(
+    return this.http.post<{ success: boolean; order: { orderId: string; amount: number; currency: string; keyId: string; provider: string } }>(
       `${environment.apiBaseUrl}/subscription/checkout/create-order`, { planId });
   }
 
-  verifyPayment(payload: { planId: string; razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature: string }) {
+  verifyPayment(payload: { planId: string; providerOrderId: string; providerPaymentId: string; providerSignature: string }) {
     return this.http.post<{ success: boolean; message: string }>(`${environment.apiBaseUrl}/subscription/checkout/verify`, payload);
   }
 

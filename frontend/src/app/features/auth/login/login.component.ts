@@ -6,6 +6,7 @@ import { AuthService } from '../../../core/services/auth.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { GoogleSigninButtonComponent } from '../../../shared/components/google-signin-button/google-signin-button.component';
 import { IconComponent } from '../../../shared/components/icon/icon.component';
+import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -47,7 +48,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           </button>
         </form>
 
-        <p class="muted footer-link">New to Datamint? <a routerLink="/register">Create an account</a></p>
+        <p class="muted footer-link">New to {{ appName }}? <a routerLink="/register">Create an account</a></p>
       </div>
     </div>
   `,
@@ -79,6 +80,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
   `]
 })
 export class LoginComponent {
+  readonly appName = environment.appName;
   email = '';
   password = '';
   showPassword = false;

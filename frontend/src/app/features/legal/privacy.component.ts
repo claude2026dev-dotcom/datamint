@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-privacy',
@@ -11,7 +12,7 @@ import { BackButtonComponent } from '../../shared/components/back-button/back-bu
       <app-back-button fallbackUrl="/" />
       <h1>Privacy Policy</h1>
       <p class="muted">Last updated: placeholder — replace with your actual effective date.</p>
-      <p>This Privacy Policy explains what information Datamint collects and how it's used.</p>
+      <p>This Privacy Policy explains what information {{ appName }} collects and how it's used.</p>
       <h3>1. Information we collect</h3>
       <p>Account details (email, name), uploaded documents and extracted data, usage/audit logs, and payment metadata (processed by our payment partner — we do not store card details).</p>
       <h3>2. How we use it</h3>
@@ -31,4 +32,6 @@ import { BackButtonComponent } from '../../shared/components/back-button/back-bu
     .note { margin-top: 30px; font-size: 0.82rem; font-style: italic; }
   `]
 })
-export class PrivacyComponent {}
+export class PrivacyComponent {
+  readonly appName = environment.appName;
+}

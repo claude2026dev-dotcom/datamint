@@ -8,9 +8,18 @@ public record CreateOrderRequestDto(Guid PlanId);
 
 public record ActivatePlanRequestDto(Guid PlanId);
 
-public record RazorpayOrderDto(string OrderId, decimal Amount, string Currency, string KeyId);
+public record PaymentOrderDto(string OrderId, decimal Amount, string Currency, string KeyId, string Provider);
 
-public record VerifyPaymentRequestDto(Guid PlanId, string RazorpayOrderId, string RazorpayPaymentId, string RazorpaySignature);
+public record VerifyPaymentRequestDto(Guid PlanId, string ProviderOrderId, string ProviderPaymentId, string ProviderSignature);
+
+public record AdminTransactionDto(
+    Guid Id, string UserEmail, string Provider, string ProviderOrderId, string? ProviderPaymentId,
+    decimal Amount, string Currency, string Status, DateTime CreatedAtUtc,
+    DateTime? RefundedAtUtc, decimal? RefundAmount, string? RefundReason);
+
+public record RefundRequestDto(string? Reason);
+
+public record RefundResultDto(bool Success, string? ProviderRefundId, string? ErrorMessage);
 
 public record SubscriptionStatusDto(
     bool HasActiveSubscription,

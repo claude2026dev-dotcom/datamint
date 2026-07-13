@@ -8,9 +8,10 @@ using Razorpay.Api;
 namespace Datamint.Infrastructure.Services;
 
 /// <summary>
-/// Wraps the Razorpay Orders API + payment-signature verification.
-/// >>> Set "Razorpay:KeyId" and "Razorpay:KeySecret" in appsettings /
-///     user-secrets (test keys while integrating, live keys in production). <<<
+/// Razorpay implementation of IPaymentService - wraps the Razorpay Orders/Payments API +
+/// payment-signature verification behind the gateway-agnostic interface.
+/// >>> Set "Razorpay:KeyId" and "Razorpay:KeySecret" in appsettings / user-secrets (test keys
+///     while integrating, live keys in production), and "Payment:Provider" to "Razorpay". <<<
 /// </summary>
 public class RazorpayPaymentService : IPaymentService
 {
@@ -18,7 +19,9 @@ public class RazorpayPaymentService : IPaymentService
 
     public RazorpayPaymentService(IConfiguration config) => _config = config;
 
-    public Task<RazorpayOrderDto> CreateOrderAsync(decimal amount, string currency, string receipt, CancellationToken ct = default)
+    public string ProviderName => "Razorpay";
+
+    public Task<PaymentOrderDto> CreateOrderAsync(decimal amount, string currency, string receipt, CancellationToken ct = default)
     {
         var keyId = _config["Razorpay:KeyId"]!;
         var keySecret = _config["Razorpay:KeySecret"]!;
@@ -33,7 +36,7 @@ public class RazorpayPaymentService : IPaymentService
         };
 
         Order order = client.Order.Create(options);
-        return Task.FromResult(new RazorpayOrderDto(order["id"].ToString()!, amount, currency, keyId));
+        return Task.FromResult(new PaymentOrderDto(order["id"].ToString()!, amount, currency, keyId, ProviderName));
     }
 
     public bool VerifySignature(string orderId, string paymentId, string signature)
@@ -47,5 +50,24 @@ public class RazorpayPaymentService : IPaymentService
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(expectedSignature),
             Encoding.UTF8.GetBytes(signature.ToLowerInvariant()));
+    }
+
+    public Task<RefundResultDto> RefundAsync(string providerPaymentId, decimal amount, string currency, string? reason, CancellationToken ct = default)
+    {
+        var keyId = _config["Razorpay:KeyId"]!;
+        var keySecret = _config["Razorpay:KeySecret"]!;
+        var client = new RazorpayClient(keyId, keySecret);
+
+        try
+        {
+            var options = new Dictionary<string, object> { { "amount", (int)(amount * 100) } };
+            Payment payment = client.Payment.Fetch(providerPaymentId);
+            Refund refund = payment.Refund(options);
+            return Task.FromResult(new RefundResultDto(true, refund["id"].ToString(), null));
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(new RefundResultDto(false, null, ex.Message));
+        }
     }
 }

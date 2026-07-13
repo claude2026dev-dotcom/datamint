@@ -22,8 +22,9 @@ public class AdminController : ControllerBase
     private readonly IAuthNotificationService _notify;
     private readonly IPasswordResetService _passwordReset;
     private readonly ISessionService _sessions;
+    private readonly IPaymentService _payments;
 
-    public AdminController(DatamintDbContext db, IAuditService audit, ICurrentUserService currentUser, IAuthNotificationService notify, IPasswordResetService passwordReset, ISessionService sessions)
+    public AdminController(DatamintDbContext db, IAuditService audit, ICurrentUserService currentUser, IAuthNotificationService notify, IPasswordResetService passwordReset, ISessionService sessions, IPaymentService payments)
     {
         _db = db;
         _audit = audit;
@@ -31,6 +32,7 @@ public class AdminController : ControllerBase
         _notify = notify;
         _passwordReset = passwordReset;
         _sessions = sessions;
+        _payments = payments;
     }
 
     [HttpGet("dashboard")]
@@ -378,6 +380,66 @@ public class AdminController : ControllerBase
         await _audit.LogAsync(plan.IsActive ? "Admin.PlanEnabled" : "Admin.PlanDisabled", _currentUser.UserId, "Plan", plan.Id.ToString(),
             BuildDiff(("isActive", wasActive, plan.IsActive)), ct: ct);
         return Ok(new { success = true, isActive = plan.IsActive });
+    }
+
+    [HttpGet("transactions")]
+    public async Task<IActionResult> GetTransactions([FromQuery] int page = 1, [FromQuery] int pageSize = 25, [FromQuery] string? status = null, CancellationToken ct = default)
+    {
+        var query = _db.PaymentTransactions.Include(t => t.User).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(status)) query = query.Where(t => t.Status == status);
+        query = query.OrderByDescending(t => t.CreatedAtUtc);
+
+        var total = await query.CountAsync(ct);
+        var items = await query.Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(t => new AdminTransactionDto(t.Id, t.User.Email, t.Provider, t.ProviderOrderId, t.ProviderPaymentId,
+                t.Amount, t.Currency, t.Status, t.CreatedAtUtc, t.RefundedAtUtc, t.RefundAmount, t.RefundReason))
+            .ToListAsync(ct);
+
+        return Ok(new { success = true, items, total, page, pageSize });
+    }
+
+    /// <summary>
+    /// Full refund of a paid transaction, triggered by an admin (e.g. an accidental duplicate
+    /// charge or a support-requested reversal). Also immediately revokes the subscription that
+    /// payment activated - a refund means the user shouldn't keep the access it paid for, unlike
+    /// a normal cancellation (which lets the current, already-paid-for period run out).
+    /// </summary>
+    [HttpPost("transactions/{id:guid}/refund")]
+    public async Task<IActionResult> RefundTransaction(Guid id, RefundRequestDto dto, CancellationToken ct)
+    {
+        var transaction = await _db.PaymentTransactions.FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (transaction is null) return NotFound(new { success = false, message = "Transaction not found." });
+        if (transaction.Status != "paid") return BadRequest(new { success = false, message = "Only a successfully paid transaction can be refunded." });
+        if (transaction.ProviderPaymentId is null) return BadRequest(new { success = false, message = "This transaction has no payment id to refund." });
+
+        var result = await _payments.RefundAsync(transaction.ProviderPaymentId, transaction.Amount, transaction.Currency, dto.Reason, ct);
+        if (!result.Success)
+        {
+            await _audit.LogAsync("Admin.RefundFailed", _currentUser.UserId, "PaymentTransaction", transaction.Id.ToString(), result.ErrorMessage, isSuccess: false, ct: ct);
+            return BadRequest(new { success = false, message = result.ErrorMessage ?? "Refund failed at the payment gateway. Please try again." });
+        }
+
+        transaction.Status = "refunded";
+        transaction.RefundedAtUtc = DateTime.UtcNow;
+        transaction.RefundAmount = transaction.Amount;
+        transaction.RefundReason = dto.Reason;
+        transaction.ProviderRefundId = result.ProviderRefundId;
+
+        if (transaction.SubscriptionId is not null)
+        {
+            var subscription = await _db.Subscriptions.FirstOrDefaultAsync(s => s.Id == transaction.SubscriptionId, ct);
+            if (subscription is not null && subscription.Status is SubscriptionStatus.Active or SubscriptionStatus.PastDue)
+            {
+                subscription.Status = SubscriptionStatus.Cancelled;
+                subscription.EndAtUtc = DateTime.UtcNow;
+            }
+        }
+
+        await _db.SaveChangesAsync(ct);
+        await _audit.LogAsync("Admin.RefundIssued", _currentUser.UserId, "PaymentTransaction", transaction.Id.ToString(),
+            BuildDiff(("amount", 0m, transaction.RefundAmount), ("reason", null, dto.Reason)), ct: ct);
+
+        return Ok(new { success = true, message = "Refund issued and access revoked." });
     }
 
     /// <summary>Builds a compact JSON diff of only the fields that actually changed, so audit

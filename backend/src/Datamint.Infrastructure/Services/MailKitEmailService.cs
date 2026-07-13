@@ -31,7 +31,7 @@ public class MailKitEmailService : IEmailService
         try
         {
             var message = new MimeMessage();
-            message.From.Add(new MailboxAddress(_config["Email:FromName"] ?? "Datamint", _config["Email:FromAddress"]));
+            message.From.Add(new MailboxAddress(_config["Email:FromName"] ?? _config["App:Name"] ?? "Datamint", _config["Email:FromAddress"]));
             message.To.Add(MailboxAddress.Parse(toAddress));
             message.Subject = subject;
 

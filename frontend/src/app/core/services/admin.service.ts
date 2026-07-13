@@ -70,6 +70,17 @@ export class AdminService {
     return this.http.put<{ success: boolean; isActive: boolean }>(`${environment.apiBaseUrl}/admin/plans/${id}/toggle-active`, {});
   }
 
+  getTransactions(params: { page?: number; pageSize?: number; status?: string } = {}) {
+    const cleaned = this.stripEmpty(params);
+    return this.http.get<{ success: boolean; items: any[]; total: number; page: number; pageSize: number }>(
+      `${environment.apiBaseUrl}/admin/transactions`, { params: cleaned }
+    );
+  }
+
+  refundTransaction(id: string, reason?: string) {
+    return this.http.post<{ success: boolean; message: string }>(`${environment.apiBaseUrl}/admin/transactions/${id}/refund`, { reason });
+  }
+
   private stripEmpty(obj: Record<string, any>): Record<string, string> {
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(obj)) {

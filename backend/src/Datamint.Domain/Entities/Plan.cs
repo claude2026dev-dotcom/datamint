@@ -27,7 +27,7 @@ public class Plan : BaseEntity
     // so renaming the plan from Admin > Plans can never silently break either check.
     public bool IsFreeTrial { get; set; } = false;
     public bool IsActive { get; set; } = true;
-    public string? RazorpayPlanId { get; set; }        // Razorpay-side plan id, once created
+    public string? ProviderPlanId { get; set; }        // Gateway-side plan id, once created (which gateway is Payment:Provider in appsettings)
 
     public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
 

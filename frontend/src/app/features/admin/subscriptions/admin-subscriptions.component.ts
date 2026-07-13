@@ -84,6 +84,49 @@ interface PlanForm {
       </div>
     }
 
+    <div class="section-head">
+      <h2>Recent transactions</h2>
+      <p class="muted">Full refunds immediately revoke the subscription that payment activated.</p>
+    </div>
+
+    @if (txLoading) {
+      <div class="dm-card tx-card skeleton"></div>
+    } @else if (transactions.length === 0) {
+      <p class="muted">No transactions yet.</p>
+    } @else {
+      <div class="dm-card tx-table-wrap">
+        <table class="tx-table">
+          <thead>
+            <tr>
+              <th>User</th><th>Provider</th><th>Amount</th><th>Status</th><th>Date</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of transactions; track t.id) {
+              <tr>
+                <td data-label="User">{{ t.userEmail }}</td>
+                <td data-label="Provider">{{ t.provider }}</td>
+                <td data-label="Amount">{{ t.currency }} {{ t.amount }}</td>
+                <td data-label="Status">
+                  <span class="badge" [class.badge-ok]="t.status === 'paid'" [class.badge-fail]="t.status === 'failed'" [class.badge-refunded]="t.status === 'refunded'">
+                    {{ t.status }}
+                  </span>
+                </td>
+                <td data-label="Date">{{ t.createdAtUtc | date: 'medium' }}</td>
+                <td data-label="">
+                  @if (t.status === 'paid') {
+                    <button class="dm-btn dm-btn-ghost tiny danger" (click)="refund(t)">Refund</button>
+                  } @else if (t.status === 'refunded') {
+                    <span class="muted refund-note">Refunded {{ t.refundedAtUtc | date: 'medium' }}</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
     @if (modalOpen) {
       <div class="modal-backdrop" (click)="closeModal()">
         <div class="dm-card modal-panel" (click)="$event.stopPropagation()">
@@ -185,7 +228,31 @@ interface PlanForm {
     .badge-ok { background: rgba(52, 211, 153, 0.15); color: var(--dm-success); }
     .badge-fail { background: rgba(248, 113, 113, 0.15); color: var(--dm-danger); }
     .badge-trial { background: rgba(99, 102, 241, 0.15); color: var(--dm-primary-light); }
+    .badge-refunded { background: rgba(148, 163, 184, 0.15); color: var(--dm-text-muted); }
     .trial-note { font-style: italic; }
+
+    .section-head { margin: 34px 0 14px; }
+    .section-head h2 { font-size: 1.1rem; margin: 0; }
+    .tx-card.skeleton { height: 140px; background: linear-gradient(90deg, var(--dm-surface) 25%, var(--dm-surface-hover) 50%, var(--dm-surface) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+    .tx-table-wrap { padding: 0; overflow-x: auto; }
+    .tx-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; white-space: nowrap; }
+    .tx-table th { text-align: left; padding: 12px 16px; color: var(--dm-text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--dm-border); }
+    .tx-table td { padding: 12px 16px; border-bottom: 1px solid var(--dm-border); }
+    .tx-table tr:last-child td { border-bottom: none; }
+    /* Below this width a horizontally-scrolling table is an awkward way to read a handful of
+       fields per row - restack each row as label/value pairs instead, same pattern used for
+       the plan cards above. */
+    @media (max-width: 640px) {
+      .tx-table-wrap { overflow-x: visible; }
+      .tx-table, .tx-table thead, .tx-table tbody, .tx-table tr, .tx-table td { display: block; white-space: normal; width: 100%; }
+      .tx-table thead { display: none; }
+      .tx-table tr { padding: 14px 16px; border-bottom: 1px solid var(--dm-border); }
+      .tx-table tr:last-child { border-bottom: none; }
+      .tx-table td { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0; border-bottom: none; text-align: right; }
+      .tx-table td[data-label]:not([data-label=""])::before { content: attr(data-label); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); text-align: left; }
+      .tx-table td[data-label=""] { justify-content: flex-end; }
+    }
+    .refund-note { font-size: 0.78rem; }
 
     .modal-backdrop {
       position: fixed; inset: 0; background: rgba(4, 6, 14, 0.6); backdrop-filter: blur(2px);
@@ -219,6 +286,9 @@ export class AdminSubscriptionsComponent implements OnInit {
   loading = true;
   error = '';
 
+  transactions: any[] = [];
+  txLoading = true;
+
   modalOpen = false;
   modalMode: 'create' | 'edit' = 'create';
   form: PlanForm = this.emptyForm();
@@ -230,7 +300,30 @@ export class AdminSubscriptionsComponent implements OnInit {
     private confirmDialog: ConfirmDialogService
   ) {}
 
-  ngOnInit() { this.load(); }
+  ngOnInit() { this.load(); this.loadTransactions(); }
+
+  loadTransactions() {
+    this.txLoading = true;
+    this.adminService.getTransactions({ pageSize: 20 }).subscribe({
+      next: res => { this.transactions = res.items; this.txLoading = false; },
+      error: () => { this.txLoading = false; }
+    });
+  }
+
+  async refund(t: any) {
+    const confirmed = await this.confirmDialog.ask({
+      title: 'Refund this payment?',
+      message: `${t.currency} ${t.amount} will be refunded to ${t.userEmail}, and their subscription from this payment will be revoked immediately. This can't be undone.`,
+      confirmLabel: 'Issue refund',
+      danger: true
+    });
+    if (!confirmed) return;
+
+    this.adminService.refundTransaction(t.id).subscribe({
+      next: () => { this.toast.success('Refund issued and access revoked.'); this.loadTransactions(); },
+      error: err => this.toast.error(err?.error?.message || 'Could not issue this refund. Please try again.')
+    });
+  }
 
   emptyForm(): PlanForm {
     return { id: null, name: '', description: '', price: 0, currency: 'INR', billingCycle: 'Monthly', monthlyPageLimit: 50, unlimited: false, isRecurring: true, isFreeTrial: false };

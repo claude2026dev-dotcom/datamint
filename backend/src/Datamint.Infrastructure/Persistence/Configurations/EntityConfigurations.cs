@@ -48,9 +48,11 @@ public class PaymentTransactionConfiguration : IEntityTypeConfiguration<PaymentT
     public void Configure(EntityTypeBuilder<PaymentTransaction> b)
     {
         b.Property(t => t.Amount).HasColumnType("decimal(10,2)");
-        b.Property(t => t.RazorpayOrderId).IsRequired().HasMaxLength(100);
+        b.Property(t => t.Provider).IsRequired().HasMaxLength(30);
+        b.Property(t => t.ProviderOrderId).IsRequired().HasMaxLength(100);
         b.Property(t => t.Currency).HasMaxLength(10);
         b.Property(t => t.Status).HasMaxLength(30);
+        b.Property(t => t.RefundAmount).HasColumnType("decimal(10,2)");
     }
 }
 

@@ -5,6 +5,7 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { ThemeService } from '../../../core/services/theme.service';
 import { IconComponent } from '../icon/icon.component';
+import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'app-navbar',
@@ -14,8 +15,8 @@ import { IconComponent } from '../icon/icon.component';
     <nav class="dm-nav">
       <div class="dm-container dm-nav-inner">
         <a routerLink="/" class="brand">
-          <span class="brand-mark">D</span>
-          <span>Datamint</span>
+          <span class="brand-mark">{{ appName[0] }}</span>
+          <span>{{ appName }}</span>
         </a>
 
         <div class="links" [class.open]="menuOpen">
@@ -50,7 +51,7 @@ import { IconComponent } from '../icon/icon.component';
                       @if (auth.currentUser()?.avatarUrl; as avatarUrl) { <img [src]="avatarUrl" alt="" /> } @else { {{ initials() }} }
                     </span>
                     <div>
-                      <div class="name">{{ auth.currentUser()?.displayName || 'Datamint user' }}</div>
+                      <div class="name">{{ auth.currentUser()?.displayName || (appName + ' user') }}</div>
                       <div class="email">{{ auth.currentUser()?.email }}</div>
                     </div>
                   </div>
@@ -159,6 +160,7 @@ import { IconComponent } from '../icon/icon.component';
 export class NavbarComponent implements OnInit, OnDestroy {
   menuOpen = false;
   profileOpen = false;
+  readonly appName = environment.appName;
 
   // Bound once so addEventListener/removeEventListener refer to the exact same
   // function reference (an inline arrow passed to each call would never match,

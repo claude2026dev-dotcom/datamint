@@ -14,6 +14,6 @@ public class Subscription : BaseEntity
     public DateTime? EndAtUtc { get; set; }
     public int PagesUsedThisCycle { get; set; }
 
-    public string? RazorpaySubscriptionId { get; set; }
-    public string? RazorpayCustomerId { get; set; }
+    public string? ProviderSubscriptionId { get; set; }
+    public string? ProviderCustomerId { get; set; }
 }

@@ -58,7 +58,18 @@ builder.Services.AddScoped<IEmailService, MailKitEmailService>();
 builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
-builder.Services.AddScoped<IPaymentService, RazorpayPaymentService>();
+// Payment gateway is a config switch, same pattern as AiProvider:Provider above: set
+// "Payment:Provider" to "Fake" (default - simulates the whole flow locally, no credentials
+// needed) or "Razorpay" (real payment, needs Razorpay:KeyId/KeySecret) in appsettings.
+var paymentProvider = builder.Configuration["Payment:Provider"] ?? "Fake";
+if (string.Equals(paymentProvider, "Razorpay", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddScoped<IPaymentService, RazorpayPaymentService>();
+}
+else
+{
+    builder.Services.AddScoped<IPaymentService, FakePaymentService>();
+}
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IAuthNotificationService, AuthNotificationService>();
 builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();

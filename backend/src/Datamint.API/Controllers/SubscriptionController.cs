@@ -103,8 +103,8 @@ public class SubscriptionController : ControllerBase
 
     /// <summary>
     /// For $0 plans (the Free tier, or any plan whose real price hasn't been set
-    /// from Admin > Plans yet) - activates the subscription directly, no Razorpay
-    /// round-trip, since there's nothing to charge.
+    /// from Admin > Plans yet) - activates the subscription directly, no payment
+    /// gateway round-trip, since there's nothing to charge.
     /// </summary>
     [HttpPost("activate-free")]
     [Authorize]
@@ -145,7 +145,7 @@ public class SubscriptionController : ControllerBase
         return Ok(new { success = true, message = $"{plan.Name} plan activated." });
     }
 
-    /// <summary>Step 1 of checkout: create a Razorpay order for the chosen plan.</summary>
+    /// <summary>Step 1 of checkout: create a payment-gateway order for the chosen plan.</summary>
     [HttpPost("checkout/create-order")]
     [Authorize]
     public async Task<IActionResult> CreateOrder(CreateOrderRequestDto dto, CancellationToken ct)
@@ -161,7 +161,8 @@ public class SubscriptionController : ControllerBase
         _db.PaymentTransactions.Add(new PaymentTransaction
         {
             UserId = userId,
-            RazorpayOrderId = order.OrderId,
+            Provider = _payments.ProviderName,
+            ProviderOrderId = order.OrderId,
             Amount = plan.Price,
             Currency = plan.Currency,
             Status = "created"
@@ -173,15 +174,15 @@ public class SubscriptionController : ControllerBase
         return Ok(new { success = true, order });
     }
 
-    /// <summary>Step 2: frontend posts back the Razorpay payment id + signature from the checkout widget for verification.</summary>
+    /// <summary>Step 2: frontend posts back the payment id + signature from the checkout widget for verification.</summary>
     [HttpPost("checkout/verify")]
     [Authorize]
     public async Task<IActionResult> VerifyPayment(VerifyPaymentRequestDto dto, CancellationToken ct)
     {
-        var valid = _payments.VerifySignature(dto.RazorpayOrderId, dto.RazorpayPaymentId, dto.RazorpaySignature);
+        var valid = _payments.VerifySignature(dto.ProviderOrderId, dto.ProviderPaymentId, dto.ProviderSignature);
         var userId = _currentUser.UserId!.Value;
 
-        var transaction = await _db.PaymentTransactions.FirstOrDefaultAsync(t => t.RazorpayOrderId == dto.RazorpayOrderId && t.UserId == userId, ct);
+        var transaction = await _db.PaymentTransactions.FirstOrDefaultAsync(t => t.ProviderOrderId == dto.ProviderOrderId && t.UserId == userId, ct);
         if (transaction is null) return NotFound(new { success = false, message = "Transaction not found." });
 
         if (!valid)
@@ -193,8 +194,8 @@ public class SubscriptionController : ControllerBase
         }
 
         transaction.Status = "paid";
-        transaction.RazorpayPaymentId = dto.RazorpayPaymentId;
-        transaction.RazorpaySignature = dto.RazorpaySignature;
+        transaction.ProviderPaymentId = dto.ProviderPaymentId;
+        transaction.ProviderSignature = dto.ProviderSignature;
 
         var plan = await _db.Plans.FirstAsync(p => p.Id == dto.PlanId, ct);
         var startAt = DateTime.UtcNow;

@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-terms',
@@ -11,9 +12,9 @@ import { BackButtonComponent } from '../../shared/components/back-button/back-bu
       <app-back-button fallbackUrl="/" />
       <h1>Terms and Conditions</h1>
       <p class="muted">Last updated: placeholder — replace with your actual effective date.</p>
-      <p>These Terms govern your use of Datamint. By creating an account or uploading a document, you agree to these Terms.</p>
+      <p>These Terms govern your use of {{ appName }}. By creating an account or uploading a document, you agree to these Terms.</p>
       <h3>1. Use of the service</h3>
-      <p>Datamint lets you upload PDF documents for automated, AI-assisted data extraction. You are responsible for ensuring you have the right to upload and process any document you submit.</p>
+      <p>{{ appName }} lets you upload PDF documents for automated, AI-assisted data extraction. You are responsible for ensuring you have the right to upload and process any document you submit.</p>
       <h3>2. Free tier and subscriptions</h3>
       <p>New users may process a limited number of documents for free. Continued or higher-volume use requires an active paid subscription, billed and processed via our payment partner.</p>
       <h3>3. Data handling</h3>
@@ -33,4 +34,6 @@ import { BackButtonComponent } from '../../shared/components/back-button/back-bu
     .note { margin-top: 30px; font-size: 0.82rem; font-style: italic; }
   `]
 })
-export class TermsComponent {}
+export class TermsComponent {
+  readonly appName = environment.appName;
+}

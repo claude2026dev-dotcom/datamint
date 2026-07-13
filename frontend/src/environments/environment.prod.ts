@@ -1,6 +1,7 @@
 export const environment = {
   production: true,
   apiBaseUrl: 'https://api.yourdomain.com/api',
+  appName: 'Datamint',
   googleClientId: '936753055632-2hkdk1gnga4nam5gam7n76qsabtvi2s8.apps.googleusercontent.com',
-  razorpayKeyId: 'YOUR_RAZORPAY_KEY_ID'
+  paymentPublicKey: 'YOUR_PAYMENT_GATEWAY_PUBLIC_KEY'
 };
