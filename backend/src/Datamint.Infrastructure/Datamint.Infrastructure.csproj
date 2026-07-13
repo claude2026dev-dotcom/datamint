@@ -17,6 +17,7 @@
     </PackageReference>
     <!-- PDF text extraction -->
     <PackageReference Include="PdfPig" Version="0.1.15" />
+    <PackageReference Include="QuestPDF" Version="2026.7.1" />
     <!-- OCR fallback for scanned/image-only PDFs -->
     <PackageReference Include="Tesseract" Version="5.2.0" />
     <PackageReference Include="PdfiumViewer.Native.x86_64.v8-xfa" Version="2018.4.8.256" />

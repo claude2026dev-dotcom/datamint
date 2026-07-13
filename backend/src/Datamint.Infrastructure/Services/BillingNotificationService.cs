@@ -10,9 +10,12 @@ namespace Datamint.Infrastructure.Services;
 
 public class BillingNotificationService : NotificationServiceBase, IBillingNotificationService
 {
-    public BillingNotificationService(IEmailService email, DatamintDbContext db, ILogger<BillingNotificationService> logger, IConfiguration config, IHttpContextAccessor httpContextAccessor)
+    private readonly IInvoicePdfService _invoicePdf;
+
+    public BillingNotificationService(IEmailService email, DatamintDbContext db, ILogger<BillingNotificationService> logger, IConfiguration config, IHttpContextAccessor httpContextAccessor, IInvoicePdfService invoicePdf)
         : base(email, db, logger, config, httpContextAccessor)
     {
+        _invoicePdf = invoicePdf;
     }
 
     public Task SendPlanActivatedEmailAsync(ApplicationUser user, string planName, CancellationToken ct = default)
@@ -27,7 +30,7 @@ public class BillingNotificationService : NotificationServiceBase, IBillingNotif
         return SendAndLog(user.Id, user.Email, $"Your {planName} plan is active", body, ct);
     }
 
-    public Task SendPaymentSuccessEmailAsync(ApplicationUser user, string planName, decimal amount, string currency,
+    public async Task SendPaymentSuccessEmailAsync(ApplicationUser user, string planName, decimal amount, string currency,
         string invoiceNumber, DateTime paidAtUtc, CancellationToken ct = default)
     {
         var table = EmailTemplateHelper.InvoiceTable(
@@ -39,11 +42,23 @@ public class BillingNotificationService : NotificationServiceBase, IBillingNotif
             title: "Payment successful",
             greeting: Greeting(user),
             bodyHtml: $"<p>Thanks — your payment went through and your <strong>{planName}</strong> plan is active.</p>{table}" +
-                      "<p style=\"color:#767b93;font-size:13px;\">Keep this email as your receipt for this payment.</p>",
-            ctaLabel: "Go to my documents",
-            ctaPath: "/documents"
+                      "<p style=\"color:#767b93;font-size:13px;\">A PDF copy of this receipt is attached to this email.</p>",
+            ctaLabel: "Start extracting",
+            ctaPath: "/upload"
         );
-        return SendAndLog(user.Id, user.Email, $"Payment successful — {invoiceNumber}", body, ct);
+
+        var pdfBytes = _invoicePdf.Generate(new InvoicePdfDetails(
+            AppName, invoiceNumber, paidAtUtc, user.DisplayName ?? user.Email, user.Email, planName, amount, currency));
+        var tempPath = Path.Combine(Path.GetTempPath(), $"{invoiceNumber}.pdf");
+        await File.WriteAllBytesAsync(tempPath, pdfBytes, ct);
+        try
+        {
+            await SendAndLog(user.Id, user.Email, $"Payment successful — {invoiceNumber}", body, ct, tempPath, $"{invoiceNumber}.pdf");
+        }
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
     }
 
     public Task SendPaymentFailedEmailAsync(ApplicationUser user, string planName, decimal amount, string currency, CancellationToken ct = default)

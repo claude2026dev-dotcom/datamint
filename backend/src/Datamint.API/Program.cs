@@ -15,6 +15,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
+// QuestPDF requires an explicit license declaration in code as of v2023+. Community is free
+// for orgs/individuals under $1M USD annual gross revenue (also free for open source) - see
+// https://www.questpdf.com/license/ before this app is generating real revenue, a
+// Professional/Enterprise license would be needed instead.
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // ---------- Serilog: file + SQL Server sink so logs are queryable in prod ----------
@@ -73,6 +79,7 @@ else
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IAuthNotificationService, AuthNotificationService>();
 builder.Services.AddScoped<IBillingNotificationService, BillingNotificationService>();
+builder.Services.AddScoped<IInvoicePdfService, InvoicePdfService>();
 builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IAuthService, AuthService>();

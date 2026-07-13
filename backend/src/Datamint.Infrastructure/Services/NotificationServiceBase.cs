@@ -70,9 +70,10 @@ public abstract class NotificationServiceBase
     protected static string Greeting(ApplicationUser user) =>
         string.IsNullOrWhiteSpace(user.DisplayName) ? "Hi," : $"Hi {user.DisplayName},";
 
-    protected async Task SendAndLog(Guid? userId, string toAddress, string subject, string htmlBody, CancellationToken ct)
+    protected async Task SendAndLog(Guid? userId, string toAddress, string subject, string htmlBody, CancellationToken ct,
+        string? attachmentPath = null, string? attachmentName = null)
     {
-        var sent = await _email.SendAsync(toAddress, subject, htmlBody, ct: ct);
+        var sent = await _email.SendAsync(toAddress, subject, htmlBody, attachmentPath, attachmentName, ct);
         _db.EmailLogs.Add(new EmailLog
         {
             UserId = userId,
