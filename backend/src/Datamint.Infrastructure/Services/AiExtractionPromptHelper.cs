@@ -50,6 +50,21 @@ internal static class AiExtractionPromptHelper
         - Numeric values (amounts, quantities, percentages) must be copied exactly as printed, including currency symbols, thousands separators, decimals, and parentheses/minus signs used for negative amounts - do not normalize, round, or reformat them.
         """;
 
+    /// <summary>
+    /// Filters out two common sources of "junk" extraction on real-world documents: a blank
+    /// fill-in line whose only printed content is placeholder characters (never an actual
+    /// answer), and a large block of fixed legal boilerplate (which is real printed text, but
+    /// not a "data point" anyone extracting this document is after). Also explains how to read
+    /// the annotation/form-field hint blocks the extraction pipeline appends after each page's
+    /// text - those exist specifically to recover answers a person filled in via a PDF
+    /// annotation or form field, which otherwise never appear in the page's printed text at all.
+    /// </summary>
+    private const string SignalVsNoiseInstructions = """
+        - A run of underscores, dashes, dots, or blank space after a label (e.g. "Date: ___________") is a blank fill-in line, not a value - it means nothing was printed there. Never report the underscores/dashes/dots themselves as the "value". If nothing else on the page supplies a real answer for that label (see the next two rules), treat the field as having no value: use null in Formatted mode, or simply don't emit that field at all in Dynamic mode (an unanswered blank line isn't a meaningful data point to report).
+        - Some PDFs have a person's actual answer stored separately from the printed template - as a fillable form field, or as a small text overlay/annotation positioned on top of a blank line - rather than printed inline with the label. When the document text below includes a section headed "[Values entered into this PDF's fillable form fields...]" or "[Filled-in values found on this page as separate annotations/overlays...]", those are the real answers: match each one (by field name, or by the "near <label>" hint) to the blank/underscored field it belongs to, and use it as that field's value instead of leaving it blank or copying the underscores.
+        - Do not extract a large block of standard printed legal/administrative boilerplate (terms and conditions, warranty disclaimers, liability clauses, standard signature-block captions, page footers) as a field value - this is fixed print repeated on every such document, not a data point specific to this one. It's fine to note that a "Terms and Conditions" section exists (e.g. as a short section heading with no value, or omitted entirely) but never dump paragraphs of that boilerplate text into a field's value.
+        """;
+
     public static string BuildPrompt(IEnumerable<PdfPageTextDto> pages, IReadOnlyList<string>? requestedFields = null)
     {
         var combinedText = new StringBuilder();
@@ -70,6 +85,7 @@ internal static class AiExtractionPromptHelper
                 - If a field appears on a specific page, set "page" to that page number; otherwise omit "page" or set it to null.
                 {{TypeAndSectionInstructions}}
                 {{CompletenessInstructions}}
+                {{SignalVsNoiseInstructions}}
                 - Respond with ONLY a JSON array, no prose, no markdown fences, in this exact shape:
                 [{"key": "Invoice No.", "value": "INV-2024-001", "page": 1, "type": "Reference", "section": "Billing Info", "priority": 1}, ...]
 
@@ -96,6 +112,7 @@ internal static class AiExtractionPromptHelper
             - If a field spans the whole document rather than belonging to one page, put it under the first page it appears on.
             {{TypeAndSectionInstructions}}
             {{CompletenessInstructions}}
+            {{SignalVsNoiseInstructions}}
             - Respond with ONLY a JSON array, no prose, no markdown fences, with exactly ONE object per page (matching the "--- Page N ---" markers below), in this exact shape:
             [{"page": 1, "fields": [{"key": "Invoice No.", "value": "INV-2024-001", "type": "Reference", "section": "Billing Info", "priority": 1}, {"key": "Tax Category", "value": "...", "type": "Generic", "section": "General", "priority": 5}]}, {"page": 2, "fields": [{"key": "Tax Category", "value": "...", "type": "Generic", "section": "General", "priority": 5}]}]
 
@@ -146,6 +163,7 @@ internal static class AiExtractionPromptHelper
                 - "type", "section", and "priority" may be corrected if clearly wrong (unlike keys, which must stay stable) - otherwise keep them as given.
                 {{TypeAndSectionInstructions}}
                 {{CompletenessInstructions}}
+                {{SignalVsNoiseInstructions}}
 
                 YOUR FIRST-PASS EXTRACTION (grouped by page):
                 {{fieldsJson}}
@@ -176,6 +194,7 @@ internal static class AiExtractionPromptHelper
             - Keep the exact same set of keys, in the exact same order - do not add, remove, or rename any.
             - "type", "section", and "priority" may be corrected if clearly wrong (unlike keys, which must stay stable) - otherwise keep them as given.
             {{TypeAndSectionInstructions}}
+            {{SignalVsNoiseInstructions}}
 
             YOUR FIRST-PASS EXTRACTION:
             {{flatFieldsJson}}
