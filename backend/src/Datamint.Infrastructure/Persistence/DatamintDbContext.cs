@@ -18,6 +18,7 @@ public class DatamintDbContext : DbContext
     public DbSet<PaymentTransaction> PaymentTransactions => Set<PaymentTransaction>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
+    public DbSet<FieldTemplate> FieldTemplates => Set<FieldTemplate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

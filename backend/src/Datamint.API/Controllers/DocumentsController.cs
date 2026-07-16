@@ -182,12 +182,16 @@ public class DocumentsController : ControllerBase
             results.Add(processed.Succeeded ? processed.Data! : result.Data!);
         }
 
-        // Only meaningful for an actual multi-file batch - reconciles field labels across
-        // the documents that just extracted (e.g. "Invoice No" vs "Invoice Number") so the
-        // combined batch view/export puts matching fields in the same column. Runs before
-        // the response goes out so the frontend's very next detail fetch already sees the
-        // harmonized names, not a stale pre-harmonization set it'd have to re-fetch to see.
-        if (results.Count > 1)
+        // Only meaningful for an actual multi-file Dynamic-mode batch - reconciles field labels
+        // across documents (e.g. "Invoice No" vs "Invoice Number") so the combined batch
+        // view/export puts matching fields in the same column. Runs before the response goes
+        // out so the frontend's very next detail fetch already sees the harmonized names, not a
+        // stale pre-harmonization set it'd have to re-fetch to see. Skipped entirely in
+        // Formatted mode: every document was extracted against the exact same caller-supplied
+        // field list, so keys are already guaranteed identical - harmonizing them would just be
+        // a wasted AI call with no possible benefit (and a small, needless risk of the
+        // harmonization pass "canonicalizing" an already-correct exact match into something else).
+        if (results.Count > 1 && !isFormatted)
             await _service.HarmonizeBatchFieldKeysAsync(results.Select(d => d.Id).ToList(), CancellationToken.None);
 
         if (subscription is not null)

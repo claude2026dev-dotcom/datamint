@@ -65,3 +65,14 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
         b.HasIndex(a => a.Action);
     }
 }
+
+public class FieldTemplateConfiguration : IEntityTypeConfiguration<FieldTemplate>
+{
+    public void Configure(EntityTypeBuilder<FieldTemplate> b)
+    {
+        b.Property(t => t.Name).IsRequired().HasMaxLength(150);
+        b.Property(t => t.Fields).IsRequired().HasMaxLength(4000);
+        b.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(t => t.UserId);
+    }
+}

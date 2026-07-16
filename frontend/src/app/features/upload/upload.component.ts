@@ -1,9 +1,11 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { DocumentService } from '../../core/services/document.service';
 import { ToastService } from '../../core/services/toast.service';
+import { FieldTemplateService } from '../../core/services/field-template.service';
+import { FieldTemplate } from '../../core/models/models';
 import { UploadProgressComponent, ProcessingStage } from '../../shared/components/upload-progress/upload-progress.component';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { formatFileSize } from '../../shared/utils/format-file-size';
@@ -28,7 +30,7 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
 @Component({
   selector: 'app-upload',
   standalone: true,
-  imports: [CommonModule, FormsModule, UploadProgressComponent, IconComponent],
+  imports: [CommonModule, FormsModule, RouterLink, UploadProgressComponent, IconComponent],
   template: `
     <div class="dm-container page">
       <h1>Upload your documents</h1>
@@ -62,6 +64,16 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
 
           @if (extractionMode === 'Formatted') {
             <div class="fields-input">
+              @if (savedTemplates.length > 0) {
+                <label class="fields-label">Load from a saved template</label>
+                <select class="dm-input" [(ngModel)]="selectedTemplateId" name="savedTemplate" (ngModelChange)="applyTemplate($event)">
+                  <option [ngValue]="null">— Choose a saved template —</option>
+                  @for (t of savedTemplates; track t.id) {
+                    <option [ngValue]="t.id">{{ t.name }} ({{ t.fields.length }} fields)</option>
+                  }
+                </select>
+              }
+
               <label class="fields-label">Fields to extract</label>
               @for (fieldName of fieldBoxes; track $index; let i = $index) {
                 <div class="field-box-row">
@@ -72,6 +84,7 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
                 </div>
               }
               <button type="button" class="dm-btn dm-btn-ghost add-field-btn" (click)="addFieldBox()">+ Add another field</button>
+              <a routerLink="/field-templates" class="manage-templates-link">Manage saved templates →</a>
             </div>
           }
         </div>
@@ -162,6 +175,8 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
     }
     .remove-btn:hover { color: var(--dm-danger); border-color: var(--dm-danger); }
     .add-field-btn { align-self: flex-start; margin-top: 2px; padding: 6px 14px; font-size: 0.85rem; }
+    .manage-templates-link { align-self: flex-start; margin-top: 8px; font-size: 0.82rem; color: var(--dm-primary); text-decoration: none; }
+    .manage-templates-link:hover { text-decoration: underline; }
     .file-list { margin-top: 20px; padding: 18px; display: flex; flex-direction: column; gap: 6px; }
     .file-entry { border-bottom: 1px solid var(--dm-border); padding: 4px 0; }
     .file-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 0.9rem; padding: 6px 4px; }
@@ -187,7 +202,7 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
     }
   `]
 })
-export class UploadComponent {
+export class UploadComponent implements OnInit {
   formatFileSize = formatFileSize;
   selectedFiles: SelectedFile[] = [];
   dragging = false;
@@ -198,14 +213,29 @@ export class UploadComponent {
   extractionMode: 'Dynamic' | 'Formatted' = 'Dynamic';
   fieldBoxes: string[] = [''];
   bulkFileStatuses: BulkFileStatus[] = [];
+  savedTemplates: FieldTemplate[] = [];
+  selectedTemplateId: string | null = null;
 
   private processedDocIds: string[] = [];
 
   constructor(
     private documentService: DocumentService,
     private toast: ToastService,
-    private router: Router
+    private router: Router,
+    private fieldTemplateService: FieldTemplateService
   ) {}
+
+  ngOnInit() {
+    this.fieldTemplateService.getMine().subscribe({
+      next: res => { this.savedTemplates = res.templates; },
+      error: () => { /* saved templates are a convenience, not required to use the page */ }
+    });
+  }
+
+  applyTemplate(templateId: string | null) {
+    const template = this.savedTemplates.find(t => t.id === templateId);
+    if (template) this.fieldBoxes = [...template.fields];
+  }
 
   get requestedFieldNames(): string[] {
     return this.fieldBoxes.map(f => f.trim()).filter(Boolean);

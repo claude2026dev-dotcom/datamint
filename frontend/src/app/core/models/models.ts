@@ -62,6 +62,14 @@ export interface ExtractedFieldEdit {
   sortOrder: number;
 }
 
+export interface FieldTemplate {
+  id: string;
+  name: string;
+  fields: string[];
+  createdAtUtc: string;
+  updatedAtUtc: string | null;
+}
+
 export interface Plan {
   id: string;
   name: string;

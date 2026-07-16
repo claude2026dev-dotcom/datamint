@@ -14,6 +14,7 @@ export const routes: Routes = [
   { path: 'reset-password', loadComponent: () => import('./features/auth/reset-password/reset-password.component').then(m => m.ResetPasswordComponent) },
   { path: 'auth/google/callback', loadComponent: () => import('./features/auth/google-callback/google-callback.component').then(m => m.GoogleCallbackComponent) },
   { path: 'upload', loadComponent: () => import('./features/upload/upload.component').then(m => m.UploadComponent), canActivate: [authGuard] },
+  { path: 'field-templates', loadComponent: () => import('./features/field-templates/field-templates.component').then(m => m.FieldTemplatesComponent), canActivate: [authGuard] },
   { path: 'documents', loadComponent: () => import('./features/documents/documents-list.component').then(m => m.DocumentsListComponent), canActivate: [authGuard] },
   { path: 'documents/:id/review', loadComponent: () => import('./features/preview-edit/preview-edit.component').then(m => m.PreviewEditComponent), canActivate: [authGuard] },
   { path: 'documents/batch-review', loadComponent: () => import('./features/batch-review/batch-review.component').then(m => m.BatchReviewComponent), canActivate: [authGuard] },
