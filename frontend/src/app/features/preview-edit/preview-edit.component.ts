@@ -71,7 +71,8 @@ import { buildFieldTree } from '../../shared/utils/build-field-tree';
     .not-found-card .icon { color: var(--dm-text-muted); display: flex; justify-content: center; margin-bottom: 14px; }
     .not-found-card h2 { margin-bottom: 10px; }
     .not-found-card p { margin-bottom: 20px; }
-    .json-preview { padding: 20px; margin-bottom: 20px; max-height: 480px; overflow: auto; }
+    .json-preview { padding: 20px; margin-bottom: 20px; max-height: 480px; overflow: auto; animation: dm-fade-in 0.18s ease-out; }
+    @keyframes dm-fade-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
     .json-preview-head { margin-bottom: 14px; }
     .json-preview-head h3 { font-size: 0.95rem; margin-bottom: 4px; }
     .small { font-size: 0.8rem; }

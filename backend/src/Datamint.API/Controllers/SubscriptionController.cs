@@ -94,6 +94,9 @@ public class SubscriptionController : ControllerBase
         await _db.SaveChangesAsync(ct);
         await _audit.LogAsync("Subscription.Cancelled", userId, "Subscription", sub.Id.ToString(), ct: ct);
 
+        var user = await _db.Users.FindAsync(new object[] { userId }, ct);
+        if (user is not null) await _billing.SendPlanCancelledEmailAsync(user, sub.Plan.Name, sub.EndAtUtc, ct);
+
         return Ok(new
         {
             success = true,

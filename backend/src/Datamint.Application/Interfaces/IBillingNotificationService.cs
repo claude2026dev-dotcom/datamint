@@ -21,6 +21,10 @@ public interface IBillingNotificationService
 
     Task SendPlanExpiryAlertEmailAsync(ApplicationUser user, string planName, DateTime endAtUtc, CancellationToken ct = default);
 
+    /// <summary>Confirms a cancellation was received - distinct from the expiry alert, which
+    /// fires later (near EndAtUtc) as a reminder access is about to actually end.</summary>
+    Task SendPlanCancelledEmailAsync(ApplicationUser user, string planName, DateTime? endAtUtc, CancellationToken ct = default);
+
     /// <summary>"Left something in your cart" - a checkout was started (an order/PaymentTransaction
     /// created) but never completed. Sent once per abandoned checkout, well after the fact so it
     /// never fires for someone who's simply mid-payment.</summary>

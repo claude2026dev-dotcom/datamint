@@ -457,7 +457,9 @@ public class DocumentProcessingService
         if (!exportResult.Succeeded) return Result.Failure(exportResult.Error!, exportResult.ErrorCode!);
 
         var (data, _, attachmentName) = exportResult.Data!;
-        var tempPath = Path.Combine(Path.GetTempPath(), $"datamint-export-{documentId}{Path.GetExtension(attachmentName)}");
+        // A fresh Guid, not just documentId, so two concurrent email requests for the same
+        // document (a double-click, or two browser tabs) never race on the same temp file.
+        var tempPath = Path.Combine(Path.GetTempPath(), $"datamint-export-{documentId}-{Guid.NewGuid()}{Path.GetExtension(attachmentName)}");
         await File.WriteAllBytesAsync(tempPath, data, ct);
 
         var body = EmailTemplateHelper.Wrap(

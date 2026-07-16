@@ -102,6 +102,23 @@ public class BillingNotificationService : NotificationServiceBase, IBillingNotif
         return SendAndLog(user.Id, user.Email, $"Your {planName} plan ends {endAtUtc:MMM d}", body, ct);
     }
 
+    public Task SendPlanCancelledEmailAsync(ApplicationUser user, string planName, DateTime? endAtUtc, CancellationToken ct = default)
+    {
+        var accessNote = endAtUtc is not null
+            ? $"You'll keep access to <strong>{planName}</strong> until <strong>{endAtUtc:MMM d, yyyy}</strong>, then you'll move to the Free plan."
+            : $"Your <strong>{planName}</strong> plan has been cancelled.";
+
+        var body = Wrap(
+            title: "Your plan has been cancelled",
+            greeting: Greeting(user),
+            bodyHtml: $"<p>We've cancelled auto-renewal on your <strong>{planName}</strong> plan as requested. {accessNote}</p>" +
+                      "<p style=\"color:#767b93;font-size:13px;\">Changed your mind? You can resubscribe any time before or after your access ends.</p>",
+            ctaLabel: "View plans",
+            ctaPath: "/plans"
+        );
+        return SendAndLog(user.Id, user.Email, $"Your {planName} plan has been cancelled", body, ct);
+    }
+
     public Task SendAbandonedCheckoutEmailAsync(ApplicationUser user, string planName, decimal amount, string currency, Guid planId, CancellationToken ct = default)
     {
         var body = Wrap(

@@ -98,7 +98,8 @@ interface BatchDocument {
     .doc-card-head app-icon { color: var(--dm-text-muted); flex-shrink: 0; }
     .doc-name { font-weight: 700; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; }
     .json-toggle { flex-shrink: 0; padding: 4px 10px; font-size: 0.78rem; }
-    .json-preview { margin-bottom: 16px; padding: 14px; border: 1px solid var(--dm-border); border-radius: var(--dm-radius-sm); max-height: 400px; overflow: auto; }
+    .json-preview { margin-bottom: 16px; padding: 14px; border: 1px solid var(--dm-border); border-radius: var(--dm-radius-sm); max-height: 400px; overflow: auto; animation: dm-fade-in 0.18s ease-out; }
+    @keyframes dm-fade-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 
     @media (max-width: 700px) {
       .header { flex-direction: column; }

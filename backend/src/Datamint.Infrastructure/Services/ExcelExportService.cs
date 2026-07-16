@@ -100,7 +100,9 @@ public class ExcelExportService : IExcelExportService
 
     /// <summary>One column per field key, one row per document - used for a single document's
     /// ColumnsPerField layout (one row total) and for the batch SingleSheet mode (one row per
-    /// document), which is really the same shape at a document-count of one vs many.</summary>
+    /// document), which is really the same shape at a document-count of one vs many. Each field
+    /// gets a paired "Edited?" column right after its value column, matching the same Yes/No
+    /// convention the RowsPerField layout already uses.</summary>
     private static void WriteColumnsPerFieldSheet(IXLWorksheet sheet, List<DocumentDetailDto> documents, ExportOptionsDto options)
     {
         var filteredPerDoc = documents.ToDictionary(d => d.Id, d => FilterFields(d, options));
@@ -115,11 +117,19 @@ public class ExcelExportService : IExcelExportService
                 if (!fieldKeysInOrder.Contains(field.FieldKey))
                     fieldKeysInOrder.Add(field.FieldKey);
 
+        // Two columns per field: the value, then a companion "Edited?" Yes/No column.
+        int ValueCol(int fieldIndex) => 2 + fieldIndex * 2;
+        int EditedCol(int fieldIndex) => ValueCol(fieldIndex) + 1;
+
         sheet.Cell(1, 1).Value = "File Name";
         for (int c = 0; c < fieldKeysInOrder.Count; c++)
-            sheet.Cell(1, c + 2).Value = fieldKeysInOrder[c];
+        {
+            sheet.Cell(1, ValueCol(c)).Value = fieldKeysInOrder[c];
+            sheet.Cell(1, EditedCol(c)).Value = $"{fieldKeysInOrder[c]} (Edited?)";
+        }
 
-        var header = sheet.Range(1, 1, 1, Math.Max(1, fieldKeysInOrder.Count) + 1);
+        var lastCol = fieldKeysInOrder.Count > 0 ? EditedCol(fieldKeysInOrder.Count - 1) : 1;
+        var header = sheet.Range(1, 1, 1, lastCol);
         header.Style.Font.Bold = true;
         header.Style.Fill.BackgroundColor = HeaderFill;
         header.Style.Font.FontColor = XLColor.White;
@@ -130,8 +140,9 @@ public class ExcelExportService : IExcelExportService
             sheet.Cell(row, 1).Value = doc.OriginalFileName;
             foreach (var field in filteredPerDoc[doc.Id])
             {
-                var colIndex = fieldKeysInOrder.IndexOf(field.FieldKey) + 2;
-                sheet.Cell(row, colIndex).Value = field.FieldValue ?? "";
+                var fieldIndex = fieldKeysInOrder.IndexOf(field.FieldKey);
+                sheet.Cell(row, ValueCol(fieldIndex)).Value = field.FieldValue ?? "";
+                sheet.Cell(row, EditedCol(fieldIndex)).Value = field.WasEditedByUser ? "Yes" : "No";
             }
             row++;
         }

@@ -17,6 +17,12 @@ interface SelectedFile {
   pageSpec: string;
 }
 
+interface BulkFileStatus {
+  name: string;
+  status: 'pending' | 'done' | 'failed';
+  reason?: string;
+}
+
 const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/bmp'];
 
 @Component({
@@ -103,6 +109,23 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
       } @else {
         <div class="dm-card processing-card">
           <app-upload-progress [stage]="stage" [progress]="progress" [errorMessage]="errorMessage"></app-upload-progress>
+
+          @if (bulkFileStatuses.length > 1) {
+            <div class="bulk-status-list">
+              @for (f of bulkFileStatuses; track f.name) {
+                <div class="bulk-status-row" [class.done]="f.status === 'done'" [class.failed]="f.status === 'failed'">
+                  <span class="bulk-status-icon">
+                    @if (f.status === 'pending') { <span class="spinner"></span> }
+                    @if (f.status === 'done') { <app-icon name="check-circle" [size]="16" /> }
+                    @if (f.status === 'failed') { <app-icon name="x-circle" [size]="16" /> }
+                  </span>
+                  <span class="bulk-status-name" [title]="f.name">{{ f.name }}</span>
+                  @if (f.status === 'failed' && f.reason) { <span class="muted small">{{ f.reason }}</span> }
+                </div>
+              }
+            </div>
+          }
+
           @if (stage === 'done') {
             <button class="dm-btn dm-btn-primary" (click)="goToReview()">Review extracted data →</button>
           }
@@ -148,6 +171,16 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
     .page-selector { padding: 4px 4px 12px 27px; display: flex; flex-direction: column; gap: 6px; }
     .go { margin-top: 10px; align-self: flex-start; }
     .processing-card { margin-top: 30px; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+
+    .bulk-status-list { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 4px; }
+    .bulk-status-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--dm-radius-sm); font-size: 0.85rem; color: var(--dm-text-muted); background: var(--dm-surface); min-width: 0; }
+    .bulk-status-row.done { color: var(--dm-success); }
+    .bulk-status-row.failed { color: var(--dm-danger); }
+    .bulk-status-icon { display: flex; align-items: center; flex-shrink: 0; }
+    .bulk-status-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dm-text); }
+    .spinner { width: 14px; height: 14px; border: 2px solid var(--dm-border); border-top-color: var(--dm-primary); border-radius: 50%; animation: spin 0.7s linear infinite; display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     @media (max-width: 700px) {
       .fields-input { padding-left: 0; }
       .file-row { flex-wrap: wrap; }
@@ -164,6 +197,7 @@ export class UploadComponent {
   errorMessage?: string;
   extractionMode: 'Dynamic' | 'Formatted' = 'Dynamic';
   fieldBoxes: string[] = [''];
+  bulkFileStatuses: BulkFileStatus[] = [];
 
   private processedDocIds: string[] = [];
 
@@ -228,6 +262,7 @@ export class UploadComponent {
     this.processing = true;
     this.stage = 'uploading';
     this.progress = 15;
+    this.bulkFileStatuses = this.selectedFiles.map(f => ({ name: f.file.name, status: 'pending' }));
 
     // Simulated staged progress for a smooth perceived-performance animation
     // while the real request is in flight (see README for wiring this to
@@ -258,15 +293,33 @@ export class UploadComponent {
         const succeeded = res.documents.filter(d => d.status !== 'Failed');
         this.processedDocIds = succeeded.map(d => d.id);
 
-        if (succeeded.length === 0) {
-          this.stage = 'failed';
-          this.errorMessage = failed[0]?.failureReason || 'Extraction failed. Please try again.';
-          return;
-        }
+        const finish = () => {
+          if (succeeded.length === 0) {
+            this.stage = 'failed';
+            this.errorMessage = failed[0]?.failureReason || 'Extraction failed. Please try again.';
+            return;
+          }
+          this.stage = 'done';
+          if (failed.length > 0) {
+            this.toast.error(`${failed.length} of ${res.documents.length} file(s) failed to extract: ${failed[0].failureReason || 'Unknown error'}`);
+          }
+        };
 
-        this.stage = 'done';
-        if (failed.length > 0) {
-          this.toast.error(`${failed.length} of ${res.documents.length} file(s) failed to extract: ${failed[0].failureReason || 'Unknown error'}`);
+        if (this.selectedFiles.length > 1) {
+          // Every result is already known (the backend processes the whole batch in one
+          // request) - this only paces how they're *revealed*, one tick at a time, instead
+          // of flipping every row to its final state simultaneously.
+          res.documents.forEach((doc, i) => {
+            setTimeout(() => {
+              if (!this.bulkFileStatuses[i]) return;
+              this.bulkFileStatuses[i] = doc.status === 'Failed'
+                ? { name: this.bulkFileStatuses[i].name, status: 'failed', reason: doc.failureReason }
+                : { name: this.bulkFileStatuses[i].name, status: 'done' };
+            }, i * 350);
+          });
+          setTimeout(finish, res.documents.length * 350);
+        } else {
+          finish();
         }
       },
       error: err => {
@@ -290,5 +343,6 @@ export class UploadComponent {
     this.processing = false;
     this.selectedFiles = [];
     this.processedDocIds = [];
+    this.bulkFileStatuses = [];
   }
 }
