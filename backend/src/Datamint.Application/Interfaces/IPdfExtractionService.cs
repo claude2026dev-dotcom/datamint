@@ -14,6 +14,19 @@ public interface IPdfTextExtractionService
 }
 
 /// <summary>
+/// OCRs a directly-uploaded image file (JPEG/PNG/WebP/BMP - a photo or scan, not a PDF) straight
+/// into the same <see cref="PdfTextExtractionResultDto"/> shape PDF extraction produces (a
+/// synthetic single page, UsedOcr always true) so every downstream consumer - the AI extraction
+/// prompt, export, DocumentPage persistence - needs zero changes to handle an image "document."
+/// Unlike the PDF OCR path, this never needs page-rendering: the uploaded bytes already are the
+/// bitmap Tesseract needs.
+/// </summary>
+public interface IImageOcrExtractionService
+{
+    Task<PdfTextExtractionResultDto> ExtractTextAsync(string filePath, CancellationToken ct = default);
+}
+
+/// <summary>
 /// Turns extracted page text into structured key/value fields using an AI model.
 /// Implemented once per provider (Claude, OpenAI, ...); which one is active is a
 /// config switch ("AiProvider:Provider" in appsettings) resolved in Program.cs —

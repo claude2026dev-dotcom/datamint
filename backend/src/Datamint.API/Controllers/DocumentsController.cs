@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Datamint.Application.Common;
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
@@ -22,12 +23,13 @@ public class DocumentsController : ControllerBase
     private readonly ICurrentUserService _currentUser;
     private readonly IConfiguration _config;
     private readonly DatamintDbContext _db;
-    private readonly IPdfTextExtractionService _textExtraction;
+
+    private static readonly HashSet<string> AllowedUploadExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".pdf", ".jpg", ".jpeg", ".png", ".webp", ".bmp" };
 
     public DocumentsController(
         DocumentProcessingService service, IDocumentRepository documents, IUserRepository users,
-        ICurrentUserService currentUser, IConfiguration config, DatamintDbContext db,
-        IPdfTextExtractionService textExtraction)
+        ICurrentUserService currentUser, IConfiguration config, DatamintDbContext db)
     {
         _service = service;
         _documents = documents;
@@ -35,7 +37,6 @@ public class DocumentsController : ControllerBase
         _currentUser = currentUser;
         _config = config;
         _db = db;
-        _textExtraction = textExtraction;
     }
 
     /// <summary>
@@ -50,6 +51,7 @@ public class DocumentsController : ControllerBase
         [FromForm] List<IFormFile> files,
         [FromForm] string? extractionMode = "Dynamic",
         [FromForm] string? requestedFields = null,
+        [FromForm] string? pageSelections = null,
         CancellationToken ct = default)
     {
         var userId = _currentUser.UserId;
@@ -93,8 +95,15 @@ public class DocumentsController : ControllerBase
 
         foreach (var file in files)
         {
-            if (Path.GetExtension(file.FileName).ToLowerInvariant() != ".pdf")
-                return BadRequest(new { success = false, message = $"'{file.FileName}' is not a PDF file." });
+            if (!AllowedUploadExtensions.Contains(Path.GetExtension(file.FileName)))
+                return BadRequest(new { success = false, message = $"'{file.FileName}' isn't a supported file type. Upload a PDF or an image (JPG/PNG/WEBP/BMP)." });
+        }
+
+        List<PageSelectionDto>? selections = null;
+        if (!string.IsNullOrWhiteSpace(pageSelections))
+        {
+            try { selections = JsonSerializer.Deserialize<List<PageSelectionDto>>(pageSelections, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
+            catch (JsonException) { return BadRequest(new { success = false, message = "Invalid page selection data." }); }
         }
 
         // Every document created below shares this id, marking them as one upload batch -
@@ -108,7 +117,7 @@ public class DocumentsController : ControllerBase
         var saved = new List<(IFormFile File, string StoredPath)>();
         foreach (var file in files)
         {
-            var storedPath = Path.Combine(uploadsRoot, $"{Guid.NewGuid()}.pdf");
+            var storedPath = Path.Combine(uploadsRoot, $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}");
             await using (var stream = new FileStream(storedPath, FileMode.Create))
                 await file.CopyToAsync(stream, ct);
             saved.Add((file, storedPath));
@@ -117,11 +126,17 @@ public class DocumentsController : ControllerBase
         // Every file's page count has to be known BEFORE any AI extraction runs, so the
         // whole batch can be gated against remaining quota up front instead of letting it
         // all through and only charging (i.e. discovering the overage) afterwards. This
-        // read-only PdfPig pass is the same one ProcessDocumentAsync would otherwise redo,
-        // so its result is carried forward below instead of re-parsing each file twice.
+        // read-only pass is the same one ProcessDocumentAsync would otherwise redo, so its
+        // result is carried forward below instead of re-extracting each file twice. Applying
+        // any page selection here - BEFORE the quota gate below - is what makes the gate
+        // charge only for the pages the caller actually chose to extract, not the whole file.
         var textResults = new List<PdfTextExtractionResultDto>();
-        foreach (var (_, storedPath) in saved)
-            textResults.Add(await _textExtraction.ExtractTextAsync(storedPath, ct));
+        for (var i = 0; i < saved.Count; i++)
+        {
+            var full = await _service.ExtractTextAsync(saved[i].StoredPath, saved[i].File.FileName, ct);
+            var spec = selections?.FirstOrDefault(s => s.FileIndex == i)?.Pages;
+            textResults.Add(ApplyPageSelection(full, spec));
+        }
 
         var totalPages = textResults.Sum(r => r.PageCount);
         if (!hasUnlimitedPlan && totalPages > subscription!.Plan.MonthlyPageLimit - subscription.PagesUsedThisCycle)
@@ -185,6 +200,59 @@ public class DocumentsController : ControllerBase
         }
 
         return Ok(new { success = true, documents = results });
+    }
+
+    /// <summary>Filters a full extraction result down to a caller-chosen page subset - absent/empty
+    /// spec means "all pages," so the common no-selection path returns the input unchanged.</summary>
+    private static PdfTextExtractionResultDto ApplyPageSelection(PdfTextExtractionResultDto full, string? pagesSpec)
+    {
+        if (string.IsNullOrWhiteSpace(pagesSpec)) return full;
+
+        var selectedPageNumbers = PageRangeParser.Parse(pagesSpec, full.PageCount).ToHashSet();
+        var filteredPages = full.Pages.Where(p => selectedPageNumbers.Contains(p.PageNumber)).ToList();
+        return new PdfTextExtractionResultDto(filteredPages.Count, filteredPages.Any(p => p.UsedOcr), filteredPages);
+    }
+
+    /// <summary>
+    /// Lightweight pre-upload check: returns each file's page count (and whether it'll need OCR)
+    /// without touching quota or saving anything permanent - lets the frontend offer a page-range
+    /// picker before the real upload commits to it. Re-extracts the same file a second time at
+    /// actual upload (acceptable - decoupled by design, cheap relative to the AI call).
+    /// </summary>
+    [HttpPost("peek")]
+    public async Task<IActionResult> Peek([FromForm] List<IFormFile> files, CancellationToken ct)
+    {
+        if (_currentUser.UserId is null)
+            return StatusCode(401, new { success = false, message = "Please sign in to upload and extract documents.", errorCode = "LOGIN_REQUIRED" });
+
+        if (files is null || files.Count == 0)
+            return BadRequest(new { success = false, message = "Please select at least one file." });
+
+        foreach (var file in files)
+        {
+            if (!AllowedUploadExtensions.Contains(Path.GetExtension(file.FileName)))
+                return BadRequest(new { success = false, message = $"'{file.FileName}' isn't a supported file type. Upload a PDF or an image (JPG/PNG/WEBP/BMP)." });
+        }
+
+        var results = new List<PeekFileResultDto>();
+        foreach (var file in files)
+        {
+            var tempPath = Path.Combine(Path.GetTempPath(), $"datamint-peek-{Guid.NewGuid()}{Path.GetExtension(file.FileName)}");
+            try
+            {
+                await using (var stream = new FileStream(tempPath, FileMode.Create))
+                    await file.CopyToAsync(stream, ct);
+
+                var extracted = await _service.ExtractTextAsync(tempPath, file.FileName, ct);
+                results.Add(new PeekFileResultDto(file.FileName, extracted.PageCount, extracted.RequiredOcr));
+            }
+            finally
+            {
+                if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
+            }
+        }
+
+        return Ok(new PeekResultDto(results));
     }
 
     /// <summary>

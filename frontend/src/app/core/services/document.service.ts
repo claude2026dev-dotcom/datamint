@@ -7,15 +7,26 @@ import { BatchExportMode, DocumentSummary, ExportOptions, ExtractedFieldEdit } f
 export class DocumentService {
   constructor(private http: HttpClient) {}
 
-  upload(files: File[], extractionMode: 'Dynamic' | 'Formatted' = 'Dynamic', requestedFields?: string) {
+  upload(files: File[], extractionMode: 'Dynamic' | 'Formatted' = 'Dynamic', requestedFields?: string,
+         pageSelections?: { fileIndex: number; pages: string }[]) {
     const form = new FormData();
     files.forEach(f => form.append('files', f));
     form.append('extractionMode', extractionMode);
     if (extractionMode === 'Formatted' && requestedFields) form.append('requestedFields', requestedFields);
-    // The plan's page limit is enforced server-side against the user's subscription —
-    // no client-supplied counter is trusted.
+    if (pageSelections?.length) form.append('pageSelections', JSON.stringify(pageSelections));
+    // The plan's page limit is enforced server-side against the user's subscription (and, when a
+    // page selection is given, only against the selected pages) — no client-supplied counter is trusted.
     return this.http.post<{ success: boolean; documents: DocumentSummary[] }>(
       `${environment.apiBaseUrl}/documents/upload`, form);
+  }
+
+  /// Read-only pre-upload check: returns each file's page count / OCR need without touching
+  /// quota or saving anything permanent, so a page-range picker can be offered before committing.
+  peek(files: File[]) {
+    const form = new FormData();
+    files.forEach(f => form.append('files', f));
+    return this.http.post<{ success: boolean; files: { fileName: string; pageCount: number; requiresOcr: boolean }[] }>(
+      `${environment.apiBaseUrl}/documents/peek`, form);
   }
 
   getDetail(id: string) {

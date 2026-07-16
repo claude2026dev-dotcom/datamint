@@ -8,22 +8,33 @@ import { UploadProgressComponent, ProcessingStage } from '../../shared/component
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { formatFileSize } from '../../shared/utils/format-file-size';
 
+interface SelectedFile {
+  file: File;
+  isPdf: boolean;
+  expanded: boolean;
+  peeking: boolean;
+  pageCount: number | null;
+  pageSpec: string;
+}
+
+const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/bmp'];
+
 @Component({
   selector: 'app-upload',
   standalone: true,
   imports: [CommonModule, FormsModule, UploadProgressComponent, IconComponent],
   template: `
     <div class="dm-container page">
-      <h1>Upload your PDFs</h1>
-      <p class="muted">Supports multi-page PDFs, scanned or digital. We'll extract every field automatically.</p>
+      <h1>Upload your documents</h1>
+      <p class="muted">PDFs (multi-page, scanned or digital) or photos/scans (JPG, PNG, WEBP, BMP). We'll extract every field automatically.</p>
 
       @if (!processing) {
         <div class="dropzone" [class.dragging]="dragging"
              (dragover)="onDragOver($event)" (dragleave)="dragging=false" (drop)="onDrop($event)"
              (click)="fileInput.click()">
-          <input #fileInput type="file" accept="application/pdf" multiple hidden (change)="onFilesPicked($event)" />
+          <input #fileInput type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/bmp" multiple hidden (change)="onFilesPicked($event)" />
           <div class="drop-icon"><app-icon name="upload-cloud" [size]="34" /></div>
-          <p><strong>Click to browse</strong> or drag PDF files here</p>
+          <p><strong>Click to browse</strong> or drag PDF/image files here</p>
         </div>
 
         <div class="dm-card mode-card">
@@ -61,10 +72,29 @@ import { formatFileSize } from '../../shared/utils/format-file-size';
 
         @if (selectedFiles.length) {
           <div class="file-list dm-card">
-            @for (f of selectedFiles; track f.name) {
-              <div class="file-row">
-                <span class="file-name"><app-icon name="file" [size]="15" /> {{ f.name }}</span>
-                <span class="muted">{{ formatFileSize(f.size) }}</span>
+            @for (f of selectedFiles; track f.file.name; let i = $index) {
+              <div class="file-entry">
+                <div class="file-row">
+                  <span class="file-name"><app-icon name="file" [size]="15" /> {{ f.file.name }}</span>
+                  <span class="muted">{{ formatFileSize(f.file.size) }}</span>
+                  @if (f.isPdf) {
+                    <button type="button" class="dm-btn dm-btn-ghost pages-toggle" (click)="togglePageSelector(i)">
+                      {{ f.expanded ? 'Hide pages ▴' : 'Select pages ▾' }}
+                    </button>
+                  }
+                </div>
+                @if (f.expanded) {
+                  <div class="page-selector">
+                    @if (f.peeking) {
+                      <p class="muted small">Checking page count…</p>
+                    } @else if (f.pageCount !== null) {
+                      <p class="muted small">{{ f.pageCount }} page(s) total. Leave blank to extract all pages.</p>
+                      <input class="dm-input" [(ngModel)]="f.pageSpec" [name]="'pages-' + i" placeholder="e.g. 1-3,5" />
+                    } @else {
+                      <p class="muted small">Couldn't read this file's page count. Leave blank to extract all pages.</p>
+                    }
+                  </div>
+                }
               </div>
             }
             <button class="dm-btn dm-btn-primary go" (click)="startUpload()">Extract data from {{ selectedFiles.length }} file(s)</button>
@@ -109,20 +139,24 @@ import { formatFileSize } from '../../shared/utils/format-file-size';
     }
     .remove-btn:hover { color: var(--dm-danger); border-color: var(--dm-danger); }
     .add-field-btn { align-self: flex-start; margin-top: 2px; padding: 6px 14px; font-size: 0.85rem; }
-    .file-list { margin-top: 20px; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
-    .file-row { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 8px 4px; border-bottom: 1px solid var(--dm-border); }
-    .file-name { display: inline-flex; align-items: center; gap: 8px; }
+    .file-list { margin-top: 20px; padding: 18px; display: flex; flex-direction: column; gap: 6px; }
+    .file-entry { border-bottom: 1px solid var(--dm-border); padding: 4px 0; }
+    .file-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 0.9rem; padding: 6px 4px; }
+    .file-name { display: inline-flex; align-items: center; gap: 8px; flex: 1; min-width: 0; overflow-wrap: break-word; }
     .file-name app-icon { color: var(--dm-text-muted); flex-shrink: 0; }
+    .pages-toggle { flex-shrink: 0; padding: 4px 10px; font-size: 0.78rem; }
+    .page-selector { padding: 4px 4px 12px 27px; display: flex; flex-direction: column; gap: 6px; }
     .go { margin-top: 10px; align-self: flex-start; }
     .processing-card { margin-top: 30px; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
     @media (max-width: 700px) {
       .fields-input { padding-left: 0; }
+      .file-row { flex-wrap: wrap; }
     }
   `]
 })
 export class UploadComponent {
   formatFileSize = formatFileSize;
-  selectedFiles: File[] = [];
+  selectedFiles: SelectedFile[] = [];
   dragging = false;
   processing = false;
   stage: ProcessingStage = 'uploading';
@@ -160,9 +194,25 @@ export class UploadComponent {
   }
 
   private addFiles(files: File[]) {
-    const pdfs = files.filter(f => f.type === 'application/pdf');
-    if (pdfs.length !== files.length) this.toast.error('Only PDF files are supported.');
-    this.selectedFiles = [...this.selectedFiles, ...pdfs];
+    const accepted = files.filter(f => ACCEPTED_TYPES.includes(f.type));
+    if (accepted.length !== files.length) this.toast.error('Only PDF and image (JPG/PNG/WEBP/BMP) files are supported.');
+    this.selectedFiles = [...this.selectedFiles, ...accepted.map(file => ({
+      file, isPdf: file.type === 'application/pdf', expanded: false, peeking: false, pageCount: null as number | null, pageSpec: ''
+    }))];
+  }
+
+  // Calls /peek on-demand (not eagerly for every file) so the common no-selection path never
+  // pays for this extra round trip.
+  togglePageSelector(index: number) {
+    const entry = this.selectedFiles[index];
+    entry.expanded = !entry.expanded;
+    if (entry.expanded && entry.pageCount === null && !entry.peeking) {
+      entry.peeking = true;
+      this.documentService.peek([entry.file]).subscribe({
+        next: res => { entry.pageCount = res.files[0]?.pageCount ?? null; entry.peeking = false; },
+        error: () => { entry.peeking = false; }
+      });
+    }
   }
 
   startUpload() {
@@ -191,7 +241,13 @@ export class UploadComponent {
     ];
     const clearStaging = () => stagingTimeouts.forEach(clearTimeout);
 
-    this.documentService.upload(this.selectedFiles, this.extractionMode, this.requestedFieldNames.join(',')).subscribe({
+    const pageSelections = this.selectedFiles
+      .map((f, fileIndex) => ({ fileIndex, pages: f.pageSpec.trim() }))
+      .filter(s => s.pages.length > 0);
+
+    this.documentService.upload(
+      this.selectedFiles.map(f => f.file), this.extractionMode, this.requestedFieldNames.join(','), pageSelections
+    ).subscribe({
       next: res => {
         clearStaging();
         this.progress = 100;

@@ -10,11 +10,14 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
 import { ExportModalComponent, ExportModalResult } from '../../shared/components/export-modal/export-modal.component';
 import { FieldSectionEditorComponent } from '../../shared/components/field-section-editor/field-section-editor.component';
+import { JsonTreeViewComponent } from '../../shared/components/json-tree-view/json-tree-view.component';
+import { buildFieldTree } from '../../shared/utils/build-field-tree';
 
 interface BatchDocument {
   id: string;
   fileName: string;
   fields: ExtractedFieldEdit[];
+  showJson: boolean;
 }
 
 /// Shown instead of the single-document preview when several files were uploaded together:
@@ -23,7 +26,7 @@ interface BatchDocument {
 @Component({
   selector: 'app-batch-review',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, ExportModalComponent, FieldSectionEditorComponent],
+  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, ExportModalComponent, FieldSectionEditorComponent, JsonTreeViewComponent],
   template: `
     <div class="dm-container page">
       <app-back-button fallbackUrl="/documents" />
@@ -61,7 +64,14 @@ interface BatchDocument {
               <app-icon name="file-text" [size]="17" />
               <span class="doc-name" [title]="doc.fileName">{{ doc.fileName }}</span>
               <span class="muted small">{{ doc.fields.length }} field(s)</span>
+              <button type="button" class="dm-btn dm-btn-ghost json-toggle" (click)="doc.showJson = !doc.showJson">{{ '{ } ' }}JSON</button>
             </div>
+
+            @if (doc.showJson) {
+              <div class="json-preview">
+                <app-json-tree-view [data]="jsonPreview(doc)" rootLabel="document" />
+              </div>
+            }
 
             <app-field-section-editor [fields]="doc.fields" (fieldSaved)="saveField(doc, $event)"
                                        (includeToggled)="toggleInclude(doc, $event)" (reordered)="onReordered(doc, $event)"
@@ -87,6 +97,8 @@ interface BatchDocument {
     .doc-card-head { display: flex; align-items: center; gap: 8px; padding-bottom: 14px; margin-bottom: 6px; border-bottom: 1px solid var(--dm-border); }
     .doc-card-head app-icon { color: var(--dm-text-muted); flex-shrink: 0; }
     .doc-name { font-weight: 700; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; }
+    .json-toggle { flex-shrink: 0; padding: 4px 10px; font-size: 0.78rem; }
+    .json-preview { margin-bottom: 16px; padding: 14px; border: 1px solid var(--dm-border); border-radius: var(--dm-radius-sm); max-height: 400px; overflow: auto; }
 
     @media (max-width: 700px) {
       .header { flex-direction: column; }
@@ -115,7 +127,7 @@ export class BatchReviewComponent implements OnInit {
 
     forkJoin(ids.map(id => this.documentService.getDetail(id))).subscribe({
       next: results => {
-        this.documents = results.map(res => ({ id: res.id, fileName: res.originalFileName, fields: res.fields }));
+        this.documents = results.map(res => ({ id: res.id, fileName: res.originalFileName, fields: res.fields, showJson: false }));
         this.loading = false;
       },
       error: () => { this.loading = false; this.notFound = true; }
@@ -150,6 +162,10 @@ export class BatchReviewComponent implements OnInit {
     this.documentService.renameSection(doc.id, event.oldLabel, event.newLabel).subscribe({
       error: () => this.toast.error('Could not rename that section. Please try again.')
     });
+  }
+
+  jsonPreview(doc: BatchDocument) {
+    return buildFieldTree(doc.fileName, doc.fields);
   }
 
   openExportChooser(target: 'download' | 'email') {

@@ -104,9 +104,13 @@ public class OpenAiFieldExtractionService : IAiFieldExtractionService
 
     private async Task<(string? text, string? error)> CallOpenAiAsync(string apiKey, string prompt, bool includeTemperature, CancellationToken ct)
     {
+        // A dense, tabular document (a multi-page ledger, balance sheet, or schedule with many
+        // line items) can produce a JSON response far larger than a typical invoice's handful of
+        // fields - an unset/low cap silently truncates those responses mid-array, which is
+        // exactly what "some data missing on some PDFs" looks like from the outside.
         object requestBody = includeTemperature
-            ? new { model = _config["OpenAI:Model"] ?? "gpt-4o", temperature = 0, messages = new[] { new { role = "user", content = prompt } } }
-            : new { model = _config["OpenAI:Model"] ?? "gpt-4o", messages = new[] { new { role = "user", content = prompt } } };
+            ? new { model = _config["OpenAI:Model"] ?? "gpt-4o", temperature = 0, max_tokens = 16000, messages = new[] { new { role = "user", content = prompt } } }
+            : new { model = _config["OpenAI:Model"] ?? "gpt-4o", max_tokens = 16000, messages = new[] { new { role = "user", content = prompt } } };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, OpenAiApiUrl);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);

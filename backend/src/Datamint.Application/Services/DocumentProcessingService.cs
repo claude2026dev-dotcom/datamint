@@ -19,6 +19,7 @@ public class DocumentProcessingService
     private readonly IDocumentRepository _documents;
     private readonly IUserRepository _users;
     private readonly IPdfTextExtractionService _textExtraction;
+    private readonly IImageOcrExtractionService _imageOcr;
     private readonly IAiFieldExtractionService _aiExtraction;
     private readonly IExcelExportService _excel;
     private readonly IJsonExportService _json;
@@ -31,6 +32,7 @@ public class DocumentProcessingService
         IDocumentRepository documents,
         IUserRepository users,
         IPdfTextExtractionService textExtraction,
+        IImageOcrExtractionService imageOcr,
         IAiFieldExtractionService aiExtraction,
         IExcelExportService excel,
         IJsonExportService json,
@@ -42,6 +44,7 @@ public class DocumentProcessingService
         _documents = documents;
         _users = users;
         _textExtraction = textExtraction;
+        _imageOcr = imageOcr;
         _aiExtraction = aiExtraction;
         _excel = excel;
         _json = json;
@@ -50,6 +53,17 @@ public class DocumentProcessingService
         _logger = logger;
         _appName = config["App:Name"] ?? "Datamint";
     }
+
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".jpg", ".jpeg", ".png", ".webp", ".bmp" };
+
+    /// <summary>Picks PDF-text-extraction vs. direct-image-OCR by file extension - the one place
+    /// both the upload pre-check and the lightweight /peek endpoint need this decision, so a
+    /// PDF and a photo/scan are handled identically everywhere downstream.</summary>
+    public Task<PdfTextExtractionResultDto> ExtractTextAsync(string filePath, string originalFileName, CancellationToken ct = default) =>
+        ImageExtensions.Contains(Path.GetExtension(originalFileName))
+            ? _imageOcr.ExtractTextAsync(filePath, ct)
+            : _textExtraction.ExtractTextAsync(filePath, ct);
 
     public async Task<Result<DocumentSummaryDto>> UploadAndQueueAsync(
         Guid userId, string originalFileName, string storedFilePath, long fileSizeBytes, string? uploaderIp,
@@ -144,8 +158,13 @@ public class DocumentProcessingService
                 return Result<DocumentSummaryDto>.Success(ToSummaryDto(document));
             }
 
+            // The AI assigns each field its own "priority" (lower = more important) fresh per
+            // document - ordering by that (stable, so equal/absent priorities keep their
+            // original page/response order) is what puts important sections at the top,
+            // entirely from the model's own judgment rather than any hardcoded field-name rule.
+            // Missing priority (older parse fallback) sorts last, never first.
             int order = 0;
-            foreach (var field in aiResult.Fields)
+            foreach (var field in aiResult.Fields.OrderBy(f => f.Priority ?? int.MaxValue))
             {
                 _documents.AddExtractedField(new ExtractedField
                 {

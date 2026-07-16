@@ -4,7 +4,12 @@ public record PdfPageTextDto(int PageNumber, string Text, bool UsedOcr);
 
 public record PdfTextExtractionResultDto(int PageCount, bool RequiredOcr, List<PdfPageTextDto> Pages);
 
-public record ExtractedFieldDto(string Key, string? Value, int? PageNumber, string? SemanticType = null, string? SectionLabel = null);
+/// <param name="Priority">AI-assigned importance rank (lower = more important/shown first) -
+/// entirely the model's own judgment call per document, never a hardcoded rule, so a field/
+/// section central to one document type (e.g. a final total) can rank differently than the
+/// "same" label would in a document where it's incidental. Null (pre-priority rows, or a parse
+/// fallback) sorts last.</param>
+public record ExtractedFieldDto(string Key, string? Value, int? PageNumber, string? SemanticType = null, string? SectionLabel = null, int? Priority = null);
 
 public record AiExtractionResultDto(List<ExtractedFieldDto> Fields, bool Success, string? ErrorMessage);
 
@@ -31,6 +36,17 @@ public record DocumentDetailDto(
     List<ExtractedFieldEditDto> Fields);
 
 public record UpdateFieldRequestDto(Guid FieldId, string? NewValue, string? NewKey = null, bool? IncludeInExport = null);
+
+public record PeekFileResultDto(string FileName, int PageCount, bool RequiresOcr);
+
+public record PeekResultDto(List<PeekFileResultDto> Files);
+
+/// <param name="FileIndex">Index into the same "files" form-array the upload request carries -
+/// matches a selection back to the file it applies to.</param>
+/// <param name="Pages">A spec string like "1-3,5" - a page-count-aware caller typically gets this
+/// from /peek first. Null/empty (or the entry being absent entirely) means "all pages", so the
+/// common no-selection path is unaffected.</param>
+public record PageSelectionDto(int FileIndex, string? Pages);
 
 /// <param name="Fields">Every field of the document, in the drop's resulting order - the whole
 /// list is renumbered on any single move, not just the dragged field, so SortOrder never gaps

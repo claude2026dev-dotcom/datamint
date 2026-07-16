@@ -9,11 +9,13 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
 import { ExportModalComponent, ExportModalResult } from '../../shared/components/export-modal/export-modal.component';
 import { FieldSectionEditorComponent } from '../../shared/components/field-section-editor/field-section-editor.component';
+import { JsonTreeViewComponent } from '../../shared/components/json-tree-view/json-tree-view.component';
+import { buildFieldTree } from '../../shared/utils/build-field-tree';
 
 @Component({
   selector: 'app-preview-edit',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, ExportModalComponent, FieldSectionEditorComponent],
+  imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, ExportModalComponent, FieldSectionEditorComponent, JsonTreeViewComponent],
   template: `
     <div class="dm-container page">
       <app-back-button fallbackUrl="/documents" />
@@ -33,6 +35,7 @@ import { FieldSectionEditorComponent } from '../../shared/components/field-secti
           <p class="muted">{{ pageCount }} page(s) · {{ requiresOcr ? 'OCR applied' : 'Text extracted directly' }}</p>
         </div>
         <div class="actions">
+          <button class="dm-btn dm-btn-ghost" (click)="showJsonPreview = !showJsonPreview">{{ '{ } ' }}Preview JSON</button>
           <button class="dm-btn dm-btn-ghost" (click)="openExportModal('download')">⬇ Export</button>
           <button class="dm-btn dm-btn-primary" (click)="openExportModal('email')">✉ Email export</button>
         </div>
@@ -41,6 +44,16 @@ import { FieldSectionEditorComponent } from '../../shared/components/field-secti
       @if (exportModalFor) {
         <app-export-modal [action]="exportModalFor" [busy]="exportBusy"
                            (confirmed)="onExportConfirmed($event)" (cancelled)="exportModalFor = null" />
+      }
+
+      @if (showJsonPreview) {
+        <div class="dm-card json-preview">
+          <div class="json-preview-head">
+            <h3>Export preview (JSON)</h3>
+            <p class="muted small">Reflects the current section grouping, order, and edits — updates live as you edit below.</p>
+          </div>
+          <app-json-tree-view [data]="jsonPreview()" rootLabel="document" />
+        </div>
       }
 
       <app-field-section-editor [fields]="fields" (fieldSaved)="saveField($event)"
@@ -58,6 +71,10 @@ import { FieldSectionEditorComponent } from '../../shared/components/field-secti
     .not-found-card .icon { color: var(--dm-text-muted); display: flex; justify-content: center; margin-bottom: 14px; }
     .not-found-card h2 { margin-bottom: 10px; }
     .not-found-card p { margin-bottom: 20px; }
+    .json-preview { padding: 20px; margin-bottom: 20px; max-height: 480px; overflow: auto; }
+    .json-preview-head { margin-bottom: 14px; }
+    .json-preview-head h3 { font-size: 0.95rem; margin-bottom: 4px; }
+    .small { font-size: 0.8rem; }
     @media (max-width: 700px) { .header { flex-direction: column; } }
   `]
 })
@@ -71,6 +88,7 @@ export class PreviewEditComponent implements OnInit {
   exportBusy = false;
   loading = true;
   notFound = false;
+  showJsonPreview = false;
 
   constructor(private route: ActivatedRoute, private documentService: DocumentService, private toast: ToastService) {}
 
@@ -120,6 +138,10 @@ export class PreviewEditComponent implements OnInit {
     this.documentService.renameSection(this.documentId, event.oldLabel, event.newLabel).subscribe({
       error: () => this.toast.error('Could not rename that section. Please try again.')
     });
+  }
+
+  jsonPreview() {
+    return buildFieldTree(this.fileName, this.fields);
   }
 
   openExportModal(action: 'download' | 'email') {

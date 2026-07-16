@@ -104,7 +104,12 @@ public class ClaudeFieldExtractionService : IAiFieldExtractionService
         var requestBody = new
         {
             model = _config["Claude:Model"] ?? "claude-sonnet-5",
-            max_tokens = 4096,
+            // A dense, tabular document (a multi-page ledger, balance sheet, or schedule with
+            // many line items) can produce a JSON response far larger than a typical invoice's
+            // handful of fields - 4096 was silently truncating those responses mid-array,
+            // which is exactly what "some data missing on some PDFs" looks like from the
+            // outside. Raising the cap costs nothing extra unless the model actually needs it.
+            max_tokens = 16000,
             temperature = 0, // deterministic extraction - the same document should yield the same fields every time
             messages = new[] { new { role = "user", content = prompt } }
         };

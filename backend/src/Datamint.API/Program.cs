@@ -47,6 +47,7 @@ builder.Services.AddScoped<DocumentProcessingService>();
 
 // ---------- Infrastructure services (swap implementations here only) ----------
 builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>();
+builder.Services.AddScoped<IImageOcrExtractionService, ImageOcrExtractionService>();
 
 // AI field-extraction provider is a config switch: set "AiProvider:Provider" to
 // "Claude" (default) or "OpenAI" in appsettings — nothing else in the app needs
