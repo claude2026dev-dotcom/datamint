@@ -195,9 +195,15 @@ public class PdfTextExtractionService : IPdfTextExtractionService
     }
 
     /// <summary>
-    /// Renders the given page to an image and runs Tesseract OCR on it.
-    /// Requires the "tessdata" folder (eng.traineddata) to be deployed
-    /// alongside the app — see README for setup.
+    /// Deliberately stays a stub here: this method only ever runs from the fast, text-only,
+    /// count-only ExtractTextAsync path that /peek and upload quota-gating depend on, both of
+    /// which run before page-selection is known - actually rasterizing here would mean paying to
+    /// render every page of every file a user merely browses. Real OCR now happens once, for real,
+    /// in DocumentProcessingService.ProcessDocumentAsync via IPageImageRenderingService, reusing
+    /// the same page image already rendered there for the AI-vision call - see that service for
+    /// the actual OCR implementation. This intentionally still returns empty text for a scanned
+    /// page at this stage; DocumentPage.RawText gets the real OCR'd text once ProcessDocumentAsync
+    /// runs (see the `with { Text = ... }` merge there).
     /// </summary>
     private string RunOcrOnPage(string filePath, int pageNumber)
     {

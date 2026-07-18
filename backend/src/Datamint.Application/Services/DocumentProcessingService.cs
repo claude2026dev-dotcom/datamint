@@ -20,6 +20,7 @@ public class DocumentProcessingService
     private readonly IUserRepository _users;
     private readonly IPdfTextExtractionService _textExtraction;
     private readonly IImageOcrExtractionService _imageOcr;
+    private readonly IPageImageRenderingService _pageImages;
     private readonly IAiFieldExtractionService _aiExtraction;
     private readonly IExcelExportService _excel;
     private readonly IJsonExportService _json;
@@ -27,12 +28,14 @@ public class DocumentProcessingService
     private readonly IAuditService _audit;
     private readonly ILogger<DocumentProcessingService> _logger;
     private readonly string _appName;
+    private readonly int _maxPageImagesPerDocument;
 
     public DocumentProcessingService(
         IDocumentRepository documents,
         IUserRepository users,
         IPdfTextExtractionService textExtraction,
         IImageOcrExtractionService imageOcr,
+        IPageImageRenderingService pageImages,
         IAiFieldExtractionService aiExtraction,
         IExcelExportService excel,
         IJsonExportService json,
@@ -45,6 +48,7 @@ public class DocumentProcessingService
         _users = users;
         _textExtraction = textExtraction;
         _imageOcr = imageOcr;
+        _pageImages = pageImages;
         _aiExtraction = aiExtraction;
         _excel = excel;
         _json = json;
@@ -52,6 +56,7 @@ public class DocumentProcessingService
         _audit = audit;
         _logger = logger;
         _appName = config["App:Name"] ?? "Datamint";
+        _maxPageImagesPerDocument = int.TryParse(config["Ai:MaxPageImagesPerDocument"], out var maxImages) ? maxImages : 20;
     }
 
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -130,7 +135,13 @@ public class DocumentProcessingService
             document.PageCount = textResult.PageCount;
             document.RequiresOcr = textResult.RequiredOcr;
 
-            foreach (var page in textResult.Pages)
+            // Rendered only here, on the already page-selection-filtered set actually going to
+            // the AI - never inside IPdfTextExtractionService/IImageOcrExtractionService's plain
+            // ExtractTextAsync, which /peek and the upload quota-gating pre-check also call and
+            // which must stay fast/text-only (see IPageImageRenderingService for why).
+            var pagesWithImages = await AttachPageImagesAsync(document, textResult.Pages, ct);
+
+            foreach (var page in pagesWithImages)
             {
                 _documents.AddPage(new DocumentPage
                 {
@@ -145,7 +156,7 @@ public class DocumentProcessingService
                 ? document.RequestedFields.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList()
                 : null;
 
-            var aiResult = await _aiExtraction.ExtractStructuredDataAsync(textResult.Pages, requestedFieldsList, ct);
+            var aiResult = await _aiExtraction.ExtractStructuredDataAsync(pagesWithImages, requestedFieldsList, ct);
             if (!aiResult.Success)
             {
                 document.Status = DocumentStatus.Failed;
@@ -199,6 +210,45 @@ public class DocumentProcessingService
             await _documents.SaveChangesAsync(ct);
             await _audit.LogAsync("Document.Extraction", document.UserId, "Document", document.Id.ToString(), ex.Message, false, ct);
             return Result<DocumentSummaryDto>.Success(ToSummaryDto(document));
+        }
+    }
+
+    /// <summary>
+    /// Renders an image for each page (capped to _maxPageImagesPerDocument - every page's text
+    /// still reaches the AI regardless, only the accompanying image is capped) and merges it onto
+    /// the corresponding page, replacing empty scanned-page text with the real OCR text the
+    /// renderer produced from the same image. A rendering failure here must never block
+    /// extraction - it just falls back to the text-only pages that already worked before this.
+    /// </summary>
+    private async Task<List<PdfPageTextDto>> AttachPageImagesAsync(Document document, List<PdfPageTextDto> pages, CancellationToken ct)
+    {
+        try
+        {
+            List<PageImageDto> images;
+            if (ImageExtensions.Contains(Path.GetExtension(document.OriginalFileName)))
+            {
+                images = new List<PageImageDto> { await _imageOcr.GetSourceImageAsync(document.StoredFilePath, ct) };
+            }
+            else
+            {
+                var pageNumbers = pages.Select(p => p.PageNumber).Take(_maxPageImagesPerDocument).ToList();
+                var pagesNeedingOcr = pages.Where(p => p.UsedOcr && string.IsNullOrWhiteSpace(p.Text))
+                    .Select(p => p.PageNumber).ToHashSet();
+                images = await _pageImages.RenderPagesAsync(document.StoredFilePath, pageNumbers, pagesNeedingOcr, ct);
+            }
+
+            return pages.Select(page =>
+            {
+                var image = images.FirstOrDefault(i => i.PageNumber == page.PageNumber);
+                if (image is null) return page;
+                var updated = page with { ImageBytes = image.ImageBytes, ImageMediaType = image.MediaType };
+                return string.IsNullOrWhiteSpace(image.OcrText) ? updated : updated with { Text = image.OcrText };
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not attach page images for document {DocumentId}; continuing with text-only extraction.", document.Id);
+            return pages;
         }
     }
 

@@ -20,7 +20,9 @@
     <PackageReference Include="QuestPDF" Version="2026.7.1" />
     <!-- OCR fallback for scanned/image-only PDFs -->
     <PackageReference Include="Tesseract" Version="5.2.0" />
-    <PackageReference Include="PdfiumViewer.Native.x86_64.v8-xfa" Version="2018.4.8.256" />
+    <!-- PDF page rasterization (renders a page to a raster image for AI vision input and,
+         for scanned pages, for real OCR) - cross-platform PDFium wrapper via SkiaSharp -->
+    <PackageReference Include="PDFtoImage" Version="4.1.0" />
     <!-- Excel export -->
     <PackageReference Include="ClosedXML" Version="0.104.1" />
     <!-- Email -->

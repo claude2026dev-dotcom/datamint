@@ -8,109 +8,56 @@ using Microsoft.Extensions.Logging;
 namespace Datamint.Infrastructure.Services;
 
 /// <summary>
-/// Sends page text to the OpenAI API and asks it to return ONLY a JSON array
-/// of {"key":..., "value":..., "page":...} objects, then runs a second
-/// self-verification pass over its own answer before returning it (see
-/// AiExtractionPromptHelper.BuildVerificationPrompt).
+/// Sends page text (and, when available, page images - see AiFieldExtractionServiceBase) to the
+/// OpenAI API and asks it to return ONLY a JSON array of {"key":..., "value":..., "page":...}
+/// objects. Shared extract/verify/retry orchestration lives in the base class; this subclass only
+/// knows how to build an OpenAI Chat Completions request.
 /// >>> Put your OpenAI API key in appsettings / user-secrets / env var
 ///     "OpenAI:ApiKey" — see appsettings.json placeholder. <<<
 /// Active only when "AiProvider:Provider" is "OpenAI" — see Program.cs.
 /// </summary>
-public class OpenAiFieldExtractionService : IAiFieldExtractionService
+public class OpenAiFieldExtractionService : AiFieldExtractionServiceBase
 {
-    private readonly HttpClient _http;
-    private readonly IConfiguration _config;
-    private readonly ILogger<OpenAiFieldExtractionService> _logger;
     private const string OpenAiApiUrl = "https://api.openai.com/v1/chat/completions";
 
     public OpenAiFieldExtractionService(HttpClient http, IConfiguration config, ILogger<OpenAiFieldExtractionService> logger)
+        : base(http, config, logger)
     {
-        _http = http;
-        _config = config;
-        _logger = logger;
     }
 
-    public async Task<AiExtractionResultDto> ExtractStructuredDataAsync(IEnumerable<PdfPageTextDto> pages, IReadOnlyList<string>? requestedFields = null, CancellationToken ct = default)
+    protected override string? ApiKey => Config["OpenAI:ApiKey"];
+    protected override string MissingApiKeyMessage => "OpenAI API key is not configured. Set 'OpenAI:ApiKey' in appsettings/user-secrets.";
+
+    protected override Task<(string? text, string? error)> CallModelAsync(
+        string apiKey, string prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct) =>
+        CallOpenAiAsync(apiKey, prompt, images, includeTemperature: true, ct);
+
+    private async Task<(string? text, string? error)> CallOpenAiAsync(
+        string apiKey, string prompt, IReadOnlyList<PageImageDto> images, bool includeTemperature, CancellationToken ct)
     {
-        var apiKey = _config["OpenAI:ApiKey"];
-        if (string.IsNullOrWhiteSpace(apiKey))
+        // OpenAI's vision cost is tile/detail-based rather than a single dimension knob like
+        // Claude's - "low" keeps cost predictable regardless of how large the rendered page is;
+        // raise to "high"/"auto" via config if fine-print reading accuracy matters more than cost.
+        var imageDetail = Config["OpenAI:ImageDetail"] ?? "low";
+        var content = new List<object>();
+        foreach (var image in images)
         {
-            return new AiExtractionResultDto(new List<ExtractedFieldDto>(), false,
-                "OpenAI API key is not configured. Set 'OpenAI:ApiKey' in appsettings/user-secrets.");
+            content.Add(new { type = "text", text = $"--- Page {image.PageNumber} (image) ---" });
+            content.Add(new
+            {
+                type = "image_url",
+                image_url = new { url = $"data:{image.MediaType};base64,{Convert.ToBase64String(image.ImageBytes)}", detail = imageDetail }
+            });
         }
+        content.Add(new { type = "text", text = prompt });
 
-        var pageList = pages.ToList();
-        // Dynamic mode groups the requested/parsed JSON by page so same-named
-        // fields on different pages (e.g. "Tax Category" meaning something
-        // different per page) can't be silently collapsed into one entry -
-        // Formatted mode's caller-specified field list doesn't have that
-        // problem, so it keeps the simpler flat shape.
-        var isDynamicMode = requestedFields is not { Count: > 0 };
-
-        var firstPassPrompt = AiExtractionPromptHelper.BuildPrompt(pageList, requestedFields);
-        var (firstPassText, firstPassError) = await CallOpenAiAsync(apiKey, firstPassPrompt, ct);
-        if (firstPassError is not null)
-            return new AiExtractionResultDto(new List<ExtractedFieldDto>(), false, firstPassError);
-
-        var firstPassFields = isDynamicMode
-            ? AiExtractionPromptHelper.ParsePageGroupedFieldsJson(firstPassText!)
-            : AiExtractionPromptHelper.ParseFieldsJson(firstPassText!);
-
-        // Verification pass: if it fails for any reason, fall back to the
-        // first-pass result rather than failing the whole extraction over it.
-        var verifyPrompt = AiExtractionPromptHelper.BuildVerificationPrompt(pageList, firstPassFields, isDynamicMode);
-        var (verifyText, verifyError) = await CallOpenAiAsync(apiKey, verifyPrompt, ct);
-        if (verifyError is not null || verifyText is null)
-            return new AiExtractionResultDto(firstPassFields, true, null);
-
-        try
-        {
-            var verifiedFields = isDynamicMode
-                ? AiExtractionPromptHelper.ParsePageGroupedFieldsJson(verifyText)
-                : AiExtractionPromptHelper.ParseFieldsJson(verifyText);
-            return new AiExtractionResultDto(verifiedFields.Count > 0 ? verifiedFields : firstPassFields, true, null);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "OpenAI verification pass returned unparseable JSON, keeping first-pass result");
-            return new AiExtractionResultDto(firstPassFields, true, null);
-        }
-    }
-
-    public async Task<Dictionary<string, string>> HarmonizeFieldKeysAsync(IReadOnlyList<string> distinctKeys, CancellationToken ct = default)
-    {
-        if (distinctKeys.Count < 2) return new Dictionary<string, string>();
-
-        var apiKey = _config["OpenAI:ApiKey"];
-        if (string.IsNullOrWhiteSpace(apiKey)) return new Dictionary<string, string>();
-
-        var prompt = AiExtractionPromptHelper.BuildHarmonizationPrompt(distinctKeys);
-        var (text, error) = await CallOpenAiAsync(apiKey, prompt, ct);
-        if (error is not null || text is null) return new Dictionary<string, string>();
-
-        try
-        {
-            return AiExtractionPromptHelper.ParseHarmonizationMapping(text);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "OpenAI field-key harmonization returned unparseable JSON; skipping harmonization for this batch");
-            return new Dictionary<string, string>();
-        }
-    }
-
-    private Task<(string? text, string? error)> CallOpenAiAsync(string apiKey, string prompt, CancellationToken ct) =>
-        CallOpenAiAsync(apiKey, prompt, includeTemperature: true, ct);
-
-    private async Task<(string? text, string? error)> CallOpenAiAsync(string apiKey, string prompt, bool includeTemperature, CancellationToken ct)
-    {
         // A dense, tabular document (a multi-page ledger, balance sheet, or schedule with many
         // line items) can produce a JSON response far larger than a typical invoice's handful of
         // fields - an unset/low cap silently truncates those responses mid-array, which is
         // exactly what "some data missing on some PDFs" looks like from the outside.
         object requestBody = includeTemperature
-            ? new { model = _config["OpenAI:Model"] ?? "gpt-4o", temperature = 0, max_tokens = 16000, messages = new[] { new { role = "user", content = prompt } } }
-            : new { model = _config["OpenAI:Model"] ?? "gpt-4o", max_tokens = 16000, messages = new[] { new { role = "user", content = prompt } } };
+            ? new { model = Config["OpenAI:Model"] ?? "gpt-4o", temperature = 0, max_tokens = 16000, messages = new[] { new { role = "user", content = (object)content } } }
+            : new { model = Config["OpenAI:Model"] ?? "gpt-4o", max_tokens = 16000, messages = new[] { new { role = "user", content = (object)content } } };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, OpenAiApiUrl);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
@@ -118,7 +65,7 @@ public class OpenAiFieldExtractionService : IAiFieldExtractionService
 
         try
         {
-            var response = await _http.SendAsync(request, ct);
+            var response = await Http.SendAsync(request, ct);
             var raw = await response.Content.ReadAsStringAsync(ct);
 
             if (!response.IsSuccessStatusCode)
@@ -130,11 +77,11 @@ public class OpenAiFieldExtractionService : IAiFieldExtractionService
                 // error if that retry also fails.
                 if (includeTemperature && response.StatusCode == System.Net.HttpStatusCode.BadRequest && RejectsCustomTemperature(raw))
                 {
-                    _logger.LogWarning("Configured model doesn't support a custom temperature; retrying without it.");
-                    return await CallOpenAiAsync(apiKey, prompt, includeTemperature: false, ct);
+                    Logger.LogWarning("Configured model doesn't support a custom temperature; retrying without it.");
+                    return await CallOpenAiAsync(apiKey, prompt, images, includeTemperature: false, ct);
                 }
 
-                _logger.LogError("OpenAI API error {Status}: {Body}", response.StatusCode, raw);
+                Logger.LogError("OpenAI API error {Status}: {Body}", response.StatusCode, raw);
                 return (null, $"AI extraction service returned an error (check that 'OpenAI:Model' is a valid, currently-available model id). Please try again shortly.");
             }
 
@@ -144,7 +91,7 @@ public class OpenAiFieldExtractionService : IAiFieldExtractionService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error calling OpenAI API");
+            Logger.LogError(ex, "Unexpected error calling OpenAI API");
             return (null, "Unexpected error contacting the AI extraction service.");
         }
     }

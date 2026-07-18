@@ -24,6 +24,36 @@ public interface IPdfTextExtractionService
 public interface IImageOcrExtractionService
 {
     Task<PdfTextExtractionResultDto> ExtractTextAsync(string filePath, CancellationToken ct = default);
+
+    /// <summary>
+    /// The uploaded bytes already are the image the AI should see - no rasterization needed,
+    /// unlike a PDF page. Converts BMP to PNG (Claude/OpenAI vision don't accept BMP) via the
+    /// already-referenced SixLabors.ImageSharp; passes JPEG/PNG/WebP through untouched.
+    /// </summary>
+    Task<PageImageDto> GetSourceImageAsync(string filePath, CancellationToken ct = default);
+}
+
+/// <param name="OcrText">Only populated for a page whose PdfPig text came back empty (a scanned
+/// page) - real OCR run against this same rendered bitmap, reusing the render instead of
+/// rasterizing the page a second time. Null for pages that already had real text.</param>
+public record PageImageDto(int PageNumber, byte[] ImageBytes, string MediaType, string? OcrText = null);
+
+/// <summary>
+/// Renders PDF pages to raster images for AI vision input - deliberately NOT part of
+/// <see cref="IPdfTextExtractionService"/>, which stays a fast, text-only, count-only path used
+/// by the upload quota-gating pre-check and the `/peek` page-picker endpoint (both run before
+/// page-selection is known and would otherwise pay to rasterize pages that get discarded).
+/// Called only from <c>DocumentProcessingService.ProcessDocumentAsync</c>, after page-selection
+/// has already filtered down to the pages actually going to the AI.
+/// </summary>
+public interface IPageImageRenderingService
+{
+    /// <param name="pageNumbers">The already page-selection-filtered set actually going to the AI.</param>
+    /// <param name="pagesNeedingOcr">The subset whose PdfPig text came back empty (scanned pages) -
+    /// OCR only runs for those, against the image already rendered for the AI call, rather than
+    /// rasterizing a second time.</param>
+    Task<List<PageImageDto>> RenderPagesAsync(string filePath, IReadOnlyList<int> pageNumbers,
+        IReadOnlySet<int> pagesNeedingOcr, CancellationToken ct = default);
 }
 
 /// <summary>

@@ -66,26 +66,51 @@ internal static class AiExtractionPromptHelper
         - Blank templates (invoice/form templates a person hasn't filled in yet) often print generic placeholder text as an example of what belongs in a field, instead of leaving it truly blank - e.g. a "Bill To" block might literally print "Client Company Name" instead of a real client's name, or "Enter Date Here" instead of an actual date. This is exactly like an unfilled blank/underscored line: the placeholder describes the category of information expected there, in generic terms, rather than naming a specific real instance of it - it is not a real answer, don't report it as the field's value (null in Formatted mode, omit in Dynamic mode). A good signal for this: nearby fields in the same block are also genuinely empty (blank lines, or bare labels with nothing printed after them at all) - if a whole block looks unfilled, treat every field in it as unfilled, even the ones whose placeholder text happens to look plausible.
         """;
 
-    public static string BuildPrompt(IEnumerable<PdfPageTextDto> pages, IReadOnlyList<string>? requestedFields = null)
+    /// <summary>
+    /// Every requested field must be matched to whatever the document itself calls it, not to
+    /// the caller's literal wording - a document rarely uses the exact same words a caller asks
+    /// for (abbreviations, synonyms, different word order/language). Used only in Formatted mode,
+    /// where the caller supplies a fixed field list.
+    /// </summary>
+    private const string FuzzyFieldMatchInstructions = """
+        - The document's own label for a requested field is often worded differently than the request itself - an abbreviation, a synonym, a different word order, or a different language (e.g. a request for "Invoice Number" should match a printed "Inv #", "INV No.", "Invoice No", "Bill Number", or "Reference No." when it clearly identifies the same real-world document). Match by MEANING, not exact text - search the whole document for whatever data actually answers the request, regardless of how differently it's labeled there. This only changes how you search the document; the "key" in your response must still be the caller's exact requested string (see the rule above), never the document's own wording.
+        """;
+
+    /// <summary>
+    /// Dynamic mode only - Formatted mode's flat verification prompt keeps its own absolute
+    /// "do not remove any" rule (a caller who explicitly requested two field names may want both
+    /// kept even if they resolve to the same value in some documents; the AI has no business
+    /// collapsing caller-specified keys). Deliberately conservative in the same spirit as
+    /// BuildHarmonizationPrompt - a wrong merge is worse than a duplicate left in place.
+    /// </summary>
+    private const string DeduplicationInstructions = """
+        - Within the SAME page's fields only, if two or more fields clearly capture the exact same real-world data point twice under different keys (the same identity/meaning, from their labels and context, AND the same value), keep the clearer/more standard-sounding one and remove the redundant duplicate entirely. Never merge solely because two fields' values happen to coincide (e.g. two different, unrelated line items that both happen to cost $100) - they must also represent the same real-world thing. Be conservative: if you are not confident two fields are true duplicates, keep both. This never applies across different pages - the same label legitimately repeating on a DIFFERENT page with a different (or even the same) value is intentional and must always be kept, never removed for this reason.
+        """;
+
+    public static string BuildPrompt(IEnumerable<PdfPageTextDto> pages, IReadOnlyList<string>? requestedFields = null, bool isRetryAfterEmptyResult = false)
     {
         var combinedText = new StringBuilder();
         foreach (var page in pages)
             combinedText.AppendLine($"--- Page {page.PageNumber} ---\n{page.Text}\n");
 
+        var retryNote = isRetryAfterEmptyResult
+            ? "NOTE: a previous attempt at this exact extraction returned no usable fields. Re-examine the document text and any page images carefully before answering again - if this is a real document with visible content, there should be extractable data.\n\n"
+            : "";
+
         if (requestedFields is { Count: > 0 })
         {
             var fieldList = string.Join("\n", requestedFields.Select(f => $"- \"{f}\""));
             return $$"""
-                Extract ONLY the following fields from the document text below - nothing else:
+                {{retryNote}}Extract ONLY the following fields from the document text below - nothing else:
                 {{fieldList}}
 
                 Rules:
                 - Use these exact field names as the "key" in your response, character for character - do not rename, translate, or reword them.
                 - If a requested field is not present anywhere in the document, still include it in your response with "value": null. Do not omit it.
-                - Do not add any field that isn't in the list above.
+                - Do not add any field that isn't in the list above - this holds even if you can also see an image of this document: an image is provided only to help you read/locate the requested fields more accurately (e.g. telling which value in a table belongs to which column, or reading a faint/handwritten value), never a reason to also report other information you happen to see in it, no matter how prominent that information looks. Your response must contain exactly the fields requested above - not more, not fewer.
                 - If a field appears on a specific page, set "page" to that page number; otherwise omit "page" or set it to null.
+                {{FuzzyFieldMatchInstructions}}
                 {{TypeAndSectionInstructions}}
-                {{CompletenessInstructions}}
                 {{SignalVsNoiseInstructions}}
                 - Respond with ONLY a JSON array, no prose, no markdown fences, in this exact shape:
                 [{"key": "Invoice No.", "value": "INV-2024-001", "page": 1, "type": "Reference", "section": "Billing Info", "priority": 1}, ...]
@@ -96,7 +121,7 @@ internal static class AiExtractionPromptHelper
         }
 
         return $$"""
-            Extract every meaningful key/value field from the document text below - this may be
+            {{retryNote}}Extract every meaningful key/value field from the document text below - this may be
             an invoice, a logistics/shipping manifest, a contract, a financial statement or
             accounting document (balance sheet, profit & loss, cash flow, trial balance, ledger,
             GST/TDS/ITR filing, audit report), or any other kind of document; adapt to whatever
@@ -160,11 +185,12 @@ internal static class AiExtractionPromptHelper
                 - If a value is missing (null) but the field is actually present on that page, fill it in.
                 - If a field genuinely isn't on that page, leave its value null.
                 - If an entire row/field present in the document text was missed by the first pass, add it now, on the correct page.
-                - Keep the same pages and the same keys within each page - do not remove or rename any existing entry. Same-named fields on different pages are intentional and must both be kept, with their own correct values.
+                - Keep the same pages and the same keys within each page - do not rename any existing entry, and do not remove one EXCEPT for a confirmed same-page duplicate per the rule below. Same-named fields on different pages are intentional and must both be kept, with their own correct values.
                 - "type", "section", and "priority" may be corrected if clearly wrong (unlike keys, which must stay stable) - otherwise keep them as given.
                 {{TypeAndSectionInstructions}}
                 {{CompletenessInstructions}}
                 {{SignalVsNoiseInstructions}}
+                {{DeduplicationInstructions}}
 
                 YOUR FIRST-PASS EXTRACTION (grouped by page):
                 {{fieldsJson}}
@@ -194,6 +220,7 @@ internal static class AiExtractionPromptHelper
             - If a field genuinely isn't in the document, leave its value null.
             - Keep the exact same set of keys, in the exact same order - do not add, remove, or rename any.
             - "type", "section", and "priority" may be corrected if clearly wrong (unlike keys, which must stay stable) - otherwise keep them as given.
+            {{FuzzyFieldMatchInstructions}}
             {{TypeAndSectionInstructions}}
             {{SignalVsNoiseInstructions}}
 

@@ -1,6 +1,12 @@
 namespace Datamint.Application.DTOs;
 
-public record PdfPageTextDto(int PageNumber, string Text, bool UsedOcr);
+/// <param name="ImageBytes">A rendered/source raster image for this page, for AI vision input -
+/// null until <see cref="Interfaces.IPageImageRenderingService"/> (or the direct-image-upload
+/// equivalent) populates it in <c>DocumentProcessingService.ProcessDocumentAsync</c>, on the
+/// already page-selection-filtered set of pages actually going to the AI. Never set by
+/// <c>IPdfTextExtractionService.ExtractTextAsync</c> itself - that stays the fast, text-only,
+/// count-only path <c>/peek</c> and quota-gating depend on.</param>
+public record PdfPageTextDto(int PageNumber, string Text, bool UsedOcr, byte[]? ImageBytes = null, string? ImageMediaType = null);
 
 public record PdfTextExtractionResultDto(int PageCount, bool RequiredOcr, List<PdfPageTextDto> Pages);
 

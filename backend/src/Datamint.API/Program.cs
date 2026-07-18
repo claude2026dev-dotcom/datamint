@@ -48,18 +48,23 @@ builder.Services.AddScoped<DocumentProcessingService>();
 // ---------- Infrastructure services (swap implementations here only) ----------
 builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>();
 builder.Services.AddScoped<IImageOcrExtractionService, ImageOcrExtractionService>();
+builder.Services.AddScoped<IPageImageRenderingService, PdfPageImageRenderingService>();
 
 // AI field-extraction provider is a config switch: set "AiProvider:Provider" to
 // "Claude" (default) or "OpenAI" in appsettings — nothing else in the app needs
 // to change. Both providers use the same DocumentProcessingService/interface.
+// Explicit timeout: multimodal extraction (page images) plus the bounded empty-result
+// retry loop can turn one call pair into several sequential image-laden requests on this
+// inline, synchronous upload path - the default 100s HttpClient timeout isn't generous
+// enough headroom for that worst case.
 var aiProvider = builder.Configuration["AiProvider:Provider"] ?? "Claude";
 if (string.Equals(aiProvider, "OpenAI", StringComparison.OrdinalIgnoreCase))
 {
-    builder.Services.AddHttpClient<IAiFieldExtractionService, OpenAiFieldExtractionService>();
+    builder.Services.AddHttpClient<IAiFieldExtractionService, OpenAiFieldExtractionService>(c => c.Timeout = TimeSpan.FromSeconds(240));
 }
 else
 {
-    builder.Services.AddHttpClient<IAiFieldExtractionService, ClaudeFieldExtractionService>();
+    builder.Services.AddHttpClient<IAiFieldExtractionService, ClaudeFieldExtractionService>(c => c.Timeout = TimeSpan.FromSeconds(240));
 }
 
 builder.Services.AddScoped<IEmailService, MailKitEmailService>();

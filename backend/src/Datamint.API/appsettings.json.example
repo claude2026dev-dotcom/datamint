@@ -43,7 +43,17 @@
   },
   "OpenAI": {
     "ApiKey": "YOUR_OPENAI_API_KEY",
-    "Model": "gpt-4o"
+    "Model": "gpt-4o",
+    "// ImageDetail": "low (default, cheap/predictable) | high | auto - OpenAI's vision cost is tile/detail-based, raise this if fine-print reading accuracy matters more than cost",
+    "ImageDetail": "low"
+  },
+  "Ai": {
+    "// PageImageMaxDimensionPx": "longest edge, in px, a rendered page image is downscaled to before being sent to the AI - 1568 matches Claude's own guidance, past which it downscales anyway",
+    "PageImageMaxDimensionPx": 1568,
+    "// MaxPageImagesPerDocument": "every page's TEXT always reaches the AI regardless - this only caps how many pages additionally get an accompanying image, to bound cost on very large documents",
+    "MaxPageImagesPerDocument": 20,
+    "// MaxEmptyResultRetries": "bounded retries when extraction comes back with nothing useful (a real pipeline symptom, not a documented feature to lean on) - kept small since there's no telemetry yet on how often this actually fires",
+    "MaxEmptyResultRetries": 1
   },
 
   "// 6": "----- PAYMENT: Provider = \"Fake\" (default) simulates the whole checkout/refund flow locally with no real gateway or credentials needed - see FakePaymentService. Switch to \"Razorpay\" once real gateway credentials exist below (use test keys while integrating) -----",
