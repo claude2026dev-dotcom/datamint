@@ -37,14 +37,6 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
       <p class="muted">PDFs (multi-page, scanned or digital) or photos/scans (JPG, PNG, WEBP, BMP). We'll extract every field automatically.</p>
 
       @if (!processing) {
-        <div class="dropzone" [class.dragging]="dragging"
-             (dragover)="onDragOver($event)" (dragleave)="dragging=false" (drop)="onDrop($event)"
-             (click)="fileInput.click()">
-          <input #fileInput type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/bmp" multiple hidden (change)="onFilesPicked($event)" />
-          <div class="drop-icon"><app-icon name="upload-cloud" [size]="34" /></div>
-          <p><strong>Click to browse</strong> or drag PDF/image files here</p>
-        </div>
-
         <div class="dm-card mode-card">
           <h4>How should we extract fields?</h4>
           <label class="mode-option">
@@ -87,6 +79,14 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
               <a routerLink="/field-templates" class="manage-templates-link">Manage saved templates →</a>
             </div>
           }
+        </div>
+
+        <div class="dropzone" [class.dragging]="dragging"
+             (dragover)="onDragOver($event)" (dragleave)="dragging=false" (drop)="onDrop($event)"
+             (click)="fileInput.click()">
+          <input #fileInput type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/bmp" multiple hidden (change)="onFilesPicked($event)" />
+          <div class="drop-icon"><app-icon name="upload-cloud" [size]="34" /></div>
+          <p><strong>Click to browse</strong> or drag PDF/image files here</p>
         </div>
 
         @if (selectedFiles.length) {
@@ -155,12 +155,16 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
     .muted { color: var(--dm-text-muted); }
     .small { font-size: 0.82rem; }
     .dropzone {
-      margin-top: 28px; border: 2px dashed var(--dm-border); border-radius: var(--dm-radius-lg);
-      padding: 60px 20px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s;
+      margin-top: 20px; border: 2.5px dashed var(--dm-primary-light); border-radius: var(--dm-radius-lg);
+      padding: 60px 20px; text-align: center; cursor: pointer; background: rgba(99,102,241,0.03);
+      transition: border-color 0.2s, background 0.2s, box-shadow 0.2s, transform 0.15s;
     }
-    .dropzone:hover, .dropzone.dragging { border-color: var(--dm-primary); background: rgba(99,102,241,0.06); }
+    .dropzone:hover, .dropzone.dragging {
+      border-color: var(--dm-primary); background: rgba(99,102,241,0.08);
+      box-shadow: 0 0 0 4px rgba(99,102,241,0.12); transform: translateY(-1px);
+    }
     .drop-icon { display: flex; justify-content: center; color: var(--dm-primary-light); margin-bottom: 12px; }
-    .mode-card { margin-top: 20px; padding: 20px; }
+    .mode-card { margin-top: 28px; padding: 20px; }
     .mode-card h4 { margin-bottom: 14px; font-size: 0.95rem; }
     .mode-option { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; cursor: pointer; }
     .mode-option input[type="radio"] { margin-top: 4px; accent-color: var(--dm-primary); flex-shrink: 0; }
