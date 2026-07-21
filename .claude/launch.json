@@ -2,16 +2,29 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "frontend",
+      "name": "frontend-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start", "--prefix", "frontend"],
       "port": 4200
     },
     {
-      "name": "backend",
+      "name": "backend-dev",
       "runtimeExecutable": "dotnet",
       "runtimeArgs": ["run", "--project", "backend/src/Datamint.API", "--launch-profile", "https"],
       "port": 5001,
+      "autoPort": false
+    },
+    {
+      "name": "frontend-qa",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start", "--prefix", "D:\\datamint-qa\\frontend", "--", "--port", "4300"],
+      "port": 4300
+    },
+    {
+      "name": "backend-qa",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "D:\\datamint-qa\\backend\\src\\Datamint.API", "--launch-profile", "QA", "--urls", "https://localhost:5002"],
+      "port": 5002,
       "autoPort": false
     }
   ]
