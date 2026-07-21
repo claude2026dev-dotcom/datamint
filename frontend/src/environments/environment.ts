@@ -1,5 +1,8 @@
 export const environment = {
   production: false,
+  // Bump alongside package.json's version, backend/Directory.Build.props's <Version>, and
+  // the other two environment files together on release - see docs/WORKFLOW.md.
+  version: '1.0.0',
   // Relative on purpose: proxy.conf.json forwards /api to the backend during
   // `ng serve`, so the browser always calls the SAME origin it loaded the app
   // from. A hardcoded https://localhost:5001/api only works when the browser

@@ -7,8 +7,12 @@ backend/src/Datamint.API/uploads/
 
 # Real backend config - contains live secrets (DB connection string, JWT
 # secret, Google/OpenAI/Claude/Razorpay/SMTP credentials). Never commit this.
-# See appsettings.json.example for the placeholder shape.
+# See appsettings.json.example for the placeholder shape. Same for the two
+# environment-specific overrides - see appsettings.QA.json.example /
+# appsettings.Production.json.example.
 backend/src/Datamint.API/appsettings.json
+backend/src/Datamint.API/appsettings.QA.json
+backend/src/Datamint.API/appsettings.Production.json
 
 # Angular / Node
 frontend/node_modules/

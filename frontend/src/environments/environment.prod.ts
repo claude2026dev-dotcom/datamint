@@ -1,5 +1,6 @@
 export const environment = {
   production: true,
+  version: '1.0.0',
   apiBaseUrl: 'https://api.yourdomain.com/api',
   appName: 'Datamint',
   logoUrl: null as string | null,

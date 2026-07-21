@@ -1,0 +1,25 @@
+{
+  "// note": "Only keys that actually differ from the base appsettings.json belong here - ASP.NET Core merges this OVER appsettings.json when ASPNETCORE_ENVIRONMENT=Production. In a real deployment, prefer environment variables or a key vault over a file on disk for the secrets below - see docs/WORKFLOW.md.",
+
+  "Logging": {
+    "LogLevel": { "Default": "Warning", "Microsoft.AspNetCore": "Warning" }
+  },
+
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=YOUR_PROD_SERVER;Database=DatamintDb;User Id=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;MultipleActiveResultSets=true"
+  },
+
+  "App": {
+    "Name": "Datamint",
+    "FrontendBaseUrl": "https://yourdomain.com"
+  },
+
+  "Cors": {
+    "AllowedOrigins": [ "https://yourdomain.com" ]
+  },
+
+  "// Payment": "Switch to the real gateway once live credentials exist - Fake is fine for QA, never for Production",
+  "Payment": {
+    "Provider": "Razorpay"
+  }
+}

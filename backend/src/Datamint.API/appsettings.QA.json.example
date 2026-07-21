@@ -1,0 +1,17 @@
+{
+  "// note": "Only keys that actually differ from the base appsettings.json belong here - ASP.NET Core merges this OVER appsettings.json when ASPNETCORE_ENVIRONMENT=QA (see the QA launch profile in Properties/launchSettings.json, or set the env var directly when hosting). See docs/WORKFLOW.md.",
+
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=YOUR_QA_SERVER;Database=DatamintDb_QA;User Id=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;MultipleActiveResultSets=true"
+  },
+
+  "// App:Name": "Suffixed so QA emails/exports are visually unmistakable from a real production email while testing",
+  "App": {
+    "Name": "Datamint (QA)",
+    "FrontendBaseUrl": "https://qa.yourdomain.com"
+  },
+
+  "Cors": {
+    "AllowedOrigins": [ "https://qa.yourdomain.com" ]
+  }
+}

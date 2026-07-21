@@ -25,7 +25,7 @@ import { environment } from '../../../../environments/environment';
             <app-icon name="inbox" [size]="14" /> Contact us
           </a>
         </nav>
-        <span class="copyright">© {{ year }} {{ appName }}</span>
+        <span class="copyright">© {{ year }} {{ appName }} · v{{ version }}</span>
       </div>
     </footer>
   `,
@@ -52,5 +52,6 @@ import { environment } from '../../../../environments/environment';
 export class FooterComponent {
   year = new Date().getFullYear();
   readonly appName = environment.appName;
+  readonly version = environment.version;
   logoUrl = environment.logoUrl;
 }
