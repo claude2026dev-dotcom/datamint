@@ -16,7 +16,7 @@ import { environment } from '../../../../environments/environment';
     <div class="auth-wrap">
       <div class="dm-card auth-card">
         <h2>Welcome back</h2>
-        <p class="muted">Log in to review your documents and manage your plan.</p>
+        <p class="muted">Log in to your account.</p>
 
         <app-google-signin-button (credential)="loginWithGoogle($event)" />
         <div class="divider"><span>or</span></div>

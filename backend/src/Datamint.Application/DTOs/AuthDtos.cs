@@ -19,7 +19,6 @@ public record UserProfileDto(
     string? DisplayName,
     string Role,
     bool IsEmailVerified,
-    bool HasActiveSubscription,
     bool IsSuperAdmin,
     string? AvatarUrl);
 

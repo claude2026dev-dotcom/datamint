@@ -5,7 +5,7 @@
     "DefaultConnection": "Server=YOUR_QA_SERVER;Database=DatamintDb_QA;User Id=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;MultipleActiveResultSets=true"
   },
 
-  "// App:Name": "Suffixed so QA emails/exports are visually unmistakable from a real production email while testing",
+  "// App:Name": "Suffixed so QA emails are visually unmistakable from a real production email while testing",
   "App": {
     "Name": "Datamint (QA)",
     "FrontendBaseUrl": "https://qa.yourdomain.com"

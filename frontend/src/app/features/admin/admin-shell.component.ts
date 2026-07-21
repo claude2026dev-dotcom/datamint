@@ -28,9 +28,6 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           <a routerLink="/admin/users" routerLinkActive="active" title="Users">
             <app-icon name="users" [size]="17" /> <span>Users</span>
           </a>
-          <a routerLink="/admin/subscriptions" routerLinkActive="active" title="Plans">
-            <app-icon name="credit-card" [size]="17" /> <span>Plans</span>
-          </a>
         </nav>
 
         <a routerLink="/" class="sidebar-footer"><app-icon name="chevron-left" [size]="15" /> Back to app</a>

@@ -244,15 +244,11 @@ export class AdminAuditsComponent implements OnInit, OnDestroy {
 
   categories = [
     { key: 'Auth', label: 'Auth' },
-    { key: 'Document', label: 'Documents' },
-    { key: 'Subscription', label: 'Subscriptions' },
     { key: 'Admin', label: 'Admin' },
   ];
 
   private categoryColors: Record<string, { bg: string; fg: string }> = {
     Auth: { bg: 'rgba(34,211,238,0.15)', fg: '#22d3ee' },
-    Document: { bg: 'rgba(52,211,153,0.15)', fg: '#34d399' },
-    Subscription: { bg: 'rgba(251,191,36,0.15)', fg: '#fbbf24' },
     Admin: { bg: 'rgba(167,139,250,0.15)', fg: '#a78bfa' },
   };
 

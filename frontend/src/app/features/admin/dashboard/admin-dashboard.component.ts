@@ -29,43 +29,18 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           <div class="stat-icon users"><app-icon name="users" [size]="20" /></div>
           <div class="stat-body"><span class="label">Total users</span><span class="value">{{ stats?.totalUsers ?? '—' }}</span></div>
         </div>
-        <div class="dm-card stat">
-          <div class="stat-icon subs"><app-icon name="credit-card" [size]="20" /></div>
-          <div class="stat-body"><span class="label">Active subscriptions</span><span class="value">{{ stats?.activeSubscriptions ?? '—' }}</span></div>
-        </div>
-        <div class="dm-card stat">
-          <div class="stat-icon docs"><app-icon name="file-text" [size]="20" /></div>
-          <div class="stat-body"><span class="label">Documents processed</span><span class="value">{{ stats?.totalDocumentsProcessed ?? '—' }}</span></div>
-        </div>
-        <div class="dm-card stat">
-          <div class="stat-icon today"><app-icon name="inbox" [size]="20" /></div>
-          <div class="stat-body"><span class="label">Processed today</span><span class="value">{{ stats?.documentsProcessedToday ?? '—' }}</span></div>
-        </div>
-        <div class="dm-card stat" [class.stat-alert]="(stats?.failedExtractionsLast7Days ?? 0) > 0">
-          <div class="stat-icon fail"><app-icon name="alert-triangle" [size]="20" /></div>
-          <div class="stat-body"><span class="label">Failed extractions (7d)</span><span class="value" [class.danger]="(stats?.failedExtractionsLast7Days ?? 0) > 0">{{ stats?.failedExtractionsLast7Days ?? '—' }}</span></div>
-        </div>
-        <div class="dm-card stat">
-          <div class="stat-icon rev"><app-icon name="dollar-sign" [size]="20" /></div>
-          <div class="stat-body"><span class="label">Revenue this month</span><span class="value">{{ stats?.revenueThisMonth ?? '—' }}</span></div>
-        </div>
       </div>
 
       <div class="quick-links">
         <a routerLink="/admin/audits" class="dm-card quick-link">
           <span class="ql-icon"><app-icon name="file-text" [size]="19" /></span>
           <span class="ql-title">Audit trail</span>
-          <span class="ql-sub">Every login, upload, export, and admin action</span>
+          <span class="ql-sub">Every login and admin action</span>
         </a>
         <a routerLink="/admin/users" class="dm-card quick-link">
           <span class="ql-icon"><app-icon name="users" [size]="19" /></span>
           <span class="ql-title">Manage users</span>
           <span class="ql-sub">Search, edit roles, disable or delete accounts</span>
-        </a>
-        <a routerLink="/admin/subscriptions" class="dm-card quick-link">
-          <span class="ql-icon"><app-icon name="credit-card" [size]="19" /></span>
-          <span class="ql-title">Manage plans</span>
-          <span class="ql-sub">Pricing, upload limits, and availability</span>
         </a>
       </div>
     }
@@ -76,7 +51,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     .error-banner { padding: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-color: var(--dm-danger); }
     .error-banner p { margin: 0; color: var(--dm-danger); font-size: 0.9rem; }
 
-    .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; max-width: 340px; }
     .stat { padding: 22px; display: flex; align-items: center; gap: 16px; transition: transform 0.15s ease, box-shadow 0.15s ease; }
     .stat:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
     .stat.skeleton { height: 76px; background: linear-gradient(90deg, var(--dm-surface) 25%, var(--dm-surface-hover) 50%, var(--dm-surface) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
@@ -96,7 +71,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     @media (max-width: 900px) { .stat-grid { grid-template-columns: 1fr 1fr; } }
     @media (max-width: 480px) { .stat-grid { grid-template-columns: 1fr; } }
 
-    .quick-links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 18px; }
+    .quick-links { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 18px; }
     .quick-link { padding: 20px; text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 5px; transition: transform 0.15s ease, border-color 0.15s ease; }
     .quick-link:hover { transform: translateY(-2px); border-color: var(--dm-primary); }
     .ql-icon { color: var(--dm-primary-light); margin-bottom: 2px; display: flex; }

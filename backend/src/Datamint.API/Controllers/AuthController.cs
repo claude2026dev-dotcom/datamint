@@ -1,7 +1,6 @@
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
 using Datamint.Domain.Entities;
-using Datamint.Domain.Enums;
 using Datamint.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -387,41 +386,8 @@ public class AuthController : ControllerBase
         var result = await _authService.DeleteAccountAsync(user, dto.CurrentPassword, ct);
         if (!result.Succeeded) return AuthError(result.ErrorCode!, result.Error!);
 
-        await CancelActiveSubscriptionsAsync(user.Id, ct);
-
         return Ok(new { success = true, message = "Your account has been deactivated." });
     }
-
-    /// <summary>
-    /// Deactivating stops billing immediately rather than letting a subscription ride
-    /// out its current period or sit frozen for reactivation - an account the user
-    /// believes is gone should never keep getting charged in the background.
-    ///
-    /// The free trial is deliberately excluded: there's no billing to stop (it's not a
-    /// paid plan), and reactivating should hand the user back exactly the same trial -
-    /// same remaining page quota - they left with, not a cancelled one that forces them
-    /// to pick a plan just to use the app again. Only real (paid) subscriptions get
-    /// cancelled here.
-    /// </summary>
-    internal static async Task CancelActiveSubscriptionsAsync(DatamintDbContext db, Guid userId, CancellationToken ct)
-    {
-        var activeSubs = await db.Subscriptions
-            .Where(s => s.UserId == userId && !s.Plan.IsFreeTrial
-                && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.PastDue))
-            .ToListAsync(ct);
-
-        if (activeSubs.Count == 0) return;
-
-        var now = DateTime.UtcNow;
-        foreach (var sub in activeSubs)
-        {
-            sub.Status = SubscriptionStatus.Cancelled;
-            sub.EndAtUtc = now;
-        }
-        await db.SaveChangesAsync(ct);
-    }
-
-    private Task CancelActiveSubscriptionsAsync(Guid userId, CancellationToken ct) => CancelActiveSubscriptionsAsync(_db, userId, ct);
 
     private static ProfileDto ToProfileDto(ApplicationUser user) =>
         new(user.Id, user.Email, user.DisplayName, user.Role, user.IsEmailVerified, user.CreatedAtUtc, user.PasswordHash is not null, user.IsSuperAdmin, BuildAvatarUrl(user.AvatarFileName));
@@ -470,51 +436,11 @@ public class AuthController : ControllerBase
             ExpiresAtUtc = DateTime.UtcNow.AddDays(rememberMe ? RememberMeDays : NotRememberedDays)
         });
 
-        var hasActiveSubscription = await EnsureFreePlanActivatedAsync(user.Id, ct);
         await _db.SaveChangesAsync(ct);
 
         var profile = new UserProfileDto(user.Id, user.Email, user.DisplayName, user.Role,
-            user.IsEmailVerified, hasActiveSubscription, user.IsSuperAdmin, BuildAvatarUrl(user.AvatarFileName));
+            user.IsEmailVerified, user.IsSuperAdmin, BuildAvatarUrl(user.AvatarFileName));
 
         return new AuthResponseDto(access, rawRefresh, DateTime.UtcNow.AddMinutes(30), profile);
-    }
-
-    /// <summary>
-    /// Every account should have at least the Free plan active the moment they sign in -
-    /// no separate "activate free plan" click required. Returns whether the user now has
-    /// (or already had) an active subscription of any kind. Doesn't call SaveChangesAsync
-    /// itself - the caller (BuildAuthResponseAsync) saves once for the whole login/register flow.
-    /// </summary>
-    private async Task<bool> EnsureFreePlanActivatedAsync(Guid userId, CancellationToken ct)
-    {
-        // A cancelled-but-not-yet-ended subscription is still usable, not just Status == Active -
-        // checking Active alone here would silently create a duplicate Free subscription
-        // every time a user with a still-in-grace-period cancellation logs back in.
-        var hasUsable = await _db.Subscriptions.AnyAsync(s => s.UserId == userId
-            && (s.Status == SubscriptionStatus.Active || (s.Status == SubscriptionStatus.Cancelled && s.EndAtUtc > DateTime.UtcNow)), ct);
-        if (hasUsable) return true;
-
-        // The Free plan is a one-time lifetime allowance (Plan.IsRecurring = false), not a monthly
-        // grant - so it's only auto-activated the first time this UserId has EVER had a subscription
-        // of any kind. Without this, deleting and re-registering the same email (which reactivates
-        // the same account row - see AuthService.RegisterAsync) would otherwise hand out a fresh
-        // free trial every time, since the account currently has no *usable* subscription above.
-        var everHadAny = await _db.Subscriptions.AnyAsync(s => s.UserId == userId, ct);
-        if (everHadAny) return false;
-
-        var freePlan = await _db.Plans.FirstOrDefaultAsync(p => p.IsFreeTrial && p.IsActive, ct);
-        if (freePlan is null) return false; // no free trial plan configured - nothing to auto-activate
-
-        var startAt = DateTime.UtcNow;
-        _db.Subscriptions.Add(new Subscription
-        {
-            UserId = userId,
-            PlanId = freePlan.Id,
-            Status = SubscriptionStatus.Active,
-            StartAtUtc = startAt,
-            EndAtUtc = freePlan.ComputeSubscriptionEndAt(startAt)
-        });
-        await _audit.LogAsync("Subscription.Activated", userId, ct: ct, details: "Free plan auto-activated on sign-in.");
-        return true;
     }
 }

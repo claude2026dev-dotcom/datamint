@@ -1,12 +1,6 @@
 namespace Datamint.Application.DTOs;
 
-public record AdminDashboardStatsDto(
-    int TotalUsers,
-    int ActiveSubscriptions,
-    int TotalDocumentsProcessed,
-    int DocumentsProcessedToday,
-    int FailedExtractionsLast7Days,
-    decimal RevenueThisMonth);
+public record AdminDashboardStatsDto(int TotalUsers);
 
 public record AuditLogDto(
     Guid Id,
@@ -26,7 +20,6 @@ public record AdminUserListItemDto(
     string? DisplayName,
     string Role,
     bool IsActive,
-    string? CurrentPlan,
     DateTime CreatedAtUtc,
     DateTime? LastLoginAtUtc,
     bool HasPassword,
@@ -57,18 +50,3 @@ public record AdminUserFilterDto(
     int PageSize = 25);
 
 public record UpdateUserRequestDto(string? DisplayName, string? Role);
-
-public record UpdatePlanRequestDto(string Name, string? Description, decimal Price, string Currency, string BillingCycle, int MonthlyPageLimit, bool IsRecurring = true, bool IsFreeTrial = false);
-
-public record AdminPlanDto(
-    Guid Id,
-    string Name,
-    string? Description,
-    decimal Price,
-    string Currency,
-    string BillingCycle,
-    int MonthlyPageLimit,
-    bool IsRecurring,
-    bool IsActive,
-    int ActiveSubscribers,
-    bool IsFreeTrial);

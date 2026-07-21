@@ -17,7 +17,5 @@ export const environment = {
   // to switch every brand mark over automatically, same as the backend's App:LogoUrl.
   logoUrl: null as string | null,
   // >>> Paste the SAME Google OAuth Web Client ID used in the backend appsettings.json <<<
-  googleClientId: '1037509001460-5uqo0jqbcrnpne9509s4dac5gfi6t7td.apps.googleusercontent.com',
-  // >>> Payment gateway public key (safe to expose client-side) <<<
-  paymentPublicKey: 'YOUR_PAYMENT_GATEWAY_PUBLIC_KEY'
+  googleClientId: '1037509001460-5uqo0jqbcrnpne9509s4dac5gfi6t7td.apps.googleusercontent.com'
 };

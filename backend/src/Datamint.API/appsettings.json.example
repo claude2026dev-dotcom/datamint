@@ -33,52 +33,16 @@
     "FromName": "Datamint"
   },
 
-  "// 5": "----- AI PROVIDER: which one actually extracts structured data. Set to \"Claude\" or \"OpenAI\" - only the matching ApiKey below needs to be real. -----",
-  "AiProvider": {
-    "Provider": "Claude"
-  },
-  "Claude": {
-    "ApiKey": "YOUR_ANTHROPIC_API_KEY",
-    "Model": "claude-sonnet-5"
-  },
-  "OpenAI": {
-    "ApiKey": "YOUR_OPENAI_API_KEY",
-    "Model": "gpt-4o",
-    "// ImageDetail": "low (default, cheap/predictable) | high | auto - OpenAI's vision cost is tile/detail-based, raise this if fine-print reading accuracy matters more than cost",
-    "ImageDetail": "low"
-  },
-  "Ai": {
-    "// PageImageMaxDimensionPx": "longest edge, in px, a rendered page image is downscaled to before being sent to the AI - 1568 matches Claude's own guidance, past which it downscales anyway",
-    "PageImageMaxDimensionPx": 1568,
-    "// MaxPageImagesPerDocument": "every page's TEXT always reaches the AI regardless - this only caps how many pages additionally get an accompanying image, to bound cost on very large documents",
-    "MaxPageImagesPerDocument": 20,
-    "// MaxEmptyResultRetries": "bounded retries when extraction comes back with nothing useful (a real pipeline symptom, not a documented feature to lean on) - kept small since there's no telemetry yet on how often this actually fires",
-    "MaxEmptyResultRetries": 1
-  },
-
-  "// 6": "----- PAYMENT: Provider = \"Fake\" (default) simulates the whole checkout/refund flow locally with no real gateway or credentials needed - see FakePaymentService. Switch to \"Razorpay\" once real gateway credentials exist below (use test keys while integrating) -----",
-  "Payment": {
-    "Provider": "Fake"
-  },
-  "Razorpay": {
-    "KeyId": "YOUR_RAZORPAY_KEY_ID",
-    "KeySecret": "YOUR_RAZORPAY_KEY_SECRET"
-  },
-
-  "Ocr": {
-    "TessDataPath": "./tessdata"
-  },
-
+  "// 5": "----- FILE STORAGE: root folder for user-uploaded content (currently just profile avatars) -----",
   "FileStorage": {
-    "UploadsRootPath": "./uploads",
-    "MaxFileSizeMb": 25
+    "UploadsRootPath": "./uploads"
   },
 
   "Cors": {
     "AllowedOrigins": [ "https://localhost:4200" ]
   },
 
-  "// 7": "----- APP: Name is the single source of truth for product branding in emails/PDF-export text - change it here if the project is ever renamed, nothing else needs editing. LogoUrl is null until a real logo exists - every email falls back to a plain letter mark until then; set it to a publicly-reachable image URL to switch every email over automatically. FrontendBaseUrl is a fallback only used when a request has no Origin/Referer (e.g. a background job) - normal requests build the link from the browser's own Origin/Referer header, so this never goes stale behind a tunnel or a real domain -----",
+  "// 6": "----- APP: Name is the single source of truth for product branding in emails - change it here if the project is ever renamed, nothing else needs editing. LogoUrl is null until a real logo exists - every email falls back to a plain letter mark until then; set it to a publicly-reachable image URL to switch every email over automatically. FrontendBaseUrl is a fallback only used when a request has no Origin/Referer (e.g. a background job) - normal requests build the link from the browser's own Origin/Referer header, so this never goes stale behind a tunnel or a real domain -----",
   "App": {
     "Name": "Datamint",
     "FrontendBaseUrl": "https://localhost:4200",

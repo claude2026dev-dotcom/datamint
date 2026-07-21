@@ -25,9 +25,6 @@ import { environment } from '../../../../environments/environment';
 
         <div class="links" [class.open]="menuOpen">
           @if (auth.isLoggedIn()) { <a routerLink="/home" routerLinkActive="active" (click)="menuOpen = false">Home</a> }
-          <a routerLink="/upload" routerLinkActive="active" (click)="menuOpen = false">Upload</a>
-          @if (auth.isLoggedIn()) { <a routerLink="/documents" routerLinkActive="active" (click)="menuOpen = false">My documents</a> }
-          <a routerLink="/plans" routerLinkActive="active" (click)="menuOpen = false">Pricing</a>
           @if (auth.isAdmin()) { <a routerLink="/admin" routerLinkActive="active" (click)="menuOpen = false">Admin</a> }
           <!-- Only rendered (and only ever visible) below the mobile breakpoint - the standalone
                buttons in .actions cover desktop, where there's room for full "Log in"/"Get started"
@@ -61,9 +58,6 @@ import { environment } from '../../../../environments/environment';
                   </div>
                   <a routerLink="/profile" class="dropdown-item" (click)="profileOpen = false">
                     <app-icon name="user" [size]="16" /> My profile
-                  </a>
-                  <a routerLink="/profile/plan" class="dropdown-item" (click)="profileOpen = false">
-                    <app-icon name="credit-card" [size]="16" /> Current plan
                   </a>
                   <a routerLink="/profile/security" class="dropdown-item" (click)="profileOpen = false">
                     <app-icon name="key" [size]="16" /> Security

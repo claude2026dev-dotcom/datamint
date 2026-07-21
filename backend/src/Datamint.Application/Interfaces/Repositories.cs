@@ -22,11 +22,3 @@ public interface IUserRepository : IGenericRepository<ApplicationUser>
     /// database's unconditional unique index on Email (which a soft-deleted row still holds).</summary>
     Task<ApplicationUser?> GetByEmailIncludingDeletedAsync(string email, CancellationToken ct = default);
 }
-
-public interface IDocumentRepository : IGenericRepository<Document>
-{
-    Task<List<Document>> GetByUserIdAsync(Guid userId, CancellationToken ct = default);
-    Task<Document?> GetWithDetailsAsync(Guid id, CancellationToken ct = default);
-    void AddPage(DocumentPage page);
-    void AddExtractedField(ExtractedField field);
-}

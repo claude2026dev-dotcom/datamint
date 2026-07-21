@@ -15,24 +15,12 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.10">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <!-- PDF text extraction -->
-    <PackageReference Include="PdfPig" Version="0.1.15" />
-    <PackageReference Include="QuestPDF" Version="2026.7.1" />
-    <!-- OCR fallback for scanned/image-only PDFs -->
-    <PackageReference Include="Tesseract" Version="5.2.0" />
-    <!-- PDF page rasterization (renders a page to a raster image for AI vision input and,
-         for scanned pages, for real OCR) - cross-platform PDFium wrapper via SkiaSharp -->
-    <PackageReference Include="PDFtoImage" Version="4.1.0" />
-    <!-- Excel export -->
-    <PackageReference Include="ClosedXML" Version="0.104.1" />
     <!-- Email -->
     <PackageReference Include="MailKit" Version="4.17.0" />
     <!-- JWT -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.10" />
     <!-- Google token validation -->
     <PackageReference Include="Google.Apis.Auth" Version="1.68.0" />
-    <!-- Razorpay -->
-    <PackageReference Include="Razorpay" Version="3.1.0" />
     <!-- Password hashing (used by DbSeeder for the default admin account) -->
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <!-- Avatar uploads: decodes + re-encodes every uploaded image server-side (never

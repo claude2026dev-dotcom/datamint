@@ -24,7 +24,7 @@ export class AppComponent {
   // index.html's static <title> is a build-time fallback for pre-JS crawlers; this is the
   // single source of truth once Angular boots, so a project rename only needs environment.appName.
   constructor(titleService: Title, auth: AuthService) {
-    titleService.setTitle(`${environment.appName} — Extract PDF Data with AI`);
+    titleService.setTitle(environment.appName);
     // Reconcile the cached session (used for an instant navbar render) against the
     // server once per app load - see AuthService.refreshCurrentUser for why this can drift.
     auth.refreshCurrentUser();

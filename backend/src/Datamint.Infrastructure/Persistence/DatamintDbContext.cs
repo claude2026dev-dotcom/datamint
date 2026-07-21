@@ -10,15 +10,8 @@ public class DatamintDbContext : DbContext
     public DbSet<ApplicationUser> Users => Set<ApplicationUser>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
-    public DbSet<Document> Documents => Set<Document>();
-    public DbSet<DocumentPage> DocumentPages => Set<DocumentPage>();
-    public DbSet<ExtractedField> ExtractedFields => Set<ExtractedField>();
-    public DbSet<Plan> Plans => Set<Plan>();
-    public DbSet<Subscription> Subscriptions => Set<Subscription>();
-    public DbSet<PaymentTransaction> PaymentTransactions => Set<PaymentTransaction>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
-    public DbSet<FieldTemplate> FieldTemplates => Set<FieldTemplate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

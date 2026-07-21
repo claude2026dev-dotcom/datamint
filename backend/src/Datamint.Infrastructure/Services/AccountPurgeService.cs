@@ -9,17 +9,13 @@ namespace Datamint.Infrastructure.Services;
 
 /// <summary>
 /// Runs on a timer and permanently erases any account that's been deactivated for
-/// longer than ApplicationUser.DeactivationGraceDays: deletes the user's uploaded PDF
-/// files off disk, their Document rows (Pages/ExtractedFields cascade with them),
-/// and their refresh/password-reset tokens, then anonymizes the user row itself so
-/// nothing personally identifying about them remains queryable.
+/// longer than ApplicationUser.DeactivationGraceDays: deletes their refresh/password-reset
+/// tokens, then anonymizes the user row itself so nothing personally identifying about
+/// them remains queryable.
 ///
-/// Subscriptions, PaymentTransactions, and AuditLogs are deliberately left alone -
-/// they carry their own financial/audit retention obligations that GDPR's
-/// right-to-erasure explicitly allows to override a deletion request (Art. 17(3)(b)/(e)),
-/// and a Restrict delete behavior on Subscription.UserId means hard-deleting the User
-/// row outright isn't even possible - anonymizing it is both the correct and the only
-/// available option.
+/// AuditLogs are deliberately left alone - they carry their own audit retention
+/// obligations that GDPR's right-to-erasure explicitly allows to override a deletion
+/// request (Art. 17(3)(e)).
 /// </summary>
 public class AccountPurgeService : BackgroundService
 {
@@ -64,14 +60,6 @@ public class AccountPurgeService : BackgroundService
 
         foreach (var user in toPurge)
         {
-            var documents = await db.Documents.IgnoreQueryFilters().Where(d => d.UserId == user.Id).ToListAsync(ct);
-            foreach (var doc in documents)
-            {
-                try { if (File.Exists(doc.StoredFilePath)) File.Delete(doc.StoredFilePath); }
-                catch (Exception ex) { _logger.LogWarning(ex, "Could not delete stored file for document {DocumentId} during purge.", doc.Id); }
-            }
-            db.Documents.RemoveRange(documents);
-
             var refreshTokens = await db.RefreshTokens.IgnoreQueryFilters().Where(t => t.UserId == user.Id).ToListAsync(ct);
             db.RefreshTokens.RemoveRange(refreshTokens);
 
@@ -96,7 +84,7 @@ public class AccountPurgeService : BackgroundService
             });
 
             await db.SaveChangesAsync(ct);
-            _logger.LogInformation("Purged deactivated account {UserId} ({DocumentCount} documents) after grace period.", user.Id, documents.Count);
+            _logger.LogInformation("Purged deactivated account {UserId} after grace period.", user.Id);
         }
     }
 }

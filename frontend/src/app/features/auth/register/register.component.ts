@@ -15,7 +15,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     <div class="auth-wrap">
       <div class="dm-card auth-card">
         <h2>Create your account</h2>
-        <p class="muted">Get more uploads and access your document history.</p>
+        <p class="muted">Create your account to get started.</p>
 
         <app-google-signin-button (credential)="signUpWithGoogle($event)" />
         <div class="divider"><span>or</span></div>

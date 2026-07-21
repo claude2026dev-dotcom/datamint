@@ -59,7 +59,6 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
                 <th (click)="setSort('email')" class="sortable">Email {{ sortArrow('email') }}</th>
                 <th (click)="setSort('displayName')" class="sortable">Name {{ sortArrow('displayName') }}</th>
                 <th (click)="setSort('role')" class="sortable">Role {{ sortArrow('role') }}</th>
-                <th>Plan</th>
                 <th>Status</th>
                 <th (click)="setSort('')" class="sortable">Joined {{ sortArrow('') }}</th>
                 <th (click)="setSort('lastLogin')" class="sortable">Last login {{ sortArrow('lastLogin') }}</th>
@@ -79,10 +78,10 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           <tbody>
             @if (loading) {
               @for (i of [1,2,3,4,5]; track i) {
-                <tr class="skeleton-row"><td [attr.colspan]="viewMode === 'active' ? 8 : 6"><div class="skeleton"></div></td></tr>
+                <tr class="skeleton-row"><td [attr.colspan]="viewMode === 'active' ? 7 : 6"><div class="skeleton"></div></td></tr>
               }
             } @else if (users.length === 0) {
-              <tr><td [attr.colspan]="viewMode === 'active' ? 8 : 6" class="empty-cell">
+              <tr><td [attr.colspan]="viewMode === 'active' ? 7 : 6" class="empty-cell">
                 {{ viewMode === 'active' ? 'No users match these filters.' : 'No deactivated accounts right now.' }}
               </td></tr>
             } @else if (viewMode === 'active') {
@@ -113,7 +112,6 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
                       <span class="badge" [class.badge-admin]="u.role === 'Admin'">{{ u.role }}</span>
                     }
                   </td>
-                  <td data-label="Plan">{{ u.currentPlan ?? 'Free' }}</td>
                   <td data-label="Status"><span class="badge" [class.badge-ok]="u.isActive" [class.badge-fail]="!u.isActive">{{ u.isActive ? 'Active' : 'Disabled' }}</span></td>
                   <td class="nowrap" data-label="Joined">{{ u.createdAtUtc | date:'medium' }}</td>
                   <td class="nowrap" data-label="Last login">{{ u.lastLoginAtUtc ? (u.lastLoginAtUtc | date:'medium') : '—' }}</td>

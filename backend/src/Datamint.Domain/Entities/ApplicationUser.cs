@@ -28,8 +28,8 @@ public class ApplicationUser : BaseEntity
     // Set the moment a user deactivates their own account (or an admin deletes one) -
     // null while active, and cleared back to null on reactivation. Drives the
     // DeactivationGraceDays window: logging back in (or an admin reactivating) before
-    // this + DeactivationGraceDays restores the account; AccountPurgeService hard-deletes
-    // the user's documents and anonymizes this row once that window has passed.
+    // this + DeactivationGraceDays restores the account; AccountPurgeService anonymizes
+    // this row once that window has passed.
     public DateTime? DeactivatedAtUtc { get; set; }
 
     // Null until AccountPurgeService actually anonymizes this row - lets the purge job's
@@ -48,8 +48,6 @@ public class ApplicationUser : BaseEntity
     // natural ~30 min expiry or when a refresh is attempted.
     public string SecurityStamp { get; set; } = Guid.NewGuid().ToString("N");
 
-    public ICollection<Document> Documents { get; set; } = new List<Document>();
-    public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
     public ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
 }
