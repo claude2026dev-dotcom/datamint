@@ -345,43 +345,51 @@ internal static class AiExtractionPromptHelper
 
     /// <summary>
     /// Some models (observed with Claude Haiku 4.5) don't reliably keep "value" a plain
-    /// string despite the prompt asking for one - e.g. returning a JSON array when a field
-    /// looks like it has several matches, or a bare number for a numeric-looking value. The
-    /// model's raw reply is an external-API boundary, not something we control the shape of,
-    /// so the parser coerces any of these back into the flat string the rest of the app
-    /// expects instead of throwing and failing the whole document.
+    /// string despite the prompt asking for one - e.g. bundling several matches (or a whole
+    /// line-items table) into a JSON array/object instead of one row per field as instructed,
+    /// or returning a bare number for a numeric-looking value. The model's raw reply is an
+    /// external-API boundary, not something we control the shape of, so the parser coerces
+    /// any of these back into a flat, human-readable string instead of throwing (or dumping
+    /// raw "{...}" JSON syntax) into a field value.
     /// </summary>
     private sealed class FlexibleStringConverter : JsonConverter<string?>
     {
-        public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
-            ReadValue(ref reader);
-
-        private static string? ReadValue(ref Utf8JsonReader reader)
+        public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            switch (reader.TokenType)
+            if (reader.TokenType == JsonTokenType.String)
+                return reader.GetString();
+            if (reader.TokenType == JsonTokenType.Null)
+                return null;
+
+            using var doc = JsonDocument.ParseValue(ref reader);
+            return ElementToString(doc.RootElement);
+        }
+
+        private static string? ElementToString(JsonElement element)
+        {
+            switch (element.ValueKind)
             {
-                case JsonTokenType.Null:
+                case JsonValueKind.Null:
+                case JsonValueKind.Undefined:
                     return null;
-                case JsonTokenType.String:
-                    return reader.GetString();
-                case JsonTokenType.Number:
-                    using (var numDoc = JsonDocument.ParseValue(ref reader))
-                        return numDoc.RootElement.GetRawText();
-                case JsonTokenType.True:
-                case JsonTokenType.False:
-                    return reader.GetBoolean().ToString();
-                case JsonTokenType.StartArray:
-                    var items = new List<string>();
-                    while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-                    {
-                        var item = ReadValue(ref reader);
-                        if (!string.IsNullOrWhiteSpace(item))
-                            items.Add(item);
-                    }
-                    return items.Count > 0 ? string.Join("; ", items) : null;
-                case JsonTokenType.StartObject:
-                    using (var objDoc = JsonDocument.ParseValue(ref reader))
-                        return objDoc.RootElement.GetRawText();
+                case JsonValueKind.String:
+                    return element.GetString();
+                case JsonValueKind.Number:
+                    return element.GetRawText();
+                case JsonValueKind.True:
+                case JsonValueKind.False:
+                    return element.GetBoolean().ToString();
+                case JsonValueKind.Array:
+                    var items = element.EnumerateArray()
+                        .Select(ElementToString)
+                        .Where(s => !string.IsNullOrWhiteSpace(s));
+                    return string.Join("; ", items) is { Length: > 0 } joined ? joined : null;
+                case JsonValueKind.Object:
+                    var pairs = element.EnumerateObject()
+                        .Select(p => (Value: ElementToString(p.Value), p.Name))
+                        .Where(p => !string.IsNullOrWhiteSpace(p.Value))
+                        .Select(p => $"{p.Name}: {p.Value}");
+                    return string.Join(", ", pairs) is { Length: > 0 } combined ? combined : null;
                 default:
                     return null;
             }
