@@ -56,6 +56,31 @@ builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>(
 builder.Services.AddScoped<IPageImageRenderingService, PdfPageImageRenderingService>();
 builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
 builder.Services.AddScoped<IJsonExportService, JsonExportService>();
+builder.Services.AddScoped<IExtractionTierResolver, ExtractionTierResolver>();
+builder.Services.AddScoped<IAiFieldExtractionServiceFactory, AiFieldExtractionServiceFactory>();
+// Both AI providers are registered concretely (not behind the shared interface) since which one
+// answers a given document is now a per-call decision (see ExtractionTier/IExtractionTierResolver),
+// not a static config switch - IAiFieldExtractionServiceFactory picks between them at call time.
+// Explicit timeout: multimodal extraction (page images) plus the bounded empty-result retry loop
+// can turn one call pair into several sequential image-laden requests on this inline, synchronous
+// upload path - the default 100s HttpClient timeout isn't generous enough headroom for that.
+builder.Services.AddHttpClient<ClaudeFieldExtractionService>(c => c.Timeout = TimeSpan.FromSeconds(240));
+builder.Services.AddHttpClient<OpenAiFieldExtractionService>(c => c.Timeout = TimeSpan.FromSeconds(240));
+builder.Services.AddScoped<Datamint.Application.Services.DocumentProcessingService>();
+builder.Services.AddScoped<IContactNotificationService, ContactNotificationService>();
+builder.Services.AddScoped<IBillingNotificationService, BillingNotificationService>();
+// Payment gateway is a config switch, same pattern as AiProvider: set "Payment:Provider" to
+// "Fake" (default - simulates the whole flow locally, no credentials needed) or a real gateway
+// name in appsettings.
+var paymentProvider = builder.Configuration["Payment:Provider"] ?? "Fake";
+if (string.Equals(paymentProvider, "Fake", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddScoped<IPaymentService, FakePaymentService>();
+}
+else
+{
+    throw new InvalidOperationException($"Unknown Payment:Provider '{paymentProvider}'. Only 'Fake' is currently implemented.");
+}
 
 // Sweeps deactivated accounts past their DeactivationGraceDays window and erases them.
 builder.Services.AddHostedService<Datamint.Infrastructure.Services.AccountPurgeService>();

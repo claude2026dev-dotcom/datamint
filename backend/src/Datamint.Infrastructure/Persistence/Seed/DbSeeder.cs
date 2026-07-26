@@ -43,6 +43,47 @@ public static class DbSeeder
 
         await db.SaveChangesAsync();
         await SeedOAuthAsync(db, config);
+        await SeedExtractionTiersAsync(db);
+        await SeedPlansAsync(db);
+    }
+
+    /// <summary>Exactly one tier is ever flagged IsDefault - the fallback used for a Plan with
+    /// no ExtractionTierId. Create-once: an admin's later edits to the default tier's model or
+    /// prompt customization must never be silently reverted by a subsequent app restart.</summary>
+    private static async Task SeedExtractionTiersAsync(DatamintDbContext db)
+    {
+        if (await db.ExtractionTiers.AnyAsync(t => t.IsDefault)) return;
+
+        db.ExtractionTiers.Add(new ExtractionTier
+        {
+            Name = "Standard",
+            AiProvider = AiProvider.Claude,
+            ModelName = "claude-haiku-4-5",
+            IsDefault = true,
+            IsEnabled = true
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Seeds the free trial plan (10 pages, one-time, non-recurring) every user is
+    /// auto-granted once at first sign-in - see AuthController.EnsureFreePlanActivatedAsync.
+    /// Create-once, same reasoning as the admin user seed: an admin's later edits (e.g.
+    /// changing the trial page count) must never be reverted by a restart.</summary>
+    private static async Task SeedPlansAsync(DatamintDbContext db)
+    {
+        if (await db.Plans.AnyAsync(p => p.IsFreeTrial)) return;
+
+        db.Plans.Add(new Plan
+        {
+            Name = "Free Trial",
+            Description = "A one-time trial of 10 pages to try Datamint out - doesn't renew.",
+            Price = 0,
+            MonthlyPageLimit = 10,
+            IsRecurring = false,
+            IsFreeTrial = true,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
     }
 
     /// <summary>

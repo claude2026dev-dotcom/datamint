@@ -25,6 +25,10 @@ public class DatamintDbContext : DbContext
     public DbSet<ExtractedField> ExtractedFields => Set<ExtractedField>();
     public DbSet<FieldTemplate> FieldTemplates => Set<FieldTemplate>();
 
+    public DbSet<Plan> Plans => Set<Plan>();
+    public DbSet<Subscription> Subscriptions => Set<Subscription>();
+    public DbSet<PaymentTransaction> PaymentTransactions => Set<PaymentTransaction>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(DatamintDbContext).Assembly);

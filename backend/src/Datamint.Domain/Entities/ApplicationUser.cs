@@ -52,4 +52,6 @@ public class ApplicationUser : BaseEntity
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
     public ICollection<Document> Documents { get; set; } = new List<Document>();
     public ICollection<FieldTemplate> FieldTemplates { get; set; } = new List<FieldTemplate>();
+    public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
+    public ICollection<PaymentTransaction> PaymentTransactions { get; set; } = new List<PaymentTransaction>();
 }

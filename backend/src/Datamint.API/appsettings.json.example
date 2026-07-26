@@ -33,7 +33,7 @@
     "FromName": "Datamint"
   },
 
-  "// 5": "----- FILE STORAGE: root folder for user-uploaded content (currently just profile avatars) -----",
+  "// 5": "----- FILE STORAGE: root folder for user-uploaded content (profile avatars and uploaded documents) -----",
   "FileStorage": {
     "UploadsRootPath": "./uploads"
   },
@@ -42,11 +42,30 @@
     "AllowedOrigins": [ "https://localhost:4200" ]
   },
 
-  "// 6": "----- APP: Name is the single source of truth for product branding in emails - change it here if the project is ever renamed, nothing else needs editing. LogoUrl is null until a real logo exists - every email falls back to a plain letter mark until then; set it to a publicly-reachable image URL to switch every email over automatically. FrontendBaseUrl is a fallback only used when a request has no Origin/Referer (e.g. a background job) - normal requests build the link from the browser's own Origin/Referer header, so this never goes stale behind a tunnel or a real domain. ApiBaseUrl is this API's own externally-reachable origin - used only to build the built-in Swagger OAuth client's redirect_uri (DbSeeder), so Swagger's Authorize button keeps working after the app moves host/port -----",
+  "// 6": "----- APP: Name is the single source of truth for product branding in emails - change it here if the project is ever renamed, nothing else needs editing. LogoUrl is null until a real logo exists - every email falls back to a plain letter mark until then; set it to a publicly-reachable image URL to switch every email over automatically. FrontendBaseUrl is a fallback only used when a request has no Origin/Referer (e.g. a background job) - normal requests build the link from the browser's own Origin/Referer header, so this never goes stale behind a tunnel or a real domain. ApiBaseUrl is this API's own externally-reachable origin - used only to build the built-in Swagger OAuth client's redirect_uri (DbSeeder), so Swagger's Authorize button keeps working after the app moves host/port. ContactEmail is where the public contact-us form's messages are sent -----",
   "App": {
     "Name": "Datamint",
     "FrontendBaseUrl": "https://localhost:4200",
     "ApiBaseUrl": "https://localhost:5001",
-    "LogoUrl": null
+    "LogoUrl": null,
+    "ContactEmail": "claude2026dev@gmail.com"
+  },
+
+  "// 7": "----- AI EXTRACTION: API keys for both providers are always needed (which one a given document actually uses is decided per-Plan via admin-configured Extraction Tiers, not this file - see Admin > Extraction Tiers). MaxEmptyResultRetries bounds the empty-result retry loop; PageImageMaxDimensionPx caps the rendered page image sent for vision-based extraction -----",
+  "Claude": {
+    "ApiKey": "YOUR_CLAUDE_API_KEY"
+  },
+  "OpenAI": {
+    "ApiKey": "YOUR_OPENAI_API_KEY",
+    "ImageDetail": "low"
+  },
+  "Ai": {
+    "MaxEmptyResultRetries": "1",
+    "PageImageMaxDimensionPx": "1568"
+  },
+
+  "// 8": "----- PAYMENT: local dev always uses the Fake provider (simulates the whole order/pay/refund flow, no credentials needed) - see Payment:Provider in Program.cs -----",
+  "Payment": {
+    "Provider": "Fake"
   }
 }
