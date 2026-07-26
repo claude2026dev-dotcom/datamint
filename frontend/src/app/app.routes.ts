@@ -43,6 +43,7 @@ export const routes: Routes = [
       { path: 'scopes', loadComponent: () => import('./features/admin/oauth-scopes/admin-oauth-scopes.component').then(m => m.AdminOAuthScopesComponent) },
       { path: 'plans', loadComponent: () => import('./features/admin/subscriptions/admin-subscriptions.component').then(m => m.AdminSubscriptionsComponent) },
       { path: 'extraction-tiers', loadComponent: () => import('./features/admin/extraction-tiers/admin-extraction-tiers.component').then(m => m.AdminExtractionTiersComponent) },
+      { path: 'roles', loadComponent: () => import('./features/admin/roles/admin-roles.component').then(m => m.AdminRolesComponent) },
     ]
   },
   { path: '**', loadComponent: () => import('./features/not-found/not-found.component').then(m => m.NotFoundComponent) }

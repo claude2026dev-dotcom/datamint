@@ -40,6 +40,9 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           <a routerLink="/admin/extraction-tiers" routerLinkActive="active" title="Extraction Tiers">
             <app-icon name="cpu" [size]="17" /> <span>Extraction Tiers</span>
           </a>
+          <a routerLink="/admin/roles" routerLinkActive="active" title="Roles">
+            <app-icon name="shield" [size]="17" /> <span>Roles</span>
+          </a>
         </nav>
 
         <a routerLink="/" class="sidebar-footer"><app-icon name="chevron-left" [size]="15" /> Back to app</a>

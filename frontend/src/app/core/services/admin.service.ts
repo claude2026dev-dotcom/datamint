@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
-import { ExtractionTier, OAuthClientDetail, OAuthClientListItem, OAuthClientSecretReveal, OAuthScope } from '../models/models';
+import { ExtractionTier, OAuthClientDetail, OAuthClientListItem, OAuthClientSecretReveal, OAuthScope, RoleTierOverride } from '../models/models';
 
 @Injectable({ providedIn: 'root' })
 export class AdminService {
@@ -105,6 +105,16 @@ export class AdminService {
 
   toggleExtractionTierActive(id: string) {
     return this.http.put<{ success: boolean; isEnabled: boolean }>(`${environment.apiBaseUrl}/admin/extraction-tiers/${id}/toggle-active`, {});
+  }
+
+  // ---------- Role Extraction Tier Overrides ----------
+
+  getRoleTierOverrides() {
+    return this.http.get<{ success: boolean; items: RoleTierOverride[] }>(`${environment.apiBaseUrl}/admin/role-tier-overrides`);
+  }
+
+  updateRoleTierOverride(role: string, extractionTierId: string | null) {
+    return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/admin/role-tier-overrides/${role}`, { extractionTierId });
   }
 
   // ---------- OAuth Clients ----------

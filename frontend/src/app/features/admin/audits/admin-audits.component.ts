@@ -162,7 +162,7 @@ import { LoadingHintComponent } from '../../../shared/components/loading-hint/lo
     .chip:hover { color: var(--dm-text); }
     .chip.active { background: var(--dm-primary); color: #fff; border-color: var(--dm-primary); }
 
-    .table-wrap { overflow-x: auto; padding: 4px; }
+    .table-wrap { overflow-x: auto; overflow-y: visible; padding: 4px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td { text-align: left; padding: 11px 13px; border-bottom: 1px solid var(--dm-border); white-space: nowrap; }
     th { color: var(--dm-text-muted); font-weight: 600; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; }

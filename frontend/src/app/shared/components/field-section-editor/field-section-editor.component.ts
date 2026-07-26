@@ -11,90 +11,117 @@ interface FieldSection {
   fields: ExtractedFieldEdit[];
 }
 
-/// Shared, AI-organized field editor used by both the single-document and batch review
-/// pages: groups one document's fields into labeled sections (AI-suggested, falling back
-/// to "General"), each rendered as a draggable, reorderable list. Drag handle/rename/value/
-/// type-badge/edited-indicator/include-in-export toggle all live here so neither review page
-/// has to duplicate this markup - they just supply the flat field array and handle the four
-/// output events by calling DocumentService.
+/// Shared, AI-organized field editor used by both the single-document and batch review pages,
+/// styled as a proper spreadsheet grid (a fixed header row, bordered cells, a dedicated "Edited"
+/// column) rather than a stack of cards - sections still group related fields (AI-suggested,
+/// falling back to "General") and are still drag-reorderable, but every section renders the same
+/// column layout so the whole thing reads like one continuous sheet.
 @Component({
   selector: 'app-field-section-editor',
   standalone: true,
   imports: [CommonModule, FormsModule, DragDropModule, IconComponent, AutoGrowDirective],
   template: `
-    <div cdkDropListGroup>
+    <div class="sheet dm-card" cdkDropListGroup>
+      <div class="sheet-header" role="row">
+        <span class="col-drag" aria-hidden="true"></span>
+        <span class="col-field">Field</span>
+        <span class="col-value">Value</span>
+        <span class="col-type">Type</span>
+        <span class="col-edited">Edited</span>
+        <span class="col-export">Export</span>
+      </div>
+
       @for (section of sections; track section.label) {
-        <div class="dm-card section-block">
-          <div class="section-head">
-            <input class="section-title" #titleInput [ngModel]="section.label" (blur)="renameSection(section, titleInput.value)"
-                   title="Rename this section" />
-            <span class="muted small">{{ editedCount(section) }} of {{ section.fields.length }} edited</span>
-          </div>
+        <div class="section-band">
+          <input class="section-title" #titleInput [ngModel]="section.label" (blur)="renameSection(section, titleInput.value)"
+                 title="Rename this section" />
+          <span class="muted small">{{ editedCount(section) }} of {{ section.fields.length }} edited</span>
+        </div>
 
-          <div class="field-list" cdkDropList [cdkDropListData]="section.fields"
-               (cdkDropListDropped)="onDrop($event, section)">
-            @for (field of section.fields; track field.id) {
-              <div class="field-row" cdkDrag [cdkDragData]="field">
-                <div class="drag-handle" cdkDragHandle title="Drag to reorder or move to another section">
-                  <app-icon name="grip" [size]="16" />
-                </div>
-
-                <div class="field-main">
-                  <div class="field-meta">
-                    <span class="original-label" [title]="'Detected label: ' + field.originalFieldKey">{{ field.originalFieldKey }}</span>
-                    <span class="type-badge">{{ field.semanticType }}</span>
-                    @if (field.pageNumber) { <span class="muted small">p.{{ field.pageNumber }}</span> }
-                    @if (field.wasEditedByUser) { <span class="edited-badge">edited</span> }
-                  </div>
-                  <input class="dm-input field-key" [(ngModel)]="field.fieldKey" (blur)="emitSave(field)"
-                         placeholder="Custom field name" title="Rename this field — used when exporting" />
-                  <textarea class="dm-input field-value" rows="1" appAutoGrow [(ngModel)]="field.fieldValue" (blur)="emitSave(field)"></textarea>
-                </div>
-
-                <label class="include-toggle" title="Include this field in exports">
-                  <input type="checkbox" [(ngModel)]="field.includeInExport" (change)="includeToggled.emit(field)" />
-                  <span class="small">Export</span>
-                </label>
+        <div class="field-list" cdkDropList [cdkDropListData]="section.fields"
+             (cdkDropListDropped)="onDrop($event, section)">
+          @for (field of section.fields; track field.id) {
+            <div class="field-row" cdkDrag [cdkDragData]="field">
+              <div class="col-drag drag-handle" cdkDragHandle title="Drag to reorder or move to another section">
+                <app-icon name="grip" [size]="15" />
               </div>
-            }
-          </div>
+
+              <div class="col-field">
+                <span class="original-label" [title]="'Detected label: ' + field.originalFieldKey">{{ field.originalFieldKey }}</span>
+                <input class="dm-input field-key" [(ngModel)]="field.fieldKey" (blur)="emitSave(field)" placeholder="Field name" />
+                @if (field.pageNumber) { <span class="page-chip">p.{{ field.pageNumber }}</span> }
+              </div>
+
+              <div class="col-value">
+                <textarea class="dm-input field-value" rows="1" appAutoGrow [(ngModel)]="field.fieldValue" (blur)="emitSave(field)"></textarea>
+              </div>
+
+              <div class="col-type"><span class="type-badge">{{ field.semanticType }}</span></div>
+
+              <div class="col-edited">
+                @if (field.wasEditedByUser) { <span class="edited-dot" title="Edited"></span> }
+              </div>
+
+              <div class="col-export">
+                <input type="checkbox" [(ngModel)]="field.includeInExport" (change)="includeToggled.emit(field)" title="Include this field in exports" />
+              </div>
+            </div>
+          }
         </div>
       }
     </div>
   `,
   styles: [`
-    .section-block { padding: 18px 20px; margin-bottom: 16px; }
+    /* overflow-y: visible is deliberate - see the matching comment in field-columns-editor for
+       why setting only overflow-x here would otherwise silently break the sticky header below. */
+    .sheet { padding: 0; overflow-x: auto; overflow-y: visible; }
     .muted { color: var(--dm-text-muted); }
-    .small { font-size: 0.78rem; }
-    .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--dm-border); }
-    .section-title { font-size: 1rem; font-weight: 700; border: none; background: transparent; padding: 4px 6px; border-radius: var(--dm-radius-sm); flex: 1; min-width: 0; color: var(--dm-text); }
+    .small { font-size: 0.76rem; }
+
+    .sheet-header, .field-row { display: grid; grid-template-columns: 28px minmax(180px, 1.1fr) minmax(220px, 1.6fr) 90px 64px 64px; align-items: center; column-gap: 10px; min-width: 640px; }
+    .sheet-header { position: sticky; top: 0; z-index: 2; padding: 10px 14px; background: var(--dm-bg-elevated); border-bottom: 1px solid var(--dm-border); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); }
+    .col-value, .col-type, .col-edited, .col-export { text-align: left; }
+
+    .section-band { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: var(--dm-surface); border-bottom: 1px solid var(--dm-border); border-top: 1px solid var(--dm-border); min-width: 640px; }
+    .section-title { font-size: 0.88rem; font-weight: 700; border: none; background: transparent; padding: 3px 6px; border-radius: var(--dm-radius-sm); flex: 1; min-width: 0; color: var(--dm-text); }
     .section-title:hover, .section-title:focus { background: var(--dm-surface-hover); }
 
-    .field-list { display: flex; flex-direction: column; gap: 4px; min-height: 8px; }
+    .field-list { display: flex; flex-direction: column; min-height: 8px; }
     .field-list.cdk-drop-list-dragging .field-row:not(.cdk-drag-placeholder) { transition: transform 200ms ease; }
 
-    .field-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 8px; border-radius: var(--dm-radius-sm); background: var(--dm-surface); }
-    .field-row.cdk-drag-preview { box-shadow: 0 8px 24px rgba(0,0,0,0.18); }
+    .field-row { padding: 8px 14px; border-bottom: 1px solid var(--dm-border); background: var(--dm-bg, var(--dm-surface)); }
+    .field-row:hover { background: var(--dm-surface-hover); }
+    .field-row.cdk-drag-preview { box-shadow: 0 8px 24px rgba(0,0,0,0.2); border-radius: var(--dm-radius-sm); }
     .field-row.cdk-drag-placeholder { opacity: 0.3; }
 
-    .drag-handle { display: flex; align-items: center; padding-top: 8px; color: var(--dm-text-muted); cursor: grab; flex-shrink: 0; touch-action: none; }
+    .drag-handle { display: flex; align-items: center; justify-content: center; color: var(--dm-text-muted); cursor: grab; touch-action: none; }
     .drag-handle:active { cursor: grabbing; }
 
-    .field-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-    .field-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .original-label { font-size: 0.72rem; color: var(--dm-text-muted); text-transform: uppercase; letter-spacing: 0.03em; overflow-wrap: break-word; }
-    .type-badge { font-size: 0.7rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: rgba(99,102,241,0.12); color: var(--dm-primary); }
-    .edited-badge { font-size: 0.72rem; color: var(--dm-accent); }
+    .col-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .original-label { font-size: 0.68rem; color: var(--dm-text-muted); text-transform: uppercase; letter-spacing: 0.02em; overflow-wrap: break-word; }
     .field-key { font-size: 0.85rem; font-weight: 600; border: none; background: transparent; padding: 2px 4px; }
     .field-key:hover, .field-key:focus { border: 1px solid var(--dm-border); background: var(--dm-bg, var(--dm-surface)); }
-    .field-value { resize: vertical; min-height: 42px; line-height: 1.4; font-family: inherit; overflow-wrap: break-word; }
+    .page-chip { align-self: flex-start; font-size: 0.68rem; color: var(--dm-text-muted); }
 
-    .include-toggle { display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 6px; flex-shrink: 0; }
-    .include-toggle input { accent-color: var(--dm-primary); }
-    .include-toggle .small { color: var(--dm-text-muted); }
+    .col-value { min-width: 0; }
+    .field-value { resize: vertical; min-height: 36px; line-height: 1.4; font-family: inherit; overflow-wrap: break-word; width: 100%; }
 
-    @media (max-width: 700px) {
-      .field-row { flex-wrap: wrap; }
+    .type-badge { font-size: 0.7rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(99,102,241,0.12); color: var(--dm-primary); white-space: nowrap; }
+
+    .col-edited { display: flex; justify-content: center; }
+    .edited-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dm-accent); display: block; }
+
+    .col-export { display: flex; justify-content: center; }
+    .col-export input { accent-color: var(--dm-primary); }
+
+    @media (max-width: 900px) {
+      .sheet-header { display: none; }
+      .field-row { grid-template-columns: 24px 1fr; grid-template-areas: "drag field" ". value" ". meta"; row-gap: 6px; min-width: 0; }
+      .col-drag { grid-area: drag; }
+      .col-field { grid-area: field; }
+      .col-value { grid-area: value; grid-column: 1 / -1; }
+      .col-type, .col-edited, .col-export { grid-area: meta; display: inline-flex; margin-right: 10px; }
+      .section-band { min-width: 0; }
     }
   `]
 })
@@ -157,7 +184,7 @@ export class FieldSectionEditorComponent implements OnChanges {
     }
 
     // Renumber every field across every section from the resulting visual order, not just
-    // the moved one, so SortOrder stays gap/collision-free across repeated reorders.
+    // the moved one, so SortOrder never gaps or collides across repeated reorders.
     let order = 0;
     const flat: ExtractedFieldEdit[] = [];
     for (const section of this.sections) {

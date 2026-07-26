@@ -157,7 +157,7 @@ import { OAuthScope } from '../../../core/models/models';
     .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--dm-text-muted); pointer-events: none; }
     .filter-bar select.dm-input { flex: 0 1 160px; }
 
-    .table-wrap { overflow-x: auto; padding: 4px; }
+    .table-wrap { overflow-x: auto; overflow-y: visible; padding: 4px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--dm-border); white-space: nowrap; }
     th { color: var(--dm-text-muted); font-weight: 600; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; }

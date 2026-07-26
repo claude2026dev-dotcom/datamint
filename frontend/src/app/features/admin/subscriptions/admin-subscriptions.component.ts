@@ -250,7 +250,7 @@ interface PlanForm {
     .section-head { margin: 34px 0 14px; }
     .section-head h2 { font-size: 1.1rem; margin: 0; }
     .tx-card.skeleton { height: 140px; background: linear-gradient(90deg, var(--dm-surface) 25%, var(--dm-surface-hover) 50%, var(--dm-surface) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
-    .tx-table-wrap { padding: 0; overflow-x: auto; }
+    .tx-table-wrap { padding: 0; overflow-x: auto; overflow-y: visible; }
     .tx-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; white-space: nowrap; }
     .tx-table th { text-align: left; padding: 12px 16px; color: var(--dm-text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--dm-border); }
     .tx-table td { padding: 12px 16px; border-bottom: 1px solid var(--dm-border); }

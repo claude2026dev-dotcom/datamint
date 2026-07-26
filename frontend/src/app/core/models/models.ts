@@ -93,6 +93,12 @@ export interface SubscriptionStatus {
   cancelAtPeriodEnd: boolean;
 }
 
+export interface RoleTierOverride {
+  role: string;
+  extractionTierId: string | null;
+  extractionTierName: string | null;
+}
+
 export interface ExtractionTier {
   id: string;
   name: string;

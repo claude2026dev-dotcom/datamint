@@ -4,20 +4,18 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DocumentService } from '../../core/services/document.service';
 import { ToastService } from '../../core/services/toast.service';
-import { ExtractedFieldEdit } from '../../core/models/models';
+import { ExtractedFieldEdit, ExportFormat, ExportLayout } from '../../core/models/models';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
-import { ExportModalComponent, ExportModalResult } from '../../shared/components/export-modal/export-modal.component';
+import { ExportModalComponent, EmailModalResult } from '../../shared/components/export-modal/export-modal.component';
 import { FieldSectionEditorComponent } from '../../shared/components/field-section-editor/field-section-editor.component';
 import { FieldColumnsEditorComponent } from '../../shared/components/field-columns-editor/field-columns-editor.component';
-import { JsonTreeViewComponent } from '../../shared/components/json-tree-view/json-tree-view.component';
-import { buildFieldTree } from '../../shared/utils/build-field-tree';
 
 @Component({
   selector: 'app-preview-edit',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, ExportModalComponent,
-            FieldSectionEditorComponent, FieldColumnsEditorComponent, JsonTreeViewComponent],
+            FieldSectionEditorComponent, FieldColumnsEditorComponent],
   template: `
     <div class="dm-container page">
       <app-back-button fallbackUrl="/documents" />
@@ -41,25 +39,14 @@ import { buildFieldTree } from '../../shared/utils/build-field-tree';
             <button type="button" class="view-option" [class.active]="viewMode === 'rows'" (click)="viewMode = 'rows'">Rows</button>
             <button type="button" class="view-option" [class.active]="viewMode === 'columns'" (click)="viewMode = 'columns'">Columns</button>
           </div>
-          <button class="dm-btn dm-btn-ghost" (click)="showJsonPreview = !showJsonPreview">{{ '{ } ' }}Preview JSON</button>
-          <button class="dm-btn dm-btn-ghost" (click)="openExportModal('download')">⬇ Export</button>
-          <button class="dm-btn dm-btn-primary" (click)="openExportModal('email')">✉ Email export</button>
+          <button class="dm-btn dm-btn-ghost" [disabled]="exporting" (click)="downloadExport('Excel')"><app-icon name="file-text" [size]="15" /> Excel</button>
+          <button class="dm-btn dm-btn-ghost" [disabled]="exporting" (click)="downloadExport('Json')">{{ '{ }' }} JSON</button>
+          <button class="dm-btn dm-btn-primary" (click)="emailModalOpen = !emailModalOpen"><app-icon name="inbox" [size]="15" /> Email</button>
         </div>
       </div>
 
-      @if (exportModalFor) {
-        <app-export-modal [action]="exportModalFor" [busy]="exportBusy"
-                           (confirmed)="onExportConfirmed($event)" (cancelled)="exportModalFor = null" />
-      }
-
-      @if (showJsonPreview) {
-        <div class="dm-card json-preview">
-          <div class="json-preview-head">
-            <h3>Export preview (JSON)</h3>
-            <p class="muted small">Reflects the current section grouping, order, and edits — updates live as you edit below.</p>
-          </div>
-          <app-json-tree-view [data]="jsonPreview()" rootLabel="document" />
-        </div>
+      @if (emailModalOpen) {
+        <app-export-modal [busy]="emailBusy" (confirmed)="onEmailConfirmed($event)" (cancelled)="emailModalOpen = false" />
       }
 
       @if (viewMode === 'rows') {
@@ -78,6 +65,7 @@ import { buildFieldTree } from '../../shared/utils/build-field-tree';
     .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .actions .dm-btn { display: inline-flex; align-items: center; gap: 6px; }
     .view-toggle { display: flex; border: 1px solid var(--dm-border); border-radius: var(--dm-radius-sm); overflow: hidden; }
     .view-option { padding: 8px 14px; font-size: 0.82rem; font-weight: 600; background: var(--dm-surface); color: var(--dm-text-muted); border: none; cursor: pointer; }
     .view-option.active { background: var(--dm-gradient-primary); color: white; }
@@ -85,11 +73,6 @@ import { buildFieldTree } from '../../shared/utils/build-field-tree';
     .not-found-card .icon { color: var(--dm-text-muted); display: flex; justify-content: center; margin-bottom: 14px; }
     .not-found-card h2 { margin-bottom: 10px; }
     .not-found-card p { margin-bottom: 20px; }
-    .json-preview { padding: 20px; margin-bottom: 20px; max-height: 480px; overflow: auto; animation: dm-fade-in 0.18s ease-out; }
-    @keyframes dm-fade-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
-    .json-preview-head { margin-bottom: 14px; }
-    .json-preview-head h3 { font-size: 0.95rem; margin-bottom: 4px; }
-    .small { font-size: 0.8rem; }
     @media (max-width: 700px) { .header { flex-direction: column; } }
   `]
 })
@@ -99,11 +82,11 @@ export class PreviewEditComponent implements OnInit {
   pageCount = 0;
   fields: ExtractedFieldEdit[] = [];
   viewMode: 'rows' | 'columns' = 'rows';
-  exportModalFor: 'download' | 'email' | null = null;
-  exportBusy = false;
+  emailModalOpen = false;
+  emailBusy = false;
+  exporting = false;
   loading = true;
   notFound = false;
-  showJsonPreview = false;
 
   constructor(private route: ActivatedRoute, private documentService: DocumentService, private toast: ToastService) {}
 
@@ -154,38 +137,33 @@ export class PreviewEditComponent implements OnInit {
     });
   }
 
-  jsonPreview() {
-    return buildFieldTree(this.fileName, this.fields);
-  }
-
-  openExportModal(action: 'download' | 'email') {
-    this.exportModalFor = this.exportModalFor === action ? null : action;
-  }
-
-  onExportConfirmed(result: ExportModalResult) {
-    this.exportBusy = true;
-    if (result.toAddress) {
-      this.documentService.sendEmail(this.documentId, result.toAddress, result.cc, undefined, result.options).subscribe({
-        next: () => { this.toast.success('Export emailed successfully.'); this.exportModalFor = null; this.exportBusy = false; },
-        error: () => { this.toast.error('Could not send that email. Please try again.'); this.exportBusy = false; }
-      });
-      return;
-    }
-
-    this.documentService.exportDocument(this.documentId, result.options).subscribe({
+  /// Export/download never re-asks anything - it uses whatever layout is already on screen
+  /// (Rows/Columns) right now, matching what the user is already looking at.
+  downloadExport(format: ExportFormat) {
+    this.exporting = true;
+    const layout: ExportLayout = this.viewMode === 'columns' ? 'ColumnsPerField' : 'RowsPerField';
+    this.documentService.exportDocument(this.documentId, { format, layout }).subscribe({
       next: blob => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const ext = result.options.format === 'Json' ? 'json' : 'xlsx';
+        const ext = format === 'Json' ? 'json' : 'xlsx';
         a.download = `${this.fileName.replace(/\.[^.]+$/, '')}-export.${ext}`;
         a.click();
         window.URL.revokeObjectURL(url);
-        this.exportModalFor = null;
-        this.exportBusy = false;
+        this.exporting = false;
         this.toast.success('Export downloaded.');
       },
-      error: () => { this.exportBusy = false; this.toast.error('Could not export. Please try again.'); }
+      error: () => { this.exporting = false; this.toast.error('Could not export. Please try again.'); }
+    });
+  }
+
+  onEmailConfirmed(result: EmailModalResult) {
+    this.emailBusy = true;
+    const layout: ExportLayout = this.viewMode === 'columns' ? 'ColumnsPerField' : 'RowsPerField';
+    this.documentService.sendEmail(this.documentId, result.toAddress, result.cc, undefined, { format: result.format, layout }).subscribe({
+      next: () => { this.toast.success('Export emailed successfully.'); this.emailModalOpen = false; this.emailBusy = false; },
+      error: () => { this.toast.error('Could not send that email. Please try again.'); this.emailBusy = false; }
     });
   }
 }
