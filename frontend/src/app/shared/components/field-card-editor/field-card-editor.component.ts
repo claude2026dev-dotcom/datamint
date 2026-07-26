@@ -174,24 +174,28 @@ interface CardDocument {
     .usage-tip span app-icon { display: inline-block; vertical-align: -1px; color: var(--dm-text-muted); }
 
     .doc-group { margin-bottom: 32px; }
-    /* A distinctly colored banner (not just plain text) so switching from one document's
-       fields to the next is immediately obvious while scrolling a bulk batch, instead of the
-       fields quietly running together with no visual break. */
+    /* A themed card (not a flat color block) so switching from one document's fields to the
+       next is still immediately obvious while scrolling a bulk batch, but reads correctly in
+       both light and dark mode - --dm-surface/--dm-border/--dm-text already flip per theme, so
+       building on them (instead of a fixed white-on-solid-color banner) means this never needs
+       a separate dark-mode override. The left accent stripe + circular badge give it a clear
+       focal point without relying on a wall of color for contrast. */
     .doc-group-head {
-      display: flex; align-items: center; gap: 10px; padding: 12px 16px; margin-bottom: 14px;
-      /* Solid color, not the gradient other pills use - the gradient's cyan end is too light
-         for white text to stay readable across a banner this wide (fine on a small button,
-         not on a full-width bar). */
-      border-radius: var(--dm-radius-md); background: var(--dm-primary); color: white;
-      box-shadow: 0 2px 10px rgba(99,102,241,0.25); flex-wrap: wrap;
+      display: flex; align-items: center; gap: 12px; padding: 13px 18px; margin-bottom: 14px;
+      border: 1px solid var(--dm-border); border-left: 4px solid var(--dm-primary);
+      border-radius: var(--dm-radius-md); background: var(--dm-surface);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06); flex-wrap: wrap;
     }
-    .doc-group-head app-icon { color: white; flex-shrink: 0; opacity: 0.9; }
+    .doc-group-head app-icon { color: var(--dm-primary); flex-shrink: 0; }
     .doc-badge {
-      display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0;
-      border-radius: 50%; background: rgba(255,255,255,0.25); font-size: 0.72rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0;
+      border-radius: 50%; background: var(--dm-primary); color: white; font-size: 0.72rem; font-weight: 700;
     }
-    .doc-name { font-weight: 700; overflow-wrap: break-word; word-break: break-word; }
-    .doc-progress { margin-left: auto; font-size: 0.78rem; opacity: 0.9; white-space: nowrap; }
+    .doc-name { font-weight: 700; color: var(--dm-text); overflow-wrap: break-word; word-break: break-word; }
+    .doc-progress {
+      margin-left: auto; font-size: 0.76rem; font-weight: 700; white-space: nowrap;
+      padding: 5px 12px; border-radius: 999px; background: rgba(99,102,241,0.12); color: var(--dm-primary);
+    }
     .muted { color: var(--dm-text-muted); }
     .small { font-size: 0.78rem; }
 

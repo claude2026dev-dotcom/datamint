@@ -99,21 +99,24 @@ import { FieldJsonViewComponent } from '../../shared/components/field-json-view/
   styles: [`
     .page { padding-top: 40px; padding-bottom: 80px; }
     /* The site-wide 1180px container is fine for prose pages, but cramps a data table that's
-       genuinely meant to show many fields/columns side by side - give this page more room. */
-    .page-wide { max-width: 1560px; }
+       genuinely meant to show many fields/columns side by side - give this page more room, but
+       with extra side padding of its own (not just the site-wide 20px) so it still reads as
+       having deliberate margins instead of running edge-to-edge on a wide monitor. */
+    .page-wide { max-width: 1440px; padding-left: 32px; padding-right: 32px; }
+    @media (max-width: 640px) { .page-wide { padding-left: 16px; padding-right: 16px; } }
     .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
-    /* Both button groups share the same 54px height so the two-line mode-toggle (title +
-       subtitle) and the single-line Excel/JSON/Email actions read as one consistent row
+    /* Both button groups share the same 46px height so the two-line mode-toggle (title +
+       subtitle) and the single-line Excel/JSON/Email actions read as one consistent, compact row
        instead of one looking oversized next to the other. */
     .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .actions .dm-btn { display: inline-flex; align-items: center; gap: 6px; height: 54px; padding: 0 22px; }
+    .actions .dm-btn { display: inline-flex; align-items: center; gap: 6px; height: 46px; padding: 0 18px; font-size: 0.88rem; }
 
     /* Same border-radius scale as .view-toggle elsewhere in the app (a soft rectangle, not a
        pill) - the outer wrapper and inner buttons previously used different radii, which read
        as a much rounder "pill" shape that stood out against the rest of the app's controls. */
-    .mode-toggle { display: flex; gap: 6px; padding: 6px; border-radius: var(--dm-radius-sm); background: var(--dm-surface); border: 1px solid var(--dm-border); flex-wrap: wrap; }
-    .mode-option { display: inline-flex; align-items: center; gap: 10px; height: 42px; padding: 0 18px; background: transparent; color: var(--dm-text-muted); border: 1px solid transparent; border-radius: var(--dm-radius-sm); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; white-space: nowrap; text-align: left; }
+    .mode-toggle { display: flex; gap: 6px; padding: 5px; border-radius: var(--dm-radius-sm); background: var(--dm-surface); border: 1px solid var(--dm-border); flex-wrap: wrap; }
+    .mode-option { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; background: transparent; color: var(--dm-text-muted); border: 1px solid transparent; border-radius: var(--dm-radius-sm); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; white-space: nowrap; text-align: left; }
     .mode-option span { display: flex; flex-direction: column; gap: 1px; }
     .mode-option strong { font-size: 0.9rem; font-weight: 700; }
     .mode-option small { font-size: 0.7rem; font-weight: 500; opacity: 0.85; }
@@ -171,10 +174,20 @@ export class PreviewEditComponent implements OnInit {
     });
   }
 
+  // Editing a value/key/type and then another field property in quick succession (or one field
+  // twice before the first save round-trips) fires two overlapping PUT requests. Network
+  // responses can arrive out of order, and applying whichever lands LAST regardless of which was
+  // sent last could silently stomp a newer edit back to a stale one - including flipping "edited"
+  // back off when it shouldn't be. A per-field sequence number, checked before applying a
+  // response, makes sure only the response to the most recently issued save is ever applied.
+  private saveSeq: Record<string, number> = {};
+
   saveField(event: FieldCardEvent) {
     const field = event.field;
+    const seq = (this.saveSeq[field.id] = (this.saveSeq[field.id] ?? 0) + 1);
     this.documentService.updateField(this.documentId, field.id, field.fieldValue ?? '', field.fieldKey, undefined, field.semanticType).subscribe({
       next: res => {
+        if (this.saveSeq[field.id] !== seq) return;
         field.wasEditedByUser = res.field.wasEditedByUser;
         field.fieldKey = res.field.fieldKey;
         field.fieldValue = res.field.fieldValue;

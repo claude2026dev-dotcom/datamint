@@ -1,7 +1,6 @@
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ExtractedFieldEdit, FieldEditorDocument } from '../../../core/models/models';
-import { IconComponent } from '../icon/icon.component';
 
 interface TableSection {
   label: string;
@@ -32,20 +31,15 @@ interface SectionGroup {
 @Component({
   selector: 'app-field-table-view',
   standalone: true,
-  imports: [CommonModule, IconComponent],
+  imports: [CommonModule],
   template: `
-    <button type="button" class="expand-btn" (click)="expanded = !expanded">
-      <app-icon name="grid" [size]="13" />
-      {{ expanded ? 'Collapse view' : 'Expand view' }}
-    </button>
-
     @if (viewMode === 'rows') {
       @for (doc of tableDocuments; track doc.id) {
         <div class="dm-card table-card">
           @if (tableDocuments.length > 1) {
             <div class="doc-head">{{ doc.fileName }}</div>
           }
-          <div class="table-scroll" [class.expanded]="expanded">
+          <div class="table-scroll">
             <table class="plain-table">
               <thead>
                 <tr><th class="col-key">Field</th><th class="col-val">Value</th><th class="col-type">Type</th></tr>
@@ -68,13 +62,13 @@ interface SectionGroup {
       }
     } @else {
       <div class="dm-card table-card">
-        <div class="table-scroll" [class.expanded]="expanded">
+        <div class="table-scroll">
           <table class="plain-table cols-table">
             <thead>
               <tr>
                 <th class="doc-col">Document</th>
                 @for (group of sectionGroups; track group.label) {
-                  <th [attr.colspan]="group.columns.length" class="section-head">{{ group.label }}</th>
+                  <th [attr.colspan]="group.columns.length" class="section-head"><span class="section-head-label">{{ group.label }}</span></th>
                 }
               </tr>
               <tr>
@@ -98,12 +92,9 @@ interface SectionGroup {
     }
   `,
   styles: [`
-    .expand-btn { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px; padding: 7px 14px; font-size: 0.8rem; font-weight: 600; color: var(--dm-primary); background: var(--dm-surface); border: 1px solid var(--dm-border); border-radius: var(--dm-radius-sm); cursor: pointer; }
-    .expand-btn:hover { background: var(--dm-surface-hover); }
     .table-card { padding: 0; margin-bottom: 20px; overflow: hidden; }
     .doc-head { padding: 13px 16px; font-weight: 700; font-size: 0.94rem; border-bottom: 1px solid var(--dm-border); background: var(--dm-surface); }
-    .table-scroll { max-height: 65vh; overflow: auto; transition: max-height 0.2s ease; }
-    .table-scroll.expanded { max-height: 85vh; }
+    .table-scroll { max-height: 72vh; overflow: auto; }
     /* border-collapse:collapse + position:sticky cells is a well-documented Chromium/WebKit
        rendering bug: adjacent cell borders and backgrounds can repaint incorrectly during
        scroll, leaving ghosted/overlapping text right at the sticky boundary - exactly the
@@ -136,13 +127,32 @@ interface SectionGroup {
     .cols-table { table-layout: auto; width: auto; min-width: max-content; }
     .cols-table thead tr:first-child th { top: 0; height: 34px; }
     .cols-table thead tr:nth-child(2) th { top: 34px; height: 34px; }
-    .section-head { text-align: center; color: var(--dm-primary); background: rgba(99,102,241,0.08); }
+    /* Sticky on the <th colspan> ITSELF doesn't hand off cleanly between adjacent sections: a
+       table cell's sticky containing block is the whole scrolling area, not its own column
+       span, so once a cell's natural position scrolls past the anchor it stays stuck there
+       FOREVER (not just until its own columns end) - every later section eventually also
+       activates at the same spot and they all pile up on top of each other. The fix is the
+       standard one for "sticky sub-header within a bounded region": leave the <th> itself
+       unpositioned (it just scrolls normally with its columns) and make an INNER element
+       sticky instead - a normal <th> is a containing block for its own children, so the
+       label's sticky range is correctly bounded to this cell's own width, and it naturally
+       scrolls away with the cell once that section's columns are fully passed, at which point
+       the next section's own label (now within the visible/sticky range) takes over. */
+    /* .plain-table th's own padding rule has higher specificity (class+type vs. class alone) so
+       overriding it here needs a matching-or-higher selector, not just ".section-head" alone. */
+    .plain-table th.section-head { padding: 0; text-align: left; background: var(--dm-surface); box-shadow: inset 0 -1px 0 var(--dm-border); }
+    .section-head-label {
+      position: sticky; left: 200px; z-index: 4; display: inline-block;
+      padding: 8px 14px; color: var(--dm-primary); font-weight: 700;
+    }
     /* box-shadow, not just border - separate border-collapse means a plain border alone
        reads faint against scrolled content sliding directly underneath. The shadow gives the
        frozen column a clear, unmistakable edge, the same visual cue Excel/Sheets use for a
        frozen-pane boundary. z-index sits above the sticky header row (3) so the frozen
-       column's own header cell ("Document") always wins the corner intersection. */
-    .doc-col, .doc-col-spacer { position: sticky; left: 0; background: var(--dm-bg-elevated); font-weight: 600; z-index: 5; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 2px 0 6px rgba(0,0,0,0.15); will-change: transform; }
+       column's own header cell ("Document") always wins the corner intersection. Width is a
+       fixed value (not max-width) so the sticky section-head cells above have a known, matching
+       left offset to dock against - a variable/content-sized frozen column would misalign them. */
+    .doc-col, .doc-col-spacer { position: sticky; left: 0; background: var(--dm-bg-elevated); font-weight: 600; z-index: 5; width: 200px; min-width: 200px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 2px 0 6px rgba(0,0,0,0.15); will-change: transform; }
     td.doc-col { background: var(--dm-bg-elevated); }
     /* The corner cells (<th class="doc-col">/<th class="doc-col-spacer"> inside thead) are
        matched by BOTH ".doc-col" (z-index:5) and ".plain-table thead th" (z-index:3, but wins
@@ -165,7 +175,6 @@ export class FieldTableViewComponent implements OnChanges {
   tableDocuments: TableDocument[] = [];
   columns: ColumnDef[] = [];
   sectionGroups: SectionGroup[] = [];
-  expanded = false;
 
   ngOnChanges(changes: SimpleChanges) {
     if (changes['documents'] || changes['viewMode']) {
