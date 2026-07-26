@@ -101,6 +101,16 @@ import { environment } from '../../../../environments/environment';
     </nav>
   `,
   styles: [`
+    /* app-root lays out its children (offline-banner/navbar/router-outlet/footer/...) as a
+       column flexbox so a short page's footer still sits at the viewport bottom (see
+       styles.scss). That makes THIS component's own host element a flex item whose height
+       auto-sizes to exactly its content (~65px) - which then becomes .dm-nav's containing
+       block for position:sticky purposes, leaving it zero px of room to ever "stick" (it's
+       already pinned at the bottom of a box exactly its own height, so it just scrolls with
+       the page like position:static). display:contents removes the host's own box from the
+       render tree entirely, so .dm-nav becomes effectively a direct flex child of app-root
+       (whose height spans the full page) and gets real travel room to stick against. */
+    :host { display: contents; }
     .dm-nav { position: sticky; top: 0; z-index: 100; background: var(--dm-nav-bg); backdrop-filter: blur(10px); border-bottom: 1px solid var(--dm-border); }
     .dm-nav-inner { display: flex; align-items: center; gap: 24px; height: 64px; position: relative; }
     .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.1rem; color: var(--dm-text); text-decoration: none; }
