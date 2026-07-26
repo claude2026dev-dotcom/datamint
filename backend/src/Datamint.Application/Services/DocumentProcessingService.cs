@@ -202,6 +202,7 @@ public class DocumentProcessingService
             int order = 0;
             foreach (var field in aiResult.Fields.OrderBy(f => f.Priority ?? int.MaxValue))
             {
+                var semanticType = string.IsNullOrWhiteSpace(field.SemanticType) ? "Text" : field.SemanticType;
                 _documents.AddExtractedField(new ExtractedField
                 {
                     DocumentId = document.Id,
@@ -210,7 +211,8 @@ public class DocumentProcessingService
                     FieldValue = field.Value,
                     OriginalAiValue = field.Value,
                     PageNumber = field.PageNumber,
-                    SemanticType = string.IsNullOrWhiteSpace(field.SemanticType) ? "Generic" : field.SemanticType,
+                    SemanticType = semanticType,
+                    OriginalSemanticType = semanticType,
                     SectionLabel = string.IsNullOrWhiteSpace(field.SectionLabel) ? "General" : field.SectionLabel,
                     SortOrder = order++
                 });
@@ -337,16 +339,28 @@ public class DocumentProcessingService
         var previousValue = field.FieldValue;
         var previousKey = field.FieldKey;
 
+        // Rows extracted before OriginalSemanticType existed have it stored as null. Left as-is,
+        // "null != <any type the user ever picks>" is permanently true, so a legacy field's
+        // "edited" flag could never clear again even after being set back to its own current
+        // type - the exact "re-edited back to previous still shows as edited" bug reported for
+        // real documents. Backfill it lazily, from the type as it stood before this edit, the
+        // first time such a field is touched; every edit after that compares correctly.
+        if (field.OriginalSemanticType is null) field.OriginalSemanticType = field.SemanticType;
+
         field.FieldValue = newValue;
         if (!string.IsNullOrWhiteSpace(newKey))
             field.FieldKey = newKey.Trim();
-        // "Edited" means the user actually changed something from what the AI produced - either
-        // the value or the label - not just that a save request was sent. The include-in-export
-        // toggle and the semantic-type correction are deliberately excluded - they're metadata/
-        // export preferences, not content corrections.
-        field.WasEditedByUser = field.OriginalAiValue != field.FieldValue || field.OriginalFieldKey != field.FieldKey;
-        if (includeInExport is not null) field.IncludeInExport = includeInExport.Value;
         if (!string.IsNullOrWhiteSpace(newSemanticType)) field.SemanticType = newSemanticType.Trim();
+        // "Edited" means the user actually changed something from what the AI produced - the
+        // value, the label, or the type (e.g. correcting a misdetected Number to Currency) all
+        // count; only the include-in-export toggle is excluded, since that's an export
+        // preference rather than a content correction. Comparing against the CURRENT state each
+        // time (not a one-way "was ever touched" flag) means editing a value back to exactly
+        // what the AI originally found correctly clears the "edited" indicator again.
+        field.WasEditedByUser = field.OriginalAiValue != field.FieldValue
+            || field.OriginalFieldKey != field.FieldKey
+            || field.OriginalSemanticType != field.SemanticType;
+        if (includeInExport is not null) field.IncludeInExport = includeInExport.Value;
 
         await _documents.SaveChangesAsync(ct);
 
@@ -556,9 +570,9 @@ public class DocumentProcessingService
     // extracted rows already have a concrete value baked in by ProcessDocumentAsync's merge loop.
     private static ExtractedFieldEditDto ToEditDto(ExtractedField f) => new(
         f.Id, f.FieldKey, f.OriginalFieldKey, f.FieldValue, f.PageNumber, f.WasEditedByUser,
-        string.IsNullOrWhiteSpace(f.SemanticType) ? "Generic" : f.SemanticType,
+        string.IsNullOrWhiteSpace(f.SemanticType) ? "Text" : f.SemanticType,
         string.IsNullOrWhiteSpace(f.SectionLabel) ? "General" : f.SectionLabel,
-        f.IncludeInExport, f.SortOrder, f.OriginalAiValue);
+        f.IncludeInExport, f.SortOrder, f.OriginalAiValue, f.OriginalSemanticType);
 
     public static DocumentDetailDto MapToDetailDto(Document document) => new(
         document.Id,

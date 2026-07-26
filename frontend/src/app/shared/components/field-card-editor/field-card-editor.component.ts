@@ -56,13 +56,19 @@ interface CardDocument {
       }
     </div>
 
-    @for (doc of docModels; track doc.id) {
+    <div class="usage-tip">
+      <app-icon name="sparkles" [size]="14" />
+      <span>Drag <app-icon name="grip" [size]="12" /> to reorder fields or move them between sections. "Select all"/"Unselect all" controls which fields are included when you export or email.</span>
+    </div>
+
+    @for (doc of docModels; track doc.id; let docIndex = $index) {
       <div class="doc-group">
         @if (docModels.length > 1) {
           <div class="doc-group-head">
+            <span class="doc-badge">{{ docIndex + 1 }}</span>
             <app-icon name="file-text" [size]="16" />
             <span class="doc-name" [title]="doc.fileName">{{ doc.fileName }}</span>
-            <span class="muted small">{{ includedCount(doc) }} of {{ totalCount(doc) }} included in export</span>
+            <span class="doc-progress">{{ includedCount(doc) }} of {{ totalCount(doc) }} included in export</span>
           </div>
         }
 
@@ -70,6 +76,7 @@ interface CardDocument {
           <button type="button" class="link-btn" (click)="setDocIncluded(doc, true)">Select all</button>
           <span class="dot">·</span>
           <button type="button" class="link-btn" (click)="setDocIncluded(doc, false)">Unselect all</button>
+          <span class="muted small toolbar-hint">for export</span>
         </div>
 
         @if (searchTerm && !docHasMatch(doc)) {
@@ -122,6 +129,11 @@ interface CardDocument {
                       @if (!isKnownType(field.semanticType)) {
                         <input class="dm-input custom-type-input" [(ngModel)]="field.semanticType" (blur)="emitSave(doc, field)" placeholder="Custom type" />
                       }
+                      @if (field.wasEditedByUser && field.originalSemanticType && field.originalSemanticType !== field.semanticType) {
+                        <span class="original-hint" [title]="'AI originally classified as: ' + field.originalSemanticType">
+                          Was: {{ field.originalSemanticType }}
+                        </span>
+                      }
                     </div>
 
                     <div class="field-meta-col">
@@ -153,10 +165,33 @@ interface CardDocument {
     .filter-summary { margin: 10px 0 0; }
     .no-match { padding: 10px 4px; font-style: italic; }
 
-    .doc-group { margin-bottom: 28px; }
-    .doc-group-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-    .doc-group-head app-icon { color: var(--dm-text-muted); flex-shrink: 0; }
+    .usage-tip {
+      display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; margin-bottom: 22px;
+      border-radius: var(--dm-radius-sm); background: rgba(99,102,241,0.07); border: 1px solid rgba(99,102,241,0.18);
+      color: var(--dm-text-muted); font-size: 0.82rem; line-height: 1.5;
+    }
+    .usage-tip app-icon:first-child { color: var(--dm-primary); flex-shrink: 0; margin-top: 2px; }
+    .usage-tip span app-icon { display: inline-block; vertical-align: -1px; color: var(--dm-text-muted); }
+
+    .doc-group { margin-bottom: 32px; }
+    /* A distinctly colored banner (not just plain text) so switching from one document's
+       fields to the next is immediately obvious while scrolling a bulk batch, instead of the
+       fields quietly running together with no visual break. */
+    .doc-group-head {
+      display: flex; align-items: center; gap: 10px; padding: 12px 16px; margin-bottom: 14px;
+      /* Solid color, not the gradient other pills use - the gradient's cyan end is too light
+         for white text to stay readable across a banner this wide (fine on a small button,
+         not on a full-width bar). */
+      border-radius: var(--dm-radius-md); background: var(--dm-primary); color: white;
+      box-shadow: 0 2px 10px rgba(99,102,241,0.25); flex-wrap: wrap;
+    }
+    .doc-group-head app-icon { color: white; flex-shrink: 0; opacity: 0.9; }
+    .doc-badge {
+      display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0;
+      border-radius: 50%; background: rgba(255,255,255,0.25); font-size: 0.72rem; font-weight: 700;
+    }
     .doc-name { font-weight: 700; overflow-wrap: break-word; word-break: break-word; }
+    .doc-progress { margin-left: auto; font-size: 0.78rem; opacity: 0.9; white-space: nowrap; }
     .muted { color: var(--dm-text-muted); }
     .small { font-size: 0.78rem; }
 
@@ -164,6 +199,7 @@ interface CardDocument {
     .link-btn { background: none; border: none; padding: 2px 4px; font-size: 0.78rem; font-weight: 700; color: var(--dm-primary); cursor: pointer; white-space: nowrap; }
     .link-btn:hover { text-decoration: underline; }
     .dot { color: var(--dm-text-muted); }
+    .toolbar-hint { margin-left: 2px; }
 
     .section-card { padding: 0; margin-bottom: 16px; overflow: hidden; }
     .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: var(--dm-surface); border-bottom: 1px solid var(--dm-border); flex-wrap: wrap; }

@@ -294,11 +294,12 @@ public class DocumentsController : ControllerBase
                 f.OriginalFieldKey,
                 f.FieldValue,
                 f.OriginalAiValue,
+                f.OriginalSemanticType,
                 f.PageNumber,
                 f.WasEditedByUser,
                 // Pre-existing rows extracted before these columns existed are null - fall back
-                // to "Generic"/"General" here so the frontend always gets a concrete grouping.
-                SemanticType = string.IsNullOrWhiteSpace(f.SemanticType) ? "Generic" : f.SemanticType,
+                // to "Text"/"General" here so the frontend always gets a concrete grouping.
+                SemanticType = string.IsNullOrWhiteSpace(f.SemanticType) ? "Text" : f.SemanticType,
                 SectionLabel = string.IsNullOrWhiteSpace(f.SectionLabel) ? "General" : f.SectionLabel,
                 f.IncludeInExport,
                 f.SortOrder

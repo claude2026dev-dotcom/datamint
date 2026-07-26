@@ -23,7 +23,7 @@ import { FieldJsonViewComponent } from '../../shared/components/field-json-view/
   imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, ExportModalComponent,
             FieldCardEditorComponent, FieldTableViewComponent, FieldJsonViewComponent],
   template: `
-    <div class="dm-container page">
+    <div class="dm-container page page-wide">
       <app-back-button fallbackUrl="/documents" />
       @if (notFound) {
         <div class="dm-card not-found-card">
@@ -98,18 +98,27 @@ import { FieldJsonViewComponent } from '../../shared/components/field-json-view/
   `,
   styles: [`
     .page { padding-top: 40px; padding-bottom: 80px; }
+    /* The site-wide 1180px container is fine for prose pages, but cramps a data table that's
+       genuinely meant to show many fields/columns side by side - give this page more room. */
+    .page-wide { max-width: 1560px; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
+    /* Both button groups share the same 54px height so the two-line mode-toggle (title +
+       subtitle) and the single-line Excel/JSON/Email actions read as one consistent row
+       instead of one looking oversized next to the other. */
     .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .actions .dm-btn { display: inline-flex; align-items: center; gap: 6px; }
+    .actions .dm-btn { display: inline-flex; align-items: center; gap: 6px; height: 54px; padding: 0 22px; }
 
-    .mode-toggle { display: flex; gap: 6px; padding: 6px; border-radius: var(--dm-radius-lg); background: var(--dm-surface); border: 1px solid var(--dm-border); flex-wrap: wrap; }
-    .mode-option { display: inline-flex; align-items: center; gap: 10px; padding: 10px 18px; background: transparent; color: var(--dm-text-muted); border: 1px solid transparent; border-radius: var(--dm-radius-sm); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; white-space: nowrap; text-align: left; }
+    /* Same border-radius scale as .view-toggle elsewhere in the app (a soft rectangle, not a
+       pill) - the outer wrapper and inner buttons previously used different radii, which read
+       as a much rounder "pill" shape that stood out against the rest of the app's controls. */
+    .mode-toggle { display: flex; gap: 6px; padding: 6px; border-radius: var(--dm-radius-sm); background: var(--dm-surface); border: 1px solid var(--dm-border); flex-wrap: wrap; }
+    .mode-option { display: inline-flex; align-items: center; gap: 10px; height: 42px; padding: 0 18px; background: transparent; color: var(--dm-text-muted); border: 1px solid transparent; border-radius: var(--dm-radius-sm); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; white-space: nowrap; text-align: left; }
     .mode-option span { display: flex; flex-direction: column; gap: 1px; }
     .mode-option strong { font-size: 0.9rem; font-weight: 700; }
     .mode-option small { font-size: 0.7rem; font-weight: 500; opacity: 0.85; }
     .mode-option:hover { color: var(--dm-text); border-color: var(--dm-border); }
-    .mode-option.active { background: var(--dm-gradient-primary); color: white; box-shadow: 0 3px 10px rgba(99,102,241,0.35); }
+    .mode-option.active { background: var(--dm-primary); color: white; box-shadow: 0 3px 10px rgba(99,102,241,0.35); }
 
     .toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
     .toggle-group { display: flex; gap: 10px; flex-wrap: wrap; }

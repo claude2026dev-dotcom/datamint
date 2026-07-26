@@ -18,10 +18,15 @@ public class ExtractedField : BaseEntity
     public bool WasEditedByUser { get; set; }
     public int SortOrder { get; set; }
 
-    // AI-suggested classification, e.g. "Address"/"Date"/"Amount"/"Name"/"Reference"/"Contact"/
-    // "Quantity"/"Generic" - deliberately domain-agnostic (works for invoices, shipping/logistics
-    // manifests, contracts, etc.), not a fixed enum since the taxonomy may grow.
+    // AI-suggested classification, matching real spreadsheet cell data types - "Text"/"Number"/
+    // "Currency"/"Date"/"Percentage"/"Boolean" - not a fixed enum since a user can still type a
+    // custom value. Drives both the review UI's type picker and the Excel export's per-cell
+    // number format (see ExcelExportService.SetTypedValue).
     public string? SemanticType { get; set; }
+    // Untouched classification as the AI found it - a user changing the type (e.g. correcting
+    // a misdetected Number to Currency) counts as an edit alongside the key/value, same as
+    // OriginalFieldKey/OriginalAiValue above.
+    public string? OriginalSemanticType { get; set; }
 
     // AI-suggested group name for organizing related fields together, e.g. "Shipping Details",
     // "Billing Info", "Line Items" - free text, not a separate entity; renaming a section is

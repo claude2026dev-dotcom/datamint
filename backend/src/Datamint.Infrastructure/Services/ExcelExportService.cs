@@ -28,13 +28,13 @@ public class ExcelExportService : IExcelExportService
 
     /// <summary>
     /// Writes a field's value into a cell using a real Excel type where the field's SemanticType
-    /// makes that meaningful (Amount/Quantity/Percentage as numbers, Date as a real date, Boolean
+    /// makes that meaningful (Currency/Number/Percentage as numbers, Date as a real date, Boolean
     /// as true/false) instead of always writing plain text - so the exported sheet can actually
-    /// be summed, sorted, or filtered like real spreadsheet data. Reference/Contact/Name/Address/
-    /// Email/URL/Generic stay plain text on purpose - things like leading zeros, "+" prefixes, or
-    /// non-numeric characters in an ID/phone number would be silently corrupted by numeric
-    /// coercion. Any value that fails to parse for its declared type falls back to plain text
-    /// rather than dropping or corrupting it - never let a formatting nicety lose real data.
+    /// be summed, sorted, or filtered like real spreadsheet data. "Text" stays plain text on
+    /// purpose - names, addresses, reference/ID numbers, phone numbers, emails, and URLs would
+    /// have leading zeros, "+" prefixes, or other non-numeric characters silently corrupted by
+    /// numeric coercion. Any value that fails to parse for its declared type falls back to plain
+    /// text rather than dropping or corrupting it - never let a formatting nicety lose real data.
     /// </summary>
     private static void SetTypedValue(IXLCell cell, string? rawValue, string? semanticType)
     {
@@ -42,7 +42,7 @@ public class ExcelExportService : IExcelExportService
 
         switch (semanticType)
         {
-            case "Amount":
+            case "Currency":
                 if (TryParseNumber(rawValue, out var amount))
                 {
                     cell.Value = amount;
@@ -51,7 +51,7 @@ public class ExcelExportService : IExcelExportService
                 }
                 break;
 
-            case "Quantity":
+            case "Number":
                 if (TryParseNumber(rawValue, out var qty))
                 {
                     cell.Value = qty;
@@ -87,8 +87,8 @@ public class ExcelExportService : IExcelExportService
                 break;
         }
 
-        // Generic/Name/Address/Reference/Contact/Email/URL, or a value that didn't actually
-        // match its declared type (e.g. "N/A" on an Amount field) - keep it as-is, verbatim.
+        // "Text", or a value that didn't actually match its declared type (e.g. "N/A" on a
+        // Currency field) - keep it as-is, verbatim.
         cell.Value = rawValue;
     }
 
@@ -176,7 +176,7 @@ public class ExcelExportService : IExcelExportService
             sheet.Cell(row, 1).Value = field.PageNumber?.ToString() ?? "-";
             sheet.Cell(row, 2).Value = field.FieldKey;
             SetTypedValue(sheet.Cell(row, 3), field.FieldValue, field.SemanticType);
-            sheet.Cell(row, 4).Value = string.IsNullOrWhiteSpace(field.SemanticType) ? "Generic" : field.SemanticType;
+            sheet.Cell(row, 4).Value = string.IsNullOrWhiteSpace(field.SemanticType) ? "Text" : field.SemanticType;
             row++;
         }
 
@@ -231,7 +231,7 @@ public class ExcelExportService : IExcelExportService
                 {
                     fieldKeysInOrder.Add(field.FieldKey);
                     sectionByKey[field.FieldKey] = string.IsNullOrWhiteSpace(field.SectionLabel) ? "General" : field.SectionLabel;
-                    semanticTypeByKey[field.FieldKey] = string.IsNullOrWhiteSpace(field.SemanticType) ? "Generic" : field.SemanticType;
+                    semanticTypeByKey[field.FieldKey] = string.IsNullOrWhiteSpace(field.SemanticType) ? "Text" : field.SemanticType;
                 }
             }
         }

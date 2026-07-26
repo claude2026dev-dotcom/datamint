@@ -49,11 +49,14 @@ export interface ExtractedFieldEdit {
   originalAiValue?: string | null;
   pageNumber: number | null;
   wasEditedByUser: boolean;
-  // AI-suggested classification (e.g. "Address"/"Date"/"Amount"/"Generic") - always a concrete
-  // string, backend falls back to "Generic" for rows extracted before this existed. User-editable
-  // via the Edit tab's type picker - corrected purely for export formatting, doesn't itself count
-  // as an "edit" (see DocumentProcessingService.UpdateFieldAsync).
+  // AI-suggested classification, matching real spreadsheet cell data types (see SEMANTIC_TYPES
+  // below) - always a concrete string, backend falls back to "Text" for rows extracted before
+  // this existed. User-editable via the Edit tab's type picker; changing it counts as an edit
+  // alongside the key/value (see DocumentProcessingService.UpdateFieldAsync).
   semanticType: string;
+  // The AI's original classification - lets the Edit tab show "Originally: X" once a user has
+  // corrected the type, the same comparison originalAiValue powers for the value.
+  originalSemanticType?: string | null;
   // AI-suggested group name (e.g. "Shipping Details") - falls back to "General".
   sectionLabel: string;
   includeInExport: boolean;
@@ -73,7 +76,7 @@ export interface FieldEditorDocument {
 // so a manual correction and an AI classification always draw from the same set. The picker still
 // accepts a free-text/custom entry beyond this list - SemanticType is just a string end to end.
 export const SEMANTIC_TYPES: string[] = [
-  'Generic', 'Name', 'Address', 'Contact', 'Email', 'URL', 'Date', 'Amount', 'Quantity', 'Percentage', 'Boolean', 'Reference'
+  'Text', 'Number', 'Currency', 'Date', 'Percentage', 'Boolean'
 ];
 
 export interface FieldTemplate {

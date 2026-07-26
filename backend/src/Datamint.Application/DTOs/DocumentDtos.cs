@@ -29,7 +29,7 @@ public record DocumentSummaryDto(
     Guid UploadBatchId = default);
 
 public record ExtractedFieldEditDto(Guid Id, string FieldKey, string OriginalFieldKey, string? FieldValue, int? PageNumber, bool WasEditedByUser,
-    string SemanticType, string SectionLabel, bool IncludeInExport, int SortOrder, string? OriginalAiValue = null);
+    string SemanticType, string SectionLabel, bool IncludeInExport, int SortOrder, string? OriginalAiValue = null, string? OriginalSemanticType = null);
 
 public record DocumentDetailDto(
     Guid Id,
