@@ -5,14 +5,16 @@ import { NavbarComponent } from './shared/components/navbar/navbar.component';
 import { ToastComponent } from './shared/components/toast/toast.component';
 import { ConfirmDialogComponent } from './shared/components/confirm-dialog/confirm-dialog.component';
 import { FooterComponent } from './shared/components/footer/footer.component';
+import { OfflineBannerComponent } from './shared/components/offline-banner/offline-banner.component';
 import { environment } from '../environments/environment';
 import { AuthService } from './core/services/auth.service';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, NavbarComponent, ToastComponent, ConfirmDialogComponent, FooterComponent],
+  imports: [RouterOutlet, NavbarComponent, ToastComponent, ConfirmDialogComponent, FooterComponent, OfflineBannerComponent],
   template: `
+    <app-offline-banner></app-offline-banner>
     <app-navbar></app-navbar>
     <router-outlet></router-outlet>
     <app-footer></app-footer>

@@ -4,11 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { AdminService } from '../../../core/services/admin.service';
 import { formatIpAddress, describeDevice } from '../../../core/utils/request-context.util';
 import { IconComponent } from '../../../shared/components/icon/icon.component';
+import { LoadingHintComponent } from '../../../shared/components/loading-hint/loading-hint.component';
 
 @Component({
   selector: 'app-admin-audits',
   standalone: true,
-  imports: [CommonModule, FormsModule, IconComponent],
+  imports: [CommonModule, FormsModule, IconComponent, LoadingHintComponent],
   template: `
     <div class="page-head">
       <div>
@@ -121,6 +122,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           </tbody>
         </table>
       </div>
+      <app-loading-hint [loading]="loading" />
 
       @if (!loading && visibleLogs.length > 0) {
         <div class="pagination">

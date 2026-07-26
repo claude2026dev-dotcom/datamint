@@ -28,6 +28,12 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           <a routerLink="/admin/users" routerLinkActive="active" title="Users">
             <app-icon name="users" [size]="17" /> <span>Users</span>
           </a>
+          <a routerLink="/admin/oauth-clients" routerLinkActive="active" title="OAuth Clients">
+            <app-icon name="key" [size]="17" /> <span>OAuth Clients</span>
+          </a>
+          <a routerLink="/admin/scopes" routerLinkActive="active" title="Scopes">
+            <app-icon name="grid" [size]="17" /> <span>Scopes</span>
+          </a>
         </nav>
 
         <a routerLink="/" class="sidebar-footer"><app-icon name="chevron-left" [size]="15" /> Back to app</a>

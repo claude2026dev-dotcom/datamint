@@ -8,7 +8,8 @@
   "// App:Name": "Suffixed so QA emails are visually unmistakable from a real production email while testing",
   "App": {
     "Name": "Datamint (QA)",
-    "FrontendBaseUrl": "https://qa.yourdomain.com"
+    "FrontendBaseUrl": "https://qa.yourdomain.com",
+    "ApiBaseUrl": "https://api-qa.yourdomain.com"
   },
 
   "Cors": {

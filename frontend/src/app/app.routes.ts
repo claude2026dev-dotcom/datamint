@@ -24,6 +24,12 @@ export const routes: Routes = [
       { path: '', loadComponent: () => import('./features/admin/dashboard/admin-dashboard.component').then(m => m.AdminDashboardComponent) },
       { path: 'audits', loadComponent: () => import('./features/admin/audits/admin-audits.component').then(m => m.AdminAuditsComponent) },
       { path: 'users', loadComponent: () => import('./features/admin/users/admin-users.component').then(m => m.AdminUsersComponent) },
+      { path: 'oauth-clients', loadComponent: () => import('./features/admin/oauth-clients/admin-oauth-clients.component').then(m => m.AdminOAuthClientsComponent) },
+      // Static "new" route must come before the ":id" route below - Angular matches children
+      // in array order, so ":id" listed first would swallow "/admin/oauth-clients/new" as id="new".
+      { path: 'oauth-clients/new', loadComponent: () => import('./features/admin/oauth-clients/oauth-client-form.component').then(m => m.OAuthClientFormComponent) },
+      { path: 'oauth-clients/:id', loadComponent: () => import('./features/admin/oauth-clients/oauth-client-form.component').then(m => m.OAuthClientFormComponent) },
+      { path: 'scopes', loadComponent: () => import('./features/admin/oauth-scopes/admin-oauth-scopes.component').then(m => m.AdminOAuthScopesComponent) },
     ]
   },
   { path: '**', loadComponent: () => import('./features/not-found/not-found.component').then(m => m.NotFoundComponent) }

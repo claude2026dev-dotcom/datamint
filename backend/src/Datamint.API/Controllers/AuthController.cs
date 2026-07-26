@@ -266,7 +266,7 @@ public class AuthController : ControllerBase
     [HttpPost("me/avatar")]
     [Authorize]
     [RequestSizeLimit(MaxAvatarUploadMb * 1024 * 1024)]
-    public async Task<IActionResult> UploadAvatar([FromForm] IFormFile file, CancellationToken ct)
+    public async Task<IActionResult> UploadAvatar(IFormFile file, CancellationToken ct)
     {
         var user = await _users.GetByIdAsync(_currentUser.UserId!.Value, ct);
         if (user is null) return NotFound(new { success = false, message = "User not found." });

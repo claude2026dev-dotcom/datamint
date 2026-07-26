@@ -11,7 +11,8 @@
 
   "App": {
     "Name": "Datamint",
-    "FrontendBaseUrl": "https://yourdomain.com"
+    "FrontendBaseUrl": "https://yourdomain.com",
+    "ApiBaseUrl": "https://api.yourdomain.com"
   },
 
   "Cors": {

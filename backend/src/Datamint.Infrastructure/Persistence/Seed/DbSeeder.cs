@@ -1,15 +1,20 @@
 using Datamint.Domain.Entities;
+using Datamint.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace Datamint.Infrastructure.Persistence.Seed;
 
 /// <summary>
 /// Seeds a default admin user (change the password immediately after first
-/// login — default is admin@datamint.local / ChangeMe123!).
+/// login — default is admin@datamint.local / ChangeMe123!), plus the default OAuth2 scopes
+/// and the built-in "Swagger UI" OAuth client Swagger's own Authorize button uses.
 /// </summary>
 public static class DbSeeder
 {
-    public static async Task SeedAsync(DatamintDbContext db)
+    public const string SwaggerClientId = "datamint-swagger-ui";
+
+    public static async Task SeedAsync(DatamintDbContext db, IConfiguration config)
     {
         await db.Database.MigrateAsync();
 
@@ -34,6 +39,70 @@ public static class DbSeeder
             var earliestAdmin = await db.Users.Where(u => u.Role == "Admin")
                 .OrderBy(u => u.CreatedAtUtc).FirstOrDefaultAsync();
             if (earliestAdmin is not null) earliestAdmin.IsSuperAdmin = true;
+        }
+
+        await db.SaveChangesAsync();
+        await SeedOAuthAsync(db, config);
+    }
+
+    /// <summary>
+    /// Unlike the admin-user seed above (create-once), this re-runs its sync check on every
+    /// startup: the built-in Swagger client's redirect_uri is environment-specific
+    /// (different host in dev vs. prod), so a create-once seed would go stale the moment the
+    /// app moves environments. Never destructive - only ever ADDS a missing default scope or a
+    /// missing-for-this-environment redirect_uri, never removes anything an admin may have
+    /// since customized via the OAuth Clients admin UI.
+    /// </summary>
+    private static async Task SeedOAuthAsync(DatamintDbContext db, IConfiguration config)
+    {
+        var defaultScopes = new (string Name, string DisplayName, string Description)[]
+        {
+            ("profile", "View your profile", "See your basic Datamint account information."),
+            ("api.access", "Access the API on your behalf", "Call the Datamint API as you, within the limits of any other granted scopes.")
+        };
+
+        foreach (var (name, displayName, description) in defaultScopes)
+        {
+            if (await db.OAuthScopes.AnyAsync(s => s.Name == name)) continue;
+            db.OAuthScopes.Add(new OAuthScope
+            {
+                Name = name,
+                DisplayName = displayName,
+                Description = description,
+                IsDefault = true,
+                IsEnabled = true
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var apiBaseUrl = (config["App:ApiBaseUrl"] ?? "https://localhost:5001").TrimEnd('/');
+        var swaggerRedirectUri = $"{apiBaseUrl}/swagger/oauth2-redirect.html";
+
+        var swaggerClient = await db.OAuthClients
+            .Include(c => c.RedirectUris).Include(c => c.Scopes)
+            .FirstOrDefaultAsync(c => c.ClientId == SwaggerClientId);
+
+        if (swaggerClient is null)
+        {
+            var scopes = await db.OAuthScopes.Where(s => defaultScopes.Select(d => d.Name).Contains(s.Name)).ToListAsync();
+            db.OAuthClients.Add(new OAuthClient
+            {
+                ClientId = SwaggerClientId,
+                Name = "Swagger UI",
+                ClientSecretHash = null, // public client - PKCE is its authentication
+                IsConfidential = false,
+                RequireConsent = false, // first-party developer tooling, not a third-party app
+                GrantTypes = OAuthGrantTypes.AuthorizationCode | OAuthGrantTypes.RefreshToken,
+                AccessTokenLifetimeMinutes = 30,
+                RefreshTokenLifetimeDays = 7,
+                IsEnabled = true,
+                RedirectUris = new List<OAuthRedirectUri> { new() { Uri = swaggerRedirectUri } },
+                Scopes = scopes
+            });
+        }
+        else if (!swaggerClient.RedirectUris.Any(r => r.Uri == swaggerRedirectUri))
+        {
+            swaggerClient.RedirectUris.Add(new OAuthRedirectUri { OAuthClientId = swaggerClient.Id, Uri = swaggerRedirectUri });
         }
 
         await db.SaveChangesAsync();

@@ -14,6 +14,7 @@ using Datamint.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,8 +32,13 @@ builder.Host.UseSerilog();
 builder.Services.AddDbContext<DatamintDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Backs OAuthService's short-lived authorization-code replay cache (see IOAuthService).
+builder.Services.AddMemoryCache();
+
 // ---------- Repositories ----------
 builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IOAuthClientRepository, OAuthClientRepository>();
+builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
 builder.Services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
 
 // ---------- Infrastructure services (swap implementations here only) ----------
@@ -45,6 +51,11 @@ builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IAvatarImageService, AvatarImageService>();
+builder.Services.AddScoped<IOAuthService, OAuthService>();
+builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>();
+builder.Services.AddScoped<IPageImageRenderingService, PdfPageImageRenderingService>();
+builder.Services.AddScoped<IExcelExportService, ExcelExportService>();
+builder.Services.AddScoped<IJsonExportService, JsonExportService>();
 
 // Sweeps deactivated accounts past their DeactivationGraceDays window and erases them.
 builder.Services.AddHostedService<Datamint.Infrastructure.Services.AccountPurgeService>();
@@ -80,11 +91,36 @@ builder.Services.AddAuthentication(options =>
     {
         OnTokenValidated = async context =>
         {
+            var db = context.HttpContext.RequestServices.GetRequiredService<DatamintDbContext>();
+
+            // Every OAuth2-issued access token (client_credentials or user-delegated
+            // authorization_code) carries a client_id claim - checked live so disabling an
+            // OAuth client kills its outstanding tokens immediately, the same
+            // immediate-revocation philosophy the security-stamp check below already applies
+            // to disabling a user. This runs in ADDITION to the user check, not instead of it,
+            // for a user-delegated token (which has both claims).
+            var clientIdClaim = context.Principal?.FindFirstValue(JwtClaimTypes.OAuthClientId);
+            if (clientIdClaim is not null)
+            {
+                var client = await db.OAuthClients.FirstOrDefaultAsync(c => c.ClientId == clientIdClaim);
+                if (client is null || !client.IsEnabled)
+                {
+                    context.Fail("This OAuth client is no longer valid.");
+                    return;
+                }
+            }
+
             // The default JWT inbound claim mapping rewrites the short "sub" claim to
             // the long ClaimTypes.NameIdentifier URI, so it has to be looked up the
             // same dual way CurrentUserService already does elsewhere in this app.
             var userIdClaim = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier)
                                ?? context.Principal?.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+            // A client_credentials token has no "sub" at all - there's no user behind it, so
+            // there's nothing further to check once the client itself has been confirmed valid
+            // above.
+            if (userIdClaim is null) return;
+
             var stampClaim = context.Principal?.FindFirstValue(JwtClaimTypes.SecurityStamp);
 
             if (!Guid.TryParse(userIdClaim, out var userId))
@@ -93,7 +129,6 @@ builder.Services.AddAuthentication(options =>
                 return;
             }
 
-            var db = context.HttpContext.RequestServices.GetRequiredService<DatamintDbContext>();
             var user = await db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId);
 
             if (user is null || user.IsDeleted || !user.IsActive || user.SecurityStamp != stampClaim)
@@ -121,7 +156,60 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    // Adds the "Authorize" padlock button: paste "Bearer <access token>" once (get one from
+    // POST /api/auth/login below) and Swagger attaches it to every subsequent [Authorize] call.
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Enter 'Bearer' followed by a space and your access token, e.g. \"Bearer eyJhbGciOi...\""
+    });
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } },
+            Array.Empty<string>()
+        }
+    });
+
+    // Second, alternative way to authorize: this app's own OAuth2 Authorization Server, using
+    // Authorization Code + PKCE (RFC 7636) - not the deprecated Implicit flow. Swagger's
+    // Authorize button opens /oauth/login (real login + consent UI) in a popup; on success the
+    // popup redirects itself through /oauth/authorize/complete and then to Swagger's own
+    // oauth2-redirect.html, which exchanges the code for a token at /oauth/token (with the
+    // code_verifier swagger-ui generated itself via OAuthUsePkce() below) and applies it -
+    // no client secret ever appears anywhere in this flow.
+    options.AddSecurityDefinition("OAuth2", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.OAuth2,
+        Flows = new OpenApiOAuthFlows
+        {
+            AuthorizationCode = new OpenApiOAuthFlow
+            {
+                AuthorizationUrl = new Uri("/oauth/authorize", UriKind.Relative),
+                TokenUrl = new Uri("/oauth/token", UriKind.Relative),
+                Scopes = new Dictionary<string, string>
+                {
+                    ["profile"] = "View your profile",
+                    ["api.access"] = "Access the API on your behalf"
+                }
+            }
+        },
+        Description = "Sign in with your Datamint email and password - opens a login page, then authorizes automatically."
+    });
+    options.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "OAuth2" } },
+            Array.Empty<string>()
+        }
+    });
+});
 
 var app = builder.Build();
 
@@ -129,13 +217,22 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<DatamintDbContext>();
-    await DbSeeder.SeedAsync(db);
+    await DbSeeder.SeedAsync(db, app.Configuration);
 }
 
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(options =>
+    {
+        // Pre-fills the Authorization Code flow's client_id with the built-in public client
+        // DbSeeder seeds on startup, so the Authorize dialog never has to ask for one.
+        options.OAuthClientId(DbSeeder.SwaggerClientId);
+        // swagger-ui generates its own code_verifier/code_challenge (S256) and carries it
+        // through the whole flow automatically - this is what makes PKCE work for a public
+        // client with zero manual steps.
+        options.OAuthUsePkce();
+    });
 }
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();

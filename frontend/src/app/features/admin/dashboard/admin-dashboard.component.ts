@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { AdminService } from '../../../core/services/admin.service';
 import { IconComponent } from '../../../shared/components/icon/icon.component';
+import { LoadingHintComponent } from '../../../shared/components/loading-hint/loading-hint.component';
 
 @Component({
   selector: 'app-admin-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterLink, IconComponent],
+  imports: [CommonModule, RouterLink, IconComponent, LoadingHintComponent],
   template: `
     <div class="page-head">
       <h1>Overview</h1>
@@ -23,6 +24,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
       <div class="stat-grid">
         @for (i of [1,2,3,4,5,6]; track i) { <div class="dm-card stat skeleton"></div> }
       </div>
+      <app-loading-hint [loading]="loading" />
     } @else {
       <div class="stat-grid">
         <div class="dm-card stat">

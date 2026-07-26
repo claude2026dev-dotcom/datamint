@@ -22,3 +22,23 @@ public interface IUserRepository : IGenericRepository<ApplicationUser>
     /// database's unconditional unique index on Email (which a soft-deleted row still holds).</summary>
     Task<ApplicationUser?> GetByEmailIncludingDeletedAsync(string email, CancellationToken ct = default);
 }
+
+public interface IOAuthClientRepository : IGenericRepository<OAuthClient>
+{
+    /// <summary>Always includes RedirectUris and Scopes - every caller (protocol logic, admin
+    /// CRUD) ends up needing both, so this stays one method rather than forcing every call site
+    /// to remember which .Include() chain it needs.</summary>
+    Task<OAuthClient?> GetByClientIdAsync(string clientId, CancellationToken ct = default);
+}
+
+public interface IDocumentRepository : IGenericRepository<Document>
+{
+    /// <summary>Always includes Pages, ExtractedFields, and ExtractionTier - every caller
+    /// (processing, review, export) ends up needing the full graph, so this stays one method
+    /// rather than forcing every call site to remember which .Include() chain it needs.</summary>
+    Task<Document?> GetWithDetailsAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>Every document sharing the given batch id, owned by the given user - powers
+    /// both the batch-review page and batch export/email.</summary>
+    Task<List<Document>> GetByBatchIdAsync(Guid uploadBatchId, Guid userId, CancellationToken ct = default);
+}

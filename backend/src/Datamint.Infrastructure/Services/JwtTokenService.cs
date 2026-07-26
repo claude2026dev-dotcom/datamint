@@ -52,4 +52,31 @@ public class JwtTokenService : IJwtTokenService
 
     public string HashToken(string token) =>
         Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+
+    public string GenerateOAuthAccessToken(string clientId, ApplicationUser? user, string scope, int lifetimeMinutes)
+    {
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtClaimTypes.OAuthClientId, clientId),
+            new(JwtClaimTypes.OAuthScope, scope)
+        };
+        if (user is not null)
+        {
+            claims.Add(new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()));
+            claims.Add(new Claim(JwtClaimTypes.SecurityStamp, user.SecurityStamp));
+        }
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Secret"]!));
+        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var token = new JwtSecurityToken(
+            issuer: _config["Jwt:Issuer"],
+            audience: _config["Jwt:Audience"],
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(lifetimeMinutes),
+            signingCredentials: creds);
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
 }
