@@ -326,7 +326,7 @@ public class DocumentProcessingService
         }
     }
 
-    public async Task<Result<ExtractedFieldEditDto>> UpdateFieldAsync(Guid documentId, Guid fieldId, string? newValue, string? newKey = null, bool? includeInExport = null, CancellationToken ct = default)
+    public async Task<Result<ExtractedFieldEditDto>> UpdateFieldAsync(Guid documentId, Guid fieldId, string? newValue, string? newKey = null, bool? includeInExport = null, string? newSemanticType = null, CancellationToken ct = default)
     {
         var document = await _documents.GetWithDetailsAsync(documentId, ct);
         if (document is null) return Result<ExtractedFieldEditDto>.Failure("Document not found.", "NOT_FOUND");
@@ -342,9 +342,11 @@ public class DocumentProcessingService
             field.FieldKey = newKey.Trim();
         // "Edited" means the user actually changed something from what the AI produced - either
         // the value or the label - not just that a save request was sent. The include-in-export
-        // toggle is deliberately excluded - it's an export preference, not a content correction.
+        // toggle and the semantic-type correction are deliberately excluded - they're metadata/
+        // export preferences, not content corrections.
         field.WasEditedByUser = field.OriginalAiValue != field.FieldValue || field.OriginalFieldKey != field.FieldKey;
         if (includeInExport is not null) field.IncludeInExport = includeInExport.Value;
+        if (!string.IsNullOrWhiteSpace(newSemanticType)) field.SemanticType = newSemanticType.Trim();
 
         await _documents.SaveChangesAsync(ct);
 
@@ -556,7 +558,7 @@ public class DocumentProcessingService
         f.Id, f.FieldKey, f.OriginalFieldKey, f.FieldValue, f.PageNumber, f.WasEditedByUser,
         string.IsNullOrWhiteSpace(f.SemanticType) ? "Generic" : f.SemanticType,
         string.IsNullOrWhiteSpace(f.SectionLabel) ? "General" : f.SectionLabel,
-        f.IncludeInExport, f.SortOrder);
+        f.IncludeInExport, f.SortOrder, f.OriginalAiValue);
 
     public static DocumentDetailDto MapToDetailDto(Document document) => new(
         document.Id,

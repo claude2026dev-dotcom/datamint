@@ -293,6 +293,7 @@ public class DocumentsController : ControllerBase
                 f.FieldKey,
                 f.OriginalFieldKey,
                 f.FieldValue,
+                f.OriginalAiValue,
                 f.PageNumber,
                 f.WasEditedByUser,
                 // Pre-existing rows extracted before these columns existed are null - fall back
@@ -311,7 +312,7 @@ public class DocumentsController : ControllerBase
         var (_, error) = await GetOwnedDocumentAsync(id, ct);
         if (error is not null) return error;
 
-        var result = await _service.UpdateFieldAsync(id, dto.FieldId, dto.NewValue, dto.NewKey, dto.IncludeInExport, ct);
+        var result = await _service.UpdateFieldAsync(id, dto.FieldId, dto.NewValue, dto.NewKey, dto.IncludeInExport, dto.NewSemanticType, ct);
         return result.Succeeded ? Ok(new { success = true, field = result.Data }) : NotFound(new { success = false, message = result.Error });
     }
 

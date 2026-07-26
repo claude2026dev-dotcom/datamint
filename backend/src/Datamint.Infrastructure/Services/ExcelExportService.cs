@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.IO.Compression;
+using System.Text.RegularExpressions;
 using ClosedXML.Excel;
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
@@ -8,13 +10,13 @@ namespace Datamint.Infrastructure.Services;
 
 /// <summary>Builds a clean .xlsx from the (possibly user-edited) extracted fields, in either
 /// a rows-per-field or columns-per-field layout, respecting per-field/per-document export
-/// selection.</summary>
+/// selection. Deliberately shows only field/value (plus page and type for context) - edit
+/// history and the AI's original values are a review-page-only concept (see the on-screen
+/// "Edit" tab), never written into the exported file itself.</summary>
 public class ExcelExportService : IExcelExportService
 {
     private static readonly XLColor HeaderFill = XLColor.FromHtml("#4F46E5");
     private static readonly XLColor SectionFill = XLColor.FromHtml("#E5E7FF");
-    private static readonly XLColor EditedFill = XLColor.FromHtml("#FEF3C7");
-    private static readonly XLColor EditedFont = XLColor.FromHtml("#92400E");
 
     /// <summary>Same include-filter every export path applies: an explicit includedFieldIds
     /// override wins if given, otherwise each field's own saved IncludeInExport flag decides.</summary>
@@ -23,6 +25,109 @@ public class ExcelExportService : IExcelExportService
             ? fields.Where(f => ids.Contains(f.Id))
             : fields.Where(f => f.IncludeInExport))
         .ToList();
+
+    /// <summary>
+    /// Writes a field's value into a cell using a real Excel type where the field's SemanticType
+    /// makes that meaningful (Amount/Quantity/Percentage as numbers, Date as a real date, Boolean
+    /// as true/false) instead of always writing plain text - so the exported sheet can actually
+    /// be summed, sorted, or filtered like real spreadsheet data. Reference/Contact/Name/Address/
+    /// Email/URL/Generic stay plain text on purpose - things like leading zeros, "+" prefixes, or
+    /// non-numeric characters in an ID/phone number would be silently corrupted by numeric
+    /// coercion. Any value that fails to parse for its declared type falls back to plain text
+    /// rather than dropping or corrupting it - never let a formatting nicety lose real data.
+    /// </summary>
+    private static void SetTypedValue(IXLCell cell, string? rawValue, string? semanticType)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue)) { cell.Value = string.Empty; return; }
+
+        switch (semanticType)
+        {
+            case "Amount":
+                if (TryParseNumber(rawValue, out var amount))
+                {
+                    cell.Value = amount;
+                    cell.Style.NumberFormat.Format = "#,##0.00;(#,##0.00)";
+                    return;
+                }
+                break;
+
+            case "Quantity":
+                if (TryParseNumber(rawValue, out var qty))
+                {
+                    cell.Value = qty;
+                    cell.Style.NumberFormat.Format = "#,##0.##";
+                    return;
+                }
+                break;
+
+            case "Percentage":
+                if (TryParseNumber(rawValue.Replace("%", ""), out var pct))
+                {
+                    cell.Value = pct / 100m;
+                    cell.Style.NumberFormat.Format = "0.00%";
+                    return;
+                }
+                break;
+
+            case "Date":
+                if (TryParseDate(rawValue, out var date))
+                {
+                    cell.Value = date;
+                    cell.Style.NumberFormat.Format = "dd-mmm-yyyy";
+                    return;
+                }
+                break;
+
+            case "Boolean":
+                switch (rawValue.Trim().ToLowerInvariant())
+                {
+                    case "yes": case "y": case "true": cell.Value = true; return;
+                    case "no": case "n": case "false": cell.Value = false; return;
+                }
+                break;
+        }
+
+        // Generic/Name/Address/Reference/Contact/Email/URL, or a value that didn't actually
+        // match its declared type (e.g. "N/A" on an Amount field) - keep it as-is, verbatim.
+        cell.Value = rawValue;
+    }
+
+    /// <summary>Strips currency symbols, thousands separators (including Indian lakh/crore
+    /// grouping like "5,00,000", which .NET's culture-based parsing doesn't recognize), and
+    /// treats accounting-style parentheses as negative, before parsing.</summary>
+    private static bool TryParseNumber(string raw, out decimal value)
+    {
+        var cleaned = raw.Trim();
+        var negative = false;
+        if (cleaned.StartsWith('(') && cleaned.EndsWith(')'))
+        {
+            negative = true;
+            cleaned = cleaned[1..^1];
+        }
+        cleaned = Regex.Replace(cleaned, @"[^\d.\-]", "");
+
+        if (decimal.TryParse(cleaned, NumberStyles.Number, CultureInfo.InvariantCulture, out value))
+        {
+            if (negative) value = -value;
+            return true;
+        }
+        value = 0;
+        return false;
+    }
+
+    private static readonly string[] DateFormats =
+    [
+        "d MMMM yyyy", "dd MMMM yyyy", "d MMM yyyy", "dd MMM yyyy",
+        "yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "dd-MM-yyyy", "dd.MM.yyyy"
+    ];
+
+    private static bool TryParseDate(string raw, out DateTime value)
+    {
+        var trimmed = raw.Trim();
+        if (DateTime.TryParseExact(trimmed, DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out value))
+            return true;
+        return DateTime.TryParse(trimmed, CultureInfo.InvariantCulture, DateTimeStyles.None, out value);
+    }
 
     /// <summary>Writes one document's rows-per-field block starting at <paramref name="startRow"/>,
     /// returning the next free row. <paramref name="includeDocHeader"/> adds a bold file-name row
@@ -35,7 +140,7 @@ public class ExcelExportService : IExcelExportService
         if (includeDocHeader)
         {
             sheet.Cell(row, 1).Value = fileName;
-            var docHeader = sheet.Range(row, 1, row, 6);
+            var docHeader = sheet.Range(row, 1, row, 4);
             docHeader.Merge();
             docHeader.Style.Font.Bold = true;
             docHeader.Style.Font.FontSize = 12;
@@ -43,12 +148,10 @@ public class ExcelExportService : IExcelExportService
         }
 
         sheet.Cell(row, 1).Value = "Page";
-        sheet.Cell(row, 2).Value = "Original Field Label";
-        sheet.Cell(row, 3).Value = "Field Name";
-        sheet.Cell(row, 4).Value = "Value";
-        sheet.Cell(row, 5).Value = "Type";
-        sheet.Cell(row, 6).Value = "Edited?";
-        var header = sheet.Range(row, 1, row, 6);
+        sheet.Cell(row, 2).Value = "Field Name";
+        sheet.Cell(row, 3).Value = "Value";
+        sheet.Cell(row, 4).Value = "Type";
+        var header = sheet.Range(row, 1, row, 4);
         header.Style.Font.Bold = true;
         header.Style.Fill.BackgroundColor = HeaderFill;
         header.Style.Font.FontColor = XLColor.White;
@@ -63,7 +166,7 @@ public class ExcelExportService : IExcelExportService
             {
                 currentSection = field.SectionLabel;
                 sheet.Cell(row, 1).Value = currentSection ?? "General";
-                var sectionRow = sheet.Range(row, 1, row, 6);
+                var sectionRow = sheet.Range(row, 1, row, 4);
                 sectionRow.Merge();
                 sectionRow.Style.Font.Bold = true;
                 sectionRow.Style.Fill.BackgroundColor = SectionFill;
@@ -71,11 +174,9 @@ public class ExcelExportService : IExcelExportService
             }
 
             sheet.Cell(row, 1).Value = field.PageNumber?.ToString() ?? "-";
-            sheet.Cell(row, 2).Value = field.OriginalFieldKey;
-            sheet.Cell(row, 3).Value = field.FieldKey;
-            sheet.Cell(row, 4).Value = field.FieldValue ?? "";
-            sheet.Cell(row, 5).Value = field.SemanticType;
-            sheet.Cell(row, 6).Value = field.WasEditedByUser ? "Yes" : "No";
+            sheet.Cell(row, 2).Value = field.FieldKey;
+            SetTypedValue(sheet.Cell(row, 3), field.FieldValue, field.SemanticType);
+            sheet.Cell(row, 4).Value = string.IsNullOrWhiteSpace(field.SemanticType) ? "Generic" : field.SemanticType;
             row++;
         }
 
@@ -105,13 +206,11 @@ public class ExcelExportService : IExcelExportService
     /// ColumnsPerField layout (one row total) and for the batch SingleSheet mode (one row per
     /// document), which is really the same shape at a document-count of one vs many.
     ///
-    /// Deliberately one column per field, not two: an "Edited?" companion column next to every
-    /// single field doubles the column count and makes side-by-side comparison across documents
-    /// much harder to read. Instead, an edited cell gets a distinct fill/font (like a spreadsheet
-    /// "changed cell" convention) plus a cell comment showing the AI's original value - so the
-    /// edit history is one hover away instead of permanently splitting the table. Fields are also
-    /// grouped under their section name via a merged band row above the field-name header row,
-    /// the same grouping the on-screen review grid shows.</summary>
+    /// Deliberately just field/value: no "Edited?" column, no original-label/original-value
+    /// comments - that comparison lives only in the on-screen review grid's Edit tab, so the
+    /// exported file itself stays a clean, professional data sheet. Fields are grouped under
+    /// their section name via a merged band row above the field-name header row, the same
+    /// grouping the on-screen review grid shows.</summary>
     private static void WriteColumnsPerFieldSheet(IXLWorksheet sheet, List<(string FileName, List<ExtractedField> Fields)> documents)
     {
         var filteredPerDoc = documents.Select(d => (d.FileName, Fields: FilterFields(d.Fields, null))).ToList();
@@ -120,11 +219,10 @@ public class ExcelExportService : IExcelExportService
         // rather than the immutable OriginalFieldKey - AI batch harmonization (and manual
         // renames) land on FieldKey, so matching there is what actually puts equivalent fields
         // in the same column. Each column also remembers which section it belongs to (the first
-        // one seen) and every distinct original AI label it was ever known by, for the header
-        // comment below.
+        // one seen).
         var fieldKeysInOrder = new List<string>();
         var sectionByKey = new Dictionary<string, string>();
-        var originalLabelsByKey = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var semanticTypeByKey = new Dictionary<string, string>();
         foreach (var (_, fields) in filteredPerDoc)
         {
             foreach (var field in fields)
@@ -133,10 +231,8 @@ public class ExcelExportService : IExcelExportService
                 {
                     fieldKeysInOrder.Add(field.FieldKey);
                     sectionByKey[field.FieldKey] = string.IsNullOrWhiteSpace(field.SectionLabel) ? "General" : field.SectionLabel;
-                    originalLabelsByKey[field.FieldKey] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    semanticTypeByKey[field.FieldKey] = string.IsNullOrWhiteSpace(field.SemanticType) ? "Generic" : field.SemanticType;
                 }
-                if (!string.IsNullOrWhiteSpace(field.OriginalFieldKey))
-                    originalLabelsByKey[field.FieldKey].Add(field.OriginalFieldKey);
             }
         }
 
@@ -169,14 +265,7 @@ public class ExcelExportService : IExcelExportService
         }
 
         for (int c = 0; c < fieldKeysInOrder.Count; c++)
-        {
-            var headerCell = sheet.Cell(2, FirstFieldCol + c);
-            headerCell.Value = fieldKeysInOrder[c];
-            var originals = originalLabelsByKey[fieldKeysInOrder[c]]
-                .Where(o => !o.Equals(fieldKeysInOrder[c], StringComparison.OrdinalIgnoreCase)).ToList();
-            if (originals.Count > 0)
-                headerCell.CreateComment().AddText($"Originally labeled by AI as: {string.Join("; ", originals)}");
-        }
+            sheet.Cell(2, FirstFieldCol + c).Value = fieldKeysInOrder[c];
 
         var lastCol = fieldKeysInOrder.Count > 0 ? FirstFieldCol + fieldKeysInOrder.Count - 1 : FirstFieldCol;
         var fieldHeaderRow = sheet.Range(2, FirstFieldCol, 2, lastCol);
@@ -195,14 +284,7 @@ public class ExcelExportService : IExcelExportService
             {
                 var fieldIndex = fieldKeysInOrder.IndexOf(field.FieldKey);
                 var cell = sheet.Cell(row, FirstFieldCol + fieldIndex);
-                cell.Value = field.FieldValue ?? "";
-                if (field.WasEditedByUser)
-                {
-                    cell.Style.Fill.BackgroundColor = EditedFill;
-                    cell.Style.Font.FontColor = EditedFont;
-                    cell.Style.Font.Bold = true;
-                    cell.CreateComment().AddText($"Edited by user. AI originally extracted: {(string.IsNullOrWhiteSpace(field.OriginalAiValue) ? "(nothing)" : field.OriginalAiValue)}");
-                }
+                SetTypedValue(cell, field.FieldValue, field.SemanticType);
             }
             row++;
         }
@@ -217,8 +299,7 @@ public class ExcelExportService : IExcelExportService
     /// with a numeric suffix rather than letting ClosedXML throw on a collision.</summary>
     private static string SafeSheetName(string fileName, HashSet<string> usedNames)
     {
-        var baseName = System.Text.RegularExpressions.Regex.Replace(
-            Path.GetFileNameWithoutExtension(fileName), @"[\\/*?:\[\]]", "_");
+        var baseName = Regex.Replace(Path.GetFileNameWithoutExtension(fileName), @"[\\/*?:\[\]]", "_");
         if (baseName.Length > 28) baseName = baseName[..28];
         if (string.IsNullOrWhiteSpace(baseName)) baseName = "Sheet";
 

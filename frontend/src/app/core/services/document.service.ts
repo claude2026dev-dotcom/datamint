@@ -37,12 +37,12 @@ export class DocumentService {
     }>(`${environment.apiBaseUrl}/documents/${id}`);
   }
 
-  updateField(documentId: string, fieldId: string, newValue: string, newKey?: string, includeInExport?: boolean) {
+  updateField(documentId: string, fieldId: string, newValue: string, newKey?: string, includeInExport?: boolean, newSemanticType?: string) {
     // The backend recomputes wasEditedByUser from the actual before/after diff and
     // returns the resulting field state - callers should use that returned value
     // instead of assuming "the save succeeded" means "something was edited".
     return this.http.put<{ success: boolean; field: ExtractedFieldEdit }>(
-      `${environment.apiBaseUrl}/documents/${documentId}/fields`, { fieldId, newValue, newKey, includeInExport });
+      `${environment.apiBaseUrl}/documents/${documentId}/fields`, { fieldId, newValue, newKey, includeInExport, newSemanticType });
   }
 
   reorderFields(documentId: string, fields: { fieldId: string; sectionLabel: string; sortOrder: number }[]) {

@@ -13,7 +13,7 @@ export type IconName =
   | 'alert-triangle' | 'dollar-sign' | 'inbox' | 'upload-cloud' | 'cpu'
   | 'sparkles' | 'chevron-left' | 'menu' | 'arrow-right' | 'scan' | 'grid'
   | 'file' | 'shield' | 'close' | 'sun' | 'moon' | 'monitor' | 'eye' | 'eye-off'
-  | 'check-circle' | 'x-circle' | 'flask' | 'grip';
+  | 'check-circle' | 'x-circle' | 'flask' | 'grip' | 'copy';
 
 @Component({
   selector: 'app-icon',
@@ -150,6 +150,9 @@ export type IconName =
           <circle cx="8.5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="6" r="1.3" fill="currentColor" stroke="none"/>
           <circle cx="8.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="12" r="1.3" fill="currentColor" stroke="none"/>
           <circle cx="8.5" cy="18" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="18" r="1.3" fill="currentColor" stroke="none"/>
+        }
+        @case ('copy') {
+          <rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>
         }
       }
     </svg>

@@ -29,7 +29,7 @@ public record DocumentSummaryDto(
     Guid UploadBatchId = default);
 
 public record ExtractedFieldEditDto(Guid Id, string FieldKey, string OriginalFieldKey, string? FieldValue, int? PageNumber, bool WasEditedByUser,
-    string SemanticType, string SectionLabel, bool IncludeInExport, int SortOrder);
+    string SemanticType, string SectionLabel, bool IncludeInExport, int SortOrder, string? OriginalAiValue = null);
 
 public record DocumentDetailDto(
     Guid Id,
@@ -39,7 +39,7 @@ public record DocumentDetailDto(
     string Status,
     List<ExtractedFieldEditDto> Fields);
 
-public record UpdateFieldRequestDto(Guid FieldId, string? NewValue, string? NewKey = null, bool? IncludeInExport = null);
+public record UpdateFieldRequestDto(Guid FieldId, string? NewValue, string? NewKey = null, bool? IncludeInExport = null, string? NewSemanticType = null);
 
 public record PeekFileResultDto(string FileName, int PageCount);
 

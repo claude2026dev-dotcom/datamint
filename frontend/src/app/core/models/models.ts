@@ -44,16 +44,37 @@ export interface ExtractedFieldEdit {
   fieldKey: string;
   originalFieldKey: string;
   fieldValue: string | null;
+  // The AI's original, untouched value - only present to power the review page's "Edit" tab
+  // showing what changed vs. what the AI first found. Never written into an exported file.
+  originalAiValue?: string | null;
   pageNumber: number | null;
   wasEditedByUser: boolean;
   // AI-suggested classification (e.g. "Address"/"Date"/"Amount"/"Generic") - always a concrete
-  // string, backend falls back to "Generic" for rows extracted before this existed.
+  // string, backend falls back to "Generic" for rows extracted before this existed. User-editable
+  // via the Edit tab's type picker - corrected purely for export formatting, doesn't itself count
+  // as an "edit" (see DocumentProcessingService.UpdateFieldAsync).
   semanticType: string;
   // AI-suggested group name (e.g. "Shipping Details") - falls back to "General".
   sectionLabel: string;
   includeInExport: boolean;
   sortOrder: number;
 }
+
+// Shared shape for anything rendering one-document-or-many field data (the card editor, the
+// read-only preview table): a document is just its id/name plus the fields belonging to it.
+export interface FieldEditorDocument {
+  id: string;
+  fileName: string;
+  fields: ExtractedFieldEdit[];
+}
+
+// Curated, human-friendly type list offered by the Edit tab's type picker - matches the fixed
+// vocabulary the AI itself classifies into (AiExtractionPromptHelper.TypeAndSectionInstructions),
+// so a manual correction and an AI classification always draw from the same set. The picker still
+// accepts a free-text/custom entry beyond this list - SemanticType is just a string end to end.
+export const SEMANTIC_TYPES: string[] = [
+  'Generic', 'Name', 'Address', 'Contact', 'Email', 'URL', 'Date', 'Amount', 'Quantity', 'Percentage', 'Boolean', 'Reference'
+];
 
 export interface FieldTemplate {
   id: string;

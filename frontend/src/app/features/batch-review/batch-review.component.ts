@@ -9,8 +9,9 @@ import { BatchExportMode, ExportFormat, ExportLayout, ExtractedFieldEdit } from 
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
 import { ExportModalComponent, EmailModalResult } from '../../shared/components/export-modal/export-modal.component';
-import { FieldSectionEditorComponent } from '../../shared/components/field-section-editor/field-section-editor.component';
-import { FieldColumnsEditorComponent } from '../../shared/components/field-columns-editor/field-columns-editor.component';
+import { FieldCardEditorComponent, FieldCardEvent, FieldCardReorderEvent, FieldCardSectionRenameEvent } from '../../shared/components/field-card-editor/field-card-editor.component';
+import { FieldTableViewComponent } from '../../shared/components/field-table-view/field-table-view.component';
+import { FieldJsonViewComponent } from '../../shared/components/field-json-view/field-json-view.component';
 
 interface BatchDocument {
   id: string;
@@ -18,19 +19,19 @@ interface BatchDocument {
   fields: ExtractedFieldEdit[];
 }
 
-type SheetMode = 'combined' | 'byFile';
+type SheetMode = 'combined' | 'byFile' | 'separateFiles';
 
-/// Shown instead of the single-document preview when several files were uploaded together.
-/// Mirrors how a real spreadsheet handles multiple files: "Combined" puts every document into
-/// one continuous sheet (rows-grouped-by-section, or the columns-comparison table), "By file"
-/// switches to one sheet-tab per document, each showing just that document's own table - the
-/// on-screen equivalent of the export's single-sheet vs separate-sheets choice, available here
-/// only because a batch is more than one document.
+/// Shown instead of the single-document preview when several files were uploaded together. Like
+/// the single-document page, this is two distinct steps: "Edit" (default landing view, the
+/// card-based editor - never a spreadsheet grid) and a separate "Preview & export" step where the
+/// Rows/Columns layout and the sheet-shape choice (one combined sheet, one workbook with a tab
+/// per document, or a zip of individual files - the on-screen equivalent of the export's three
+/// batch modes) actually matter.
 @Component({
   selector: 'app-batch-review',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, ExportModalComponent,
-            FieldSectionEditorComponent, FieldColumnsEditorComponent],
+            FieldCardEditorComponent, FieldTableViewComponent, FieldJsonViewComponent],
   template: `
     <div class="dm-container page">
       <app-back-button fallbackUrl="/documents" />
@@ -47,28 +48,69 @@ type SheetMode = 'combined' | 'byFile';
           <h1>Combined preview — {{ documents.length }} file(s)</h1>
           <p class="muted">Edit any field below. Each file keeps its own labels and values.</p>
         </div>
-        <div class="actions">
-          <div class="view-toggle">
-            <button type="button" class="view-option" [class.active]="sheetMode === 'combined'" (click)="sheetMode = 'combined'">Combined</button>
-            <button type="button" class="view-option" [class.active]="sheetMode === 'byFile'" (click)="sheetMode = 'byFile'">By file</button>
-          </div>
-          <div class="view-toggle">
-            <button type="button" class="view-option" [class.active]="viewMode === 'rows'" (click)="viewMode = 'rows'">Rows</button>
-            <button type="button" class="view-option" [class.active]="viewMode === 'columns'" (click)="viewMode = 'columns'">Columns</button>
-          </div>
-          <button class="dm-btn dm-btn-ghost" [disabled]="loading || exporting" (click)="downloadExport('Excel')"><app-icon name="file-text" [size]="15" /> Excel</button>
-          <button class="dm-btn dm-btn-ghost" [disabled]="loading || exporting" (click)="downloadExport('Json')">{{ '{ }' }} JSON</button>
-          <button class="dm-btn dm-btn-primary" [disabled]="loading" (click)="emailModalOpen = !emailModalOpen"><app-icon name="inbox" [size]="15" /> Email</button>
+        <div class="mode-toggle">
+          <button type="button" class="mode-option" [class.active]="mode === 'edit'" (click)="mode = 'edit'">
+            <app-icon name="edit" [size]="16" />
+            <span><strong>Edit</strong><small>Fix values, types, sections</small></span>
+          </button>
+          <button type="button" class="mode-option" [class.active]="mode === 'preview'" (click)="mode = 'preview'">
+            <app-icon name="grid" [size]="16" />
+            <span><strong>Preview &amp; export</strong><small>Download or email</small></span>
+          </button>
         </div>
       </div>
 
-      @if (emailModalOpen) {
-        <app-export-modal [busy]="emailBusy" (confirmed)="onEmailConfirmed($event)" (cancelled)="emailModalOpen = false" />
-      }
-
       @if (loading) {
         <p class="muted">Loading documents…</p>
-      } @else if (sheetMode === 'byFile') {
+      } @else {
+
+      @if (mode === 'preview') {
+        <div class="toolbar">
+          <div class="toggle-group">
+            <div class="view-toggle">
+              <button type="button" class="view-option" [class.active]="sheetMode === 'combined'" (click)="sheetMode = 'combined'" title="One combined sheet">Combined</button>
+              <button type="button" class="view-option" [class.active]="sheetMode === 'byFile'" (click)="sheetMode = 'byFile'" title="One workbook, one tab per document">Multi-sheet</button>
+              <button type="button" class="view-option" [class.active]="sheetMode === 'separateFiles'" (click)="sheetMode = 'separateFiles'" title="A zip with one file per document">Separate files</button>
+            </div>
+            <div class="view-toggle">
+              <button type="button" class="view-option" [class.active]="previewKind === 'table'" (click)="previewKind = 'table'">Table</button>
+              <button type="button" class="view-option" [class.active]="previewKind === 'json'" (click)="previewKind = 'json'">{{ '{ }' }} JSON</button>
+            </div>
+            @if (previewKind === 'table') {
+              <div class="view-toggle">
+                <button type="button" class="view-option" [class.active]="viewMode === 'rows'" (click)="viewMode = 'rows'">Rows</button>
+                <button type="button" class="view-option" [class.active]="viewMode === 'columns'" (click)="viewMode = 'columns'">Columns</button>
+              </div>
+            }
+          </div>
+          <div class="actions">
+            <button class="dm-btn dm-btn-ghost btn-excel" [disabled]="exporting" (click)="downloadExport('Excel')" title="Download as an Excel spreadsheet">
+              <app-icon name="file-text" [size]="15" /> Excel
+            </button>
+            <button class="dm-btn dm-btn-ghost btn-json" [disabled]="exporting" (click)="downloadExport('Json')" title="Download as a structured JSON file">
+              {{ '{ }' }} JSON
+            </button>
+            <button class="dm-btn dm-btn-primary" (click)="emailModalOpen = !emailModalOpen" title="Email this export to someone">
+              <app-icon name="inbox" [size]="15" /> Email
+            </button>
+          </div>
+        </div>
+
+        @if (emailModalOpen) {
+          <app-export-modal [busy]="emailBusy" (confirmed)="onEmailConfirmed($event)" (cancelled)="emailModalOpen = false" />
+        }
+      }
+
+      @if (mode === 'preview' && sheetMode === 'combined') {
+        @if (previewKind === 'json') {
+          <app-field-json-view [documents]="documents" [pageCounts]="pageCounts" />
+        } @else {
+          <app-field-table-view [documents]="documents" [viewMode]="viewMode" />
+        }
+      } @else if (mode === 'edit' && sheetMode === 'combined') {
+        <app-field-card-editor [documents]="documents" (fieldSaved)="saveField($event)" (includeToggled)="toggleInclude($event)"
+                                (reordered)="onReordered($event)" (sectionRenamed)="onSectionRenamed($event)" />
+      } @else {
         <div class="tab-bar">
           @for (doc of documents; track doc.id) {
             <button type="button" class="tab" [class.active]="doc.id === activeDocId" [title]="doc.fileName" (click)="activeDocId = doc.id">
@@ -76,43 +118,46 @@ type SheetMode = 'combined' | 'byFile';
             </button>
           }
         </div>
-        @if (activeDocument()) {
-          @if (viewMode === 'rows') {
-            <app-field-section-editor [fields]="activeDocument()!.fields" (fieldSaved)="saveField(activeDocument()!, $event)"
-                                       (includeToggled)="toggleInclude(activeDocument()!, $event)" (reordered)="onReordered(activeDocument()!, $event)"
-                                       (sectionRenamed)="onSectionRenamed(activeDocument()!, $event)" />
+        @if (activeDocument(); as active) {
+          @if (mode === 'preview') {
+            @if (previewKind === 'json') {
+              <app-field-json-view [documents]="[active]" [pageCounts]="pageCounts" />
+            } @else {
+              <app-field-table-view [documents]="[active]" [viewMode]="viewMode" />
+            }
           } @else {
-            <app-field-columns-editor [documents]="[activeDocument()!]" (fieldSaved)="onColumnsFieldSaved($event)" />
+            <app-field-card-editor [documents]="[active]" (fieldSaved)="saveField($event)" (includeToggled)="toggleInclude($event)"
+                                    (reordered)="onReordered($event)" (sectionRenamed)="onSectionRenamed($event)" />
           }
         }
-      } @else if (viewMode === 'columns') {
-        <app-field-columns-editor [documents]="documents" (fieldSaved)="onColumnsFieldSaved($event)" />
-      } @else {
-        @for (doc of documents; track doc.id) {
-          <div class="dm-card doc-card">
-            <div class="doc-card-head">
-              <app-icon name="file-text" [size]="17" />
-              <span class="doc-name" [title]="doc.fileName">{{ doc.fileName }}</span>
-              <span class="muted small">{{ doc.fields.length }} field(s)</span>
-            </div>
-            <app-field-section-editor [fields]="doc.fields" (fieldSaved)="saveField(doc, $event)"
-                                       (includeToggled)="toggleInclude(doc, $event)" (reordered)="onReordered(doc, $event)"
-                                       (sectionRenamed)="onSectionRenamed(doc, $event)" />
-          </div>
-        }
+      }
       }
       }
     </div>
   `,
   styles: [`
     .page { padding-top: 40px; padding-bottom: 80px; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
-    .small { font-size: 0.8rem; }
     .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .actions .dm-btn { display: inline-flex; align-items: center; gap: 6px; }
+
+    .mode-toggle { display: flex; gap: 6px; padding: 6px; border-radius: var(--dm-radius-lg); background: var(--dm-surface); border: 1px solid var(--dm-border); flex-wrap: wrap; }
+    .mode-option { display: inline-flex; align-items: center; gap: 10px; padding: 10px 18px; background: transparent; color: var(--dm-text-muted); border: 1px solid transparent; border-radius: var(--dm-radius-sm); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; white-space: nowrap; text-align: left; }
+    .mode-option span { display: flex; flex-direction: column; gap: 1px; }
+    .mode-option strong { font-size: 0.9rem; font-weight: 700; }
+    .mode-option small { font-size: 0.7rem; font-weight: 500; opacity: 0.85; }
+    .mode-option:hover { color: var(--dm-text); border-color: var(--dm-border); }
+    .mode-option.active { background: var(--dm-gradient-primary); color: white; box-shadow: 0 3px 10px rgba(99,102,241,0.35); }
+    .btn-excel { border-color: #1D9E75; color: #0F6E56; }
+    .btn-excel:hover { background: rgba(29,158,117,0.08); }
+    .btn-json { border-color: #378ADD; color: #185FA5; }
+    .btn-json:hover { background: rgba(55,138,221,0.08); }
+
+    .toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+    .toggle-group { display: flex; gap: 10px; flex-wrap: wrap; }
     .view-toggle { display: flex; border: 1px solid var(--dm-border); border-radius: var(--dm-radius-sm); overflow: hidden; }
-    .view-option { padding: 8px 14px; font-size: 0.82rem; font-weight: 600; background: var(--dm-surface); color: var(--dm-text-muted); border: none; cursor: pointer; }
+    .view-option { padding: 8px 14px; font-size: 0.82rem; font-weight: 600; background: var(--dm-surface); color: var(--dm-text-muted); border: none; cursor: pointer; white-space: nowrap; }
     .view-option.active { background: var(--dm-gradient-primary); color: white; }
     .not-found-card { max-width: 460px; margin: 60px auto; padding: 40px 32px; text-align: center; }
     .not-found-card .icon { color: var(--dm-text-muted); display: flex; justify-content: center; margin-bottom: 14px; }
@@ -124,13 +169,9 @@ type SheetMode = 'combined' | 'byFile';
     .tab:hover { background: var(--dm-surface-hover); }
     .tab.active { color: var(--dm-primary); border-bottom-color: var(--dm-primary); background: rgba(99,102,241,0.06); }
 
-    .doc-card { padding: 20px; margin-bottom: 18px; }
-    .doc-card-head { display: flex; align-items: center; gap: 8px; padding-bottom: 14px; margin-bottom: 6px; border-bottom: 1px solid var(--dm-border); }
-    .doc-card-head app-icon { color: var(--dm-text-muted); flex-shrink: 0; }
-    .doc-name { font-weight: 700; overflow-wrap: break-word; word-break: break-word; flex: 1; min-width: 0; }
-
     @media (max-width: 700px) {
       .header { flex-direction: column; }
+      .toolbar { flex-direction: column; align-items: stretch; }
     }
   `]
 })
@@ -138,9 +179,12 @@ export class BatchReviewComponent implements OnInit {
   documents: BatchDocument[] = [];
   loading = true;
   notFound = false;
+  mode: 'edit' | 'preview' = 'edit';
+  previewKind: 'table' | 'json' = 'table';
   viewMode: 'rows' | 'columns' = 'rows';
   sheetMode: SheetMode = 'combined';
   activeDocId = '';
+  pageCounts: Record<string, number> = {};
 
   emailModalOpen = false;
   emailBusy = false;
@@ -161,6 +205,7 @@ export class BatchReviewComponent implements OnInit {
     forkJoin(ids.map(id => this.documentService.getDetail(id))).subscribe({
       next: results => {
         this.documents = results.map(res => ({ id: res.id, fileName: res.originalFileName, fields: res.fields }));
+        this.pageCounts = Object.fromEntries(results.map(res => [res.id, res.pageCount]));
         this.activeDocId = this.documents[0]?.id ?? '';
         this.loading = false;
       },
@@ -172,46 +217,55 @@ export class BatchReviewComponent implements OnInit {
     return this.documents.find(d => d.id === this.activeDocId);
   }
 
-  saveField(doc: BatchDocument, field: ExtractedFieldEdit) {
-    this.documentService.updateField(doc.id, field.id, field.fieldValue ?? '', field.fieldKey).subscribe({
+  private findDoc(docId: string): BatchDocument | undefined {
+    return this.documents.find(d => d.id === docId);
+  }
+
+  saveField(event: FieldCardEvent) {
+    const doc = this.findDoc(event.docId);
+    if (!doc) return;
+    const field = event.field;
+    this.documentService.updateField(doc.id, field.id, field.fieldValue ?? '', field.fieldKey, undefined, field.semanticType).subscribe({
       next: res => {
         field.wasEditedByUser = res.field.wasEditedByUser;
         field.fieldKey = res.field.fieldKey;
         field.fieldValue = res.field.fieldValue;
+        field.semanticType = res.field.semanticType;
       },
       error: () => this.toast.error('Could not save that change. Please try again.')
     });
   }
 
-  onColumnsFieldSaved(event: { docId: string; field: ExtractedFieldEdit }) {
-    const doc = this.documents.find(d => d.id === event.docId);
-    if (doc) this.saveField(doc, event.field);
-  }
-
-  toggleInclude(doc: BatchDocument, field: ExtractedFieldEdit) {
+  toggleInclude(event: FieldCardEvent) {
+    const doc = this.findDoc(event.docId);
+    if (!doc) return;
+    const field = event.field;
     this.documentService.updateField(doc.id, field.id, field.fieldValue ?? '', field.fieldKey, field.includeInExport).subscribe({
       error: () => this.toast.error('Could not save that change. Please try again.')
     });
   }
 
-  onReordered(doc: BatchDocument, fields: ExtractedFieldEdit[]) {
-    const payload = fields.map(f => ({ fieldId: f.id, sectionLabel: f.sectionLabel, sortOrder: f.sortOrder }));
-    this.documentService.reorderFields(doc.id, payload).subscribe({
+  onReordered(event: FieldCardReorderEvent) {
+    const payload = event.fields.map(f => ({ fieldId: f.id, sectionLabel: f.sectionLabel, sortOrder: f.sortOrder }));
+    this.documentService.reorderFields(event.docId, payload).subscribe({
       error: () => this.toast.error('Could not save the new order. Please try again.')
     });
   }
 
-  onSectionRenamed(doc: BatchDocument, event: { oldLabel: string; newLabel: string }) {
-    this.documentService.renameSection(doc.id, event.oldLabel, event.newLabel).subscribe({
+  onSectionRenamed(event: FieldCardSectionRenameEvent) {
+    this.documentService.renameSection(event.docId, event.oldLabel, event.newLabel).subscribe({
       error: () => this.toast.error('Could not rename that section. Please try again.')
     });
   }
 
-  /// "Combined" maps to a single sheet holding every document; "By file" maps to one workbook
-  /// tab per document - the same distinction the backend's export modes already made, just no
-  /// longer re-asked once it's already the on-screen view.
+  /// "Combined" maps to a single sheet holding every document; "Multi-sheet" maps to one workbook
+  /// tab per document; "Separate files" maps to a zip with one file per document - the same three
+  /// modes the backend's export already supports, just no longer re-asked once it's already the
+  /// on-screen view.
   private currentExportMode(): BatchExportMode {
-    return this.sheetMode === 'byFile' ? 'MultipleSheets' : 'SingleSheet';
+    if (this.sheetMode === 'byFile') return 'MultipleSheets';
+    if (this.sheetMode === 'separateFiles') return 'SeparateFiles';
+    return 'SingleSheet';
   }
 
   private currentLayout(): ExportLayout {
@@ -221,12 +275,13 @@ export class BatchReviewComponent implements OnInit {
   downloadExport(format: ExportFormat) {
     this.exporting = true;
     const documentIds = this.documents.map(d => d.id);
-    this.documentService.batchExport(documentIds, this.currentExportMode(), { format, layout: this.currentLayout() }).subscribe({
+    const mode = this.currentExportMode();
+    this.documentService.batchExport(documentIds, mode, { format, layout: this.currentLayout() }).subscribe({
       next: blob => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const ext = format === 'Json' ? 'json' : 'xlsx';
+        const ext = mode === 'SeparateFiles' ? 'zip' : (format === 'Json' ? 'json' : 'xlsx');
         a.download = `datamint-batch-export.${ext}`;
         a.click();
         window.URL.revokeObjectURL(url);
