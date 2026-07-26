@@ -13,6 +13,8 @@ public class ExcelExportService : IExcelExportService
 {
     private static readonly XLColor HeaderFill = XLColor.FromHtml("#4F46E5");
     private static readonly XLColor SectionFill = XLColor.FromHtml("#E5E7FF");
+    private static readonly XLColor EditedFill = XLColor.FromHtml("#FEF3C7");
+    private static readonly XLColor EditedFont = XLColor.FromHtml("#92400E");
 
     /// <summary>Same include-filter every export path applies: an explicit includedFieldIds
     /// override wins if given, otherwise each field's own saved IncludeInExport flag decides.</summary>
@@ -101,9 +103,15 @@ public class ExcelExportService : IExcelExportService
 
     /// <summary>One column per field key, one row per document - used for a single document's
     /// ColumnsPerField layout (one row total) and for the batch SingleSheet mode (one row per
-    /// document), which is really the same shape at a document-count of one vs many. Each field
-    /// gets a paired "Edited?" column right after its value column, matching the same Yes/No
-    /// convention the RowsPerField layout already uses.</summary>
+    /// document), which is really the same shape at a document-count of one vs many.
+    ///
+    /// Deliberately one column per field, not two: an "Edited?" companion column next to every
+    /// single field doubles the column count and makes side-by-side comparison across documents
+    /// much harder to read. Instead, an edited cell gets a distinct fill/font (like a spreadsheet
+    /// "changed cell" convention) plus a cell comment showing the AI's original value - so the
+    /// edit history is one hover away instead of permanently splitting the table. Fields are also
+    /// grouped under their section name via a merged band row above the field-name header row,
+    /// the same grouping the on-screen review grid shows.</summary>
     private static void WriteColumnsPerFieldSheet(IXLWorksheet sheet, List<(string FileName, List<ExtractedField> Fields)> documents)
     {
         var filteredPerDoc = documents.Select(d => (d.FileName, Fields: FilterFields(d.Fields, null))).ToList();
@@ -111,45 +119,96 @@ public class ExcelExportService : IExcelExportService
         // Match columns across documents by FieldKey (the current, editable display name)
         // rather than the immutable OriginalFieldKey - AI batch harmonization (and manual
         // renames) land on FieldKey, so matching there is what actually puts equivalent fields
-        // in the same column.
+        // in the same column. Each column also remembers which section it belongs to (the first
+        // one seen) and every distinct original AI label it was ever known by, for the header
+        // comment below.
         var fieldKeysInOrder = new List<string>();
+        var sectionByKey = new Dictionary<string, string>();
+        var originalLabelsByKey = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var (_, fields) in filteredPerDoc)
-            foreach (var field in fields)
-                if (!fieldKeysInOrder.Contains(field.FieldKey))
-                    fieldKeysInOrder.Add(field.FieldKey);
-
-        // Two columns per field: the value, then a companion "Edited?" Yes/No column.
-        int ValueCol(int fieldIndex) => 2 + fieldIndex * 2;
-        int EditedCol(int fieldIndex) => ValueCol(fieldIndex) + 1;
-
-        sheet.Cell(1, 1).Value = "File Name";
-        for (int c = 0; c < fieldKeysInOrder.Count; c++)
         {
-            sheet.Cell(1, ValueCol(c)).Value = fieldKeysInOrder[c];
-            sheet.Cell(1, EditedCol(c)).Value = $"{fieldKeysInOrder[c]} (Edited?)";
+            foreach (var field in fields)
+            {
+                if (!fieldKeysInOrder.Contains(field.FieldKey))
+                {
+                    fieldKeysInOrder.Add(field.FieldKey);
+                    sectionByKey[field.FieldKey] = string.IsNullOrWhiteSpace(field.SectionLabel) ? "General" : field.SectionLabel;
+                    originalLabelsByKey[field.FieldKey] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+                if (!string.IsNullOrWhiteSpace(field.OriginalFieldKey))
+                    originalLabelsByKey[field.FieldKey].Add(field.OriginalFieldKey);
+            }
         }
 
-        var lastCol = fieldKeysInOrder.Count > 0 ? EditedCol(fieldKeysInOrder.Count - 1) : 1;
-        var header = sheet.Range(1, 1, 1, lastCol);
-        header.Style.Font.Bold = true;
-        header.Style.Fill.BackgroundColor = HeaderFill;
-        header.Style.Font.FontColor = XLColor.White;
+        const int FirstFieldCol = 2;
+        sheet.Cell(1, 1).Value = "Document";
+        sheet.Range(1, 1, 2, 1).Merge();
 
-        int row = 2;
+        // Section band row: one merged, colored cell per contiguous run of columns sharing a
+        // section - built by walking fieldKeysInOrder and grouping equal-section runs, so a
+        // section that (rarely) isn't contiguous still renders as separate correctly-labeled
+        // bands rather than silently merging into its neighbor.
+        var col = FirstFieldCol;
+        var i = 0;
+        while (i < fieldKeysInOrder.Count)
+        {
+            var section = sectionByKey[fieldKeysInOrder[i]];
+            var runLength = 1;
+            while (i + runLength < fieldKeysInOrder.Count && sectionByKey[fieldKeysInOrder[i + runLength]] == section)
+                runLength++;
+
+            var band = sheet.Range(1, col, 1, col + runLength - 1);
+            if (runLength > 1) band.Merge();
+            band.Value = section;
+            band.Style.Font.Bold = true;
+            band.Style.Fill.BackgroundColor = SectionFill;
+            band.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+            col += runLength;
+            i += runLength;
+        }
+
+        for (int c = 0; c < fieldKeysInOrder.Count; c++)
+        {
+            var headerCell = sheet.Cell(2, FirstFieldCol + c);
+            headerCell.Value = fieldKeysInOrder[c];
+            var originals = originalLabelsByKey[fieldKeysInOrder[c]]
+                .Where(o => !o.Equals(fieldKeysInOrder[c], StringComparison.OrdinalIgnoreCase)).ToList();
+            if (originals.Count > 0)
+                headerCell.CreateComment().AddText($"Originally labeled by AI as: {string.Join("; ", originals)}");
+        }
+
+        var lastCol = fieldKeysInOrder.Count > 0 ? FirstFieldCol + fieldKeysInOrder.Count - 1 : FirstFieldCol;
+        var fieldHeaderRow = sheet.Range(2, FirstFieldCol, 2, lastCol);
+        fieldHeaderRow.Style.Font.Bold = true;
+        fieldHeaderRow.Style.Fill.BackgroundColor = HeaderFill;
+        fieldHeaderRow.Style.Font.FontColor = XLColor.White;
+        sheet.Cell(2, 1).Style.Font.Bold = true;
+        sheet.Cell(2, 1).Style.Fill.BackgroundColor = HeaderFill;
+        sheet.Cell(2, 1).Style.Font.FontColor = XLColor.White;
+
+        int row = 3;
         foreach (var (fileName, fields) in filteredPerDoc)
         {
             sheet.Cell(row, 1).Value = fileName;
             foreach (var field in fields)
             {
                 var fieldIndex = fieldKeysInOrder.IndexOf(field.FieldKey);
-                sheet.Cell(row, ValueCol(fieldIndex)).Value = field.FieldValue ?? "";
-                sheet.Cell(row, EditedCol(fieldIndex)).Value = field.WasEditedByUser ? "Yes" : "No";
+                var cell = sheet.Cell(row, FirstFieldCol + fieldIndex);
+                cell.Value = field.FieldValue ?? "";
+                if (field.WasEditedByUser)
+                {
+                    cell.Style.Fill.BackgroundColor = EditedFill;
+                    cell.Style.Font.FontColor = EditedFont;
+                    cell.Style.Font.Bold = true;
+                    cell.CreateComment().AddText($"Edited by user. AI originally extracted: {(string.IsNullOrWhiteSpace(field.OriginalAiValue) ? "(nothing)" : field.OriginalAiValue)}");
+                }
             }
             row++;
         }
 
         sheet.Columns().AdjustToContents();
-        sheet.SheetView.FreezeRows(1);
+        sheet.SheetView.FreezeRows(2);
         sheet.SheetView.FreezeColumns(1);
     }
 

@@ -16,6 +16,13 @@ namespace Datamint.Infrastructure.Services;
 /// </summary>
 public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
 {
+    /// <summary>The only extraction-failure text ever shown to an end user - identical across
+    /// every provider (missing key, non-2xx response, network error, whatever) so a user can
+    /// never infer which AI is configured, or that "extraction" is even AI-driven under the
+    /// hood, from the wording of a failure. Real detail goes server-side only, via Logger.</summary>
+    protected const string GenericExtractionFailureMessage =
+        "We couldn't extract data from this document right now. Please try again shortly, or contact support if this continues.";
+
     protected readonly HttpClient Http;
     protected readonly IConfiguration Config;
     protected readonly ILogger Logger;
@@ -117,12 +124,19 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
     /// </summary>
     private static List<ExtractedFieldDto> ReconcileFormattedFields(List<ExtractedFieldDto> fields, IReadOnlyList<string> requestedFields)
     {
+        // Trimmed + case-insensitive on both sides: the model can echo a requested key back
+        // with incidental leading/trailing whitespace (or differing case) even though it
+        // otherwise matched the right field - neither should ever cause a real match to be
+        // missed and silently reported as "not found" (null) instead.
         var byKey = new Dictionary<string, ExtractedFieldDto>(StringComparer.OrdinalIgnoreCase);
         foreach (var field in fields)
-            if (!byKey.ContainsKey(field.Key)) byKey[field.Key] = field;
+        {
+            var trimmedKey = field.Key.Trim();
+            if (!byKey.ContainsKey(trimmedKey)) byKey[trimmedKey] = field;
+        }
 
         return requestedFields
-            .Select(name => byKey.TryGetValue(name, out var f) ? f with { Key = name } : new ExtractedFieldDto(name, null, null))
+            .Select(name => byKey.TryGetValue(name.Trim(), out var f) ? f with { Key = name } : new ExtractedFieldDto(name, null, null))
             .ToList();
     }
 

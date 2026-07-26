@@ -45,6 +45,19 @@ public static class DbSeeder
         await SeedOAuthAsync(db, config);
         await SeedExtractionTiersAsync(db);
         await SeedPlansAsync(db);
+        await SeedRoleExtractionTierOverridesAsync(db);
+    }
+
+    /// <summary>One row per role, created once with no override (ExtractionTierId null) - the
+    /// admin Roles tab only ever edits these two rows, never creates/deletes them.</summary>
+    private static async Task SeedRoleExtractionTierOverridesAsync(DatamintDbContext db)
+    {
+        foreach (var role in new[] { "Admin", "User" })
+        {
+            if (await db.RoleExtractionTierOverrides.AnyAsync(r => r.Role == role)) continue;
+            db.RoleExtractionTierOverrides.Add(new RoleExtractionTierOverride { Role = role });
+        }
+        await db.SaveChangesAsync();
     }
 
     /// <summary>Exactly one tier is ever flagged IsDefault - the fallback used for a Plan with

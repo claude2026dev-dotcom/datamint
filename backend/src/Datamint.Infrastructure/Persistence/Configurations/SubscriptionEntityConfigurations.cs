@@ -37,6 +37,16 @@ public class SubscriptionConfiguration : IEntityTypeConfiguration<Subscription>
     }
 }
 
+public class RoleExtractionTierOverrideConfiguration : IEntityTypeConfiguration<RoleExtractionTierOverride>
+{
+    public void Configure(EntityTypeBuilder<RoleExtractionTierOverride> b)
+    {
+        b.Property(r => r.Role).IsRequired().HasMaxLength(50);
+        b.HasIndex(r => r.Role).IsUnique();
+        b.HasOne(r => r.ExtractionTier).WithMany().HasForeignKey(r => r.ExtractionTierId).OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
 public class PaymentTransactionConfiguration : IEntityTypeConfiguration<PaymentTransaction>
 {
     public void Configure(EntityTypeBuilder<PaymentTransaction> b)

@@ -16,6 +16,19 @@ public class ExtractionTierResolver : IExtractionTierResolver
 
     public async Task<ExtractionTier> ResolveForUserAsync(Guid userId, CancellationToken ct = default)
     {
+        // A role-level override (e.g. every "Admin" account pinned to a specific tier) takes
+        // priority over anything plan-based - it's meant to bypass the normal plan/subscription
+        // path entirely for whichever accounts an admin has chosen to override.
+        var role = await _db.Users.Where(u => u.Id == userId).Select(u => u.Role).FirstOrDefaultAsync(ct);
+        if (role is not null)
+        {
+            var tierFromRole = await _db.RoleExtractionTierOverrides
+                .Where(r => r.Role == role)
+                .Select(r => r.ExtractionTier)
+                .FirstOrDefaultAsync(ct);
+            if (tierFromRole is { IsEnabled: true }) return tierFromRole;
+        }
+
         // A user's active subscription's plan may map to a specific tier - resolved here (not
         // in DocumentProcessingService) so every caller of extraction goes through the same
         // single source of truth for "which AI/model/prompt does this user's work right now".

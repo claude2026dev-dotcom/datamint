@@ -25,7 +25,7 @@ public class ClaudeFieldExtractionService : AiFieldExtractionServiceBase
     }
 
     protected override string? ApiKey => Config["Claude:ApiKey"];
-    protected override string MissingApiKeyMessage => "Claude API key is not configured. Set 'Claude:ApiKey' in appsettings/user-secrets.";
+    protected override string MissingApiKeyMessage => GenericExtractionFailureMessage;
 
     protected override async Task<(string? text, string? error)> CallModelAsync(
         string apiKey, string modelName, string prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct)
@@ -66,7 +66,7 @@ public class ClaudeFieldExtractionService : AiFieldExtractionServiceBase
             if (!response.IsSuccessStatusCode)
             {
                 Logger.LogError("Claude API error {Status}: {Body}", response.StatusCode, raw);
-                return (null, "AI extraction service returned an error. Please try again shortly.");
+                return (null, GenericExtractionFailureMessage);
             }
 
             using var doc = JsonDocument.Parse(raw);
@@ -76,7 +76,7 @@ public class ClaudeFieldExtractionService : AiFieldExtractionServiceBase
         catch (Exception ex)
         {
             Logger.LogError(ex, "Unexpected error calling Claude API");
-            return (null, "Unexpected error contacting the AI extraction service.");
+            return (null, GenericExtractionFailureMessage);
         }
     }
 }

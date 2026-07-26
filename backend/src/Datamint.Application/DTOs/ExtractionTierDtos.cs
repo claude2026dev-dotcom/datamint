@@ -10,3 +10,7 @@ public record CreateExtractionTierRequestDto(string Name, string AiProvider, str
 public record UpdateExtractionTierRequestDto(string Name, string AiProvider, string ModelName, string? CustomOutputFormatExample, string? CustomInstructions);
 
 public record ExtractionTierFilterDto(string? Search = null, bool? IsEnabled = null, int Page = 1, int PageSize = 25);
+
+public record RoleTierOverrideDto(string Role, Guid? ExtractionTierId, string? ExtractionTierName);
+
+public record UpdateRoleTierOverrideRequestDto(Guid? ExtractionTierId);

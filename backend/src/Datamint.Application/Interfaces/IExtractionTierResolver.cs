@@ -4,9 +4,10 @@ namespace Datamint.Application.Interfaces;
 
 /// <summary>
 /// Resolves which ExtractionTier (AI provider/model/prompt customization) applies to a given
-/// user's extraction, entirely invisibly to that user. A user's active subscription's Plan maps
-/// to a tier; a user with no plan (or a plan with no tier mapped) falls back to the one tier
-/// flagged IsDefault, which always exists and can't be deleted.
+/// user's extraction, entirely invisibly to that user. Resolution order: (1) an admin-configured
+/// override for the user's Role (see RoleExtractionTierOverride - e.g. every "Admin" account
+/// pinned to a specific tier regardless of plan), (2) the user's active subscription's Plan-
+/// mapped tier, (3) the one tier flagged IsDefault, which always exists and can't be deleted.
 /// </summary>
 public interface IExtractionTierResolver
 {

@@ -25,7 +25,7 @@ public class OpenAiFieldExtractionService : AiFieldExtractionServiceBase
     }
 
     protected override string? ApiKey => Config["OpenAI:ApiKey"];
-    protected override string MissingApiKeyMessage => "OpenAI API key is not configured. Set 'OpenAI:ApiKey' in appsettings/user-secrets.";
+    protected override string MissingApiKeyMessage => GenericExtractionFailureMessage;
 
     protected override Task<(string? text, string? error)> CallModelAsync(
         string apiKey, string modelName, string prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct) =>
@@ -80,7 +80,7 @@ public class OpenAiFieldExtractionService : AiFieldExtractionServiceBase
                 }
 
                 Logger.LogError("OpenAI API error {Status}: {Body}", response.StatusCode, raw);
-                return (null, "AI extraction service returned an error (check that the configured model id is valid and currently available). Please try again shortly.");
+                return (null, GenericExtractionFailureMessage);
             }
 
             using var doc = JsonDocument.Parse(raw);
@@ -90,7 +90,7 @@ public class OpenAiFieldExtractionService : AiFieldExtractionServiceBase
         catch (Exception ex)
         {
             Logger.LogError(ex, "Unexpected error calling OpenAI API");
-            return (null, "Unexpected error contacting the AI extraction service.");
+            return (null, GenericExtractionFailureMessage);
         }
     }
 
