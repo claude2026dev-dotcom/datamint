@@ -11,6 +11,9 @@ import { IconComponent } from '../icon/icon.component';
       <a routerLink="/profile" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
         <app-icon name="user" [size]="15" /> <span>Account</span>
       </a>
+      <a routerLink="/profile/plan" routerLinkActive="active">
+        <app-icon name="dollar-sign" [size]="15" /> <span>Plan</span>
+      </a>
       <a routerLink="/profile/security" routerLinkActive="active">
         <app-icon name="key" [size]="15" /> <span>Security</span>
       </a>

@@ -28,8 +28,8 @@ public class AdminPlansController : ControllerBase
         _currentUser = currentUser;
     }
 
-    private static PlanDto ToDto(Plan p) =>
-        new(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyPageLimit, p.IsRecurring, p.IsActive, p.IsFreeTrial, p.ExtractionTierId);
+    private static PlanDto ToDto(Plan p, int activeSubscribers = 0) =>
+        new(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyPageLimit, p.IsRecurring, p.IsActive, p.IsFreeTrial, p.ExtractionTierId, activeSubscribers);
 
     [HttpGet]
     public async Task<IActionResult> GetPlans([FromQuery] PlanFilterDto filter, CancellationToken ct)
@@ -43,11 +43,16 @@ public class AdminPlansController : ControllerBase
         if (filter.IsActive is not null) query = query.Where(x => x.IsActive == filter.IsActive);
 
         var total = await query.CountAsync(ct);
-        var items = await query.OrderBy(x => x.Price)
+        var plans = await query.OrderBy(x => x.Price)
             .Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize)
-            .Select(x => ToDto(x))
             .ToListAsync(ct);
 
+        var subscriberCounts = await _db.Subscriptions.Where(s => s.Status == SubscriptionStatus.Active)
+            .GroupBy(s => s.PlanId)
+            .Select(g => new { PlanId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.PlanId, g => g.Count, ct);
+
+        var items = plans.Select(p => ToDto(p, subscriberCounts.GetValueOrDefault(p.Id, 0))).ToList();
         return Ok(new { success = true, items, total, filter.Page, filter.PageSize });
     }
 

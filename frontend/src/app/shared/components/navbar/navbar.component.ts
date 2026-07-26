@@ -27,6 +27,7 @@ import { environment } from '../../../../environments/environment';
           @if (auth.isLoggedIn()) { <a routerLink="/home" routerLinkActive="active" (click)="menuOpen = false">Home</a> }
           @if (auth.isLoggedIn()) { <a routerLink="/upload" routerLinkActive="active" (click)="menuOpen = false">Upload</a> }
           @if (auth.isLoggedIn()) { <a routerLink="/documents" routerLinkActive="active" (click)="menuOpen = false">My documents</a> }
+          <a routerLink="/plans" routerLinkActive="active" (click)="menuOpen = false">Pricing</a>
           @if (auth.isAdmin()) { <a routerLink="/admin" routerLinkActive="active" (click)="menuOpen = false">Admin</a> }
           <!-- Only rendered (and only ever visible) below the mobile breakpoint - the standalone
                buttons in .actions cover desktop, where there's room for full "Log in"/"Get started"

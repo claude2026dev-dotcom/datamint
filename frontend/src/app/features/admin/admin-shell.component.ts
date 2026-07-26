@@ -34,6 +34,12 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           <a routerLink="/admin/scopes" routerLinkActive="active" title="Scopes">
             <app-icon name="grid" [size]="17" /> <span>Scopes</span>
           </a>
+          <a routerLink="/admin/plans" routerLinkActive="active" title="Plans">
+            <app-icon name="dollar-sign" [size]="17" /> <span>Plans</span>
+          </a>
+          <a routerLink="/admin/extraction-tiers" routerLinkActive="active" title="Extraction Tiers">
+            <app-icon name="cpu" [size]="17" /> <span>Extraction Tiers</span>
+          </a>
         </nav>
 
         <a routerLink="/" class="sidebar-footer"><app-icon name="chevron-left" [size]="15" /> Back to app</a>

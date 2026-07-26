@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
-import { OAuthClientDetail, OAuthClientListItem, OAuthClientSecretReveal, OAuthScope } from '../models/models';
+import { ExtractionTier, OAuthClientDetail, OAuthClientListItem, OAuthClientSecretReveal, OAuthScope } from '../models/models';
 
 @Injectable({ providedIn: 'root' })
 export class AdminService {
@@ -52,7 +52,7 @@ export class AdminService {
   }
 
   getPlans() {
-    return this.http.get<{ success: boolean; plans: any[] }>(`${environment.apiBaseUrl}/admin/plans`);
+    return this.http.get<{ success: boolean; items: any[]; total: number; page: number; pageSize: number }>(`${environment.apiBaseUrl}/admin/plans`);
   }
 
   createPlan(payload: any) {
@@ -80,6 +80,31 @@ export class AdminService {
 
   refundTransaction(id: string, reason?: string) {
     return this.http.post<{ success: boolean; message: string }>(`${environment.apiBaseUrl}/admin/transactions/${id}/refund`, { reason });
+  }
+
+  // ---------- Extraction Tiers ----------
+
+  getExtractionTiers(params: { page?: number; pageSize?: number; search?: string; isEnabled?: boolean } = {}) {
+    const cleaned = this.stripEmpty(params);
+    return this.http.get<{ success: boolean; items: ExtractionTier[]; total: number; page: number; pageSize: number }>(
+      `${environment.apiBaseUrl}/admin/extraction-tiers`, { params: cleaned }
+    );
+  }
+
+  createExtractionTier(payload: { name: string; aiProvider: string; modelName: string; customOutputFormatExample?: string | null; customInstructions?: string | null }) {
+    return this.http.post<{ success: boolean; tier: ExtractionTier }>(`${environment.apiBaseUrl}/admin/extraction-tiers`, payload);
+  }
+
+  updateExtractionTier(id: string, payload: { name: string; aiProvider: string; modelName: string; customOutputFormatExample?: string | null; customInstructions?: string | null }) {
+    return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/admin/extraction-tiers/${id}`, payload);
+  }
+
+  deleteExtractionTier(id: string) {
+    return this.http.delete<{ success: boolean }>(`${environment.apiBaseUrl}/admin/extraction-tiers/${id}`);
+  }
+
+  toggleExtractionTierActive(id: string) {
+    return this.http.put<{ success: boolean; isEnabled: boolean }>(`${environment.apiBaseUrl}/admin/extraction-tiers/${id}/toggle-active`, {});
   }
 
   // ---------- OAuth Clients ----------

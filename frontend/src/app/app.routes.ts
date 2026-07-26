@@ -21,6 +21,11 @@ export const routes: Routes = [
   { path: 'auth/google/callback', loadComponent: () => import('./features/auth/google-callback/google-callback.component').then(m => m.GoogleCallbackComponent) },
   { path: 'profile', loadComponent: () => import('./features/profile/profile.component').then(m => m.ProfileComponent), canActivate: [authGuard] },
   { path: 'profile/security', loadComponent: () => import('./features/profile/security/security.component').then(m => m.SecurityComponent), canActivate: [authGuard] },
+  { path: 'profile/plan', loadComponent: () => import('./features/profile/plan/plan.component').then(m => m.PlanComponent), canActivate: [authGuard] },
+  { path: 'field-templates', loadComponent: () => import('./features/field-templates/field-templates.component').then(m => m.FieldTemplatesComponent), canActivate: [authGuard] },
+  { path: 'plans', loadComponent: () => import('./features/subscription/plans/plans.component').then(m => m.PlansComponent) },
+  { path: 'checkout/:planId', loadComponent: () => import('./features/subscription/checkout/checkout.component').then(m => m.CheckoutComponent), canActivate: [authGuard] },
+  { path: 'contact', loadComponent: () => import('./features/contact/contact.component').then(m => m.ContactComponent) },
   { path: 'terms', loadComponent: () => import('./features/legal/terms.component').then(m => m.TermsComponent) },
   { path: 'privacy', loadComponent: () => import('./features/legal/privacy.component').then(m => m.PrivacyComponent) },
   {
@@ -36,6 +41,8 @@ export const routes: Routes = [
       { path: 'oauth-clients/new', loadComponent: () => import('./features/admin/oauth-clients/oauth-client-form.component').then(m => m.OAuthClientFormComponent) },
       { path: 'oauth-clients/:id', loadComponent: () => import('./features/admin/oauth-clients/oauth-client-form.component').then(m => m.OAuthClientFormComponent) },
       { path: 'scopes', loadComponent: () => import('./features/admin/oauth-scopes/admin-oauth-scopes.component').then(m => m.AdminOAuthScopesComponent) },
+      { path: 'plans', loadComponent: () => import('./features/admin/subscriptions/admin-subscriptions.component').then(m => m.AdminSubscriptionsComponent) },
+      { path: 'extraction-tiers', loadComponent: () => import('./features/admin/extraction-tiers/admin-extraction-tiers.component').then(m => m.AdminExtractionTiersComponent) },
     ]
   },
   { path: '**', loadComponent: () => import('./features/not-found/not-found.component').then(m => m.NotFoundComponent) }

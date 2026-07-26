@@ -1,6 +1,6 @@
 namespace Datamint.Application.DTOs;
 
-public record PlanDto(Guid Id, string Name, string? Description, decimal Price, string Currency, string BillingCycle, int MonthlyPageLimit, bool IsRecurring, bool IsActive, bool IsFreeTrial, Guid? ExtractionTierId);
+public record PlanDto(Guid Id, string Name, string? Description, decimal Price, string Currency, string BillingCycle, int MonthlyPageLimit, bool IsRecurring, bool IsActive, bool IsFreeTrial, Guid? ExtractionTierId, int ActiveSubscribers = 0);
 
 public record CreatePlanRequestDto(string Name, string? Description, decimal Price, string Currency, string BillingCycle, int MonthlyPageLimit, bool IsRecurring, bool IsFreeTrial, Guid? ExtractionTierId);
 
