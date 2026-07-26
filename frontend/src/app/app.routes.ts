@@ -8,6 +8,12 @@ import { landingRedirectGuard } from './core/guards/landing-redirect.guard';
 export const routes: Routes = [
   { path: '', loadComponent: () => import('./features/landing/landing.component').then(m => m.LandingComponent), canActivate: [landingRedirectGuard] },
   { path: 'home', loadComponent: () => import('./features/home/home.component').then(m => m.HomeComponent), canActivate: [authGuard] },
+  { path: 'upload', loadComponent: () => import('./features/upload/upload.component').then(m => m.UploadComponent), canActivate: [authGuard] },
+  { path: 'documents', loadComponent: () => import('./features/documents/documents-list.component').then(m => m.DocumentsListComponent), canActivate: [authGuard] },
+  // Static "batch-review" route must come before the ":id" route below - Angular matches
+  // children in array order, so ":id" listed first would swallow "/documents/batch-review" as id="batch-review".
+  { path: 'documents/batch-review', loadComponent: () => import('./features/batch-review/batch-review.component').then(m => m.BatchReviewComponent), canActivate: [authGuard] },
+  { path: 'documents/:id/review', loadComponent: () => import('./features/preview-edit/preview-edit.component').then(m => m.PreviewEditComponent), canActivate: [authGuard] },
   { path: 'login', loadComponent: () => import('./features/auth/login/login.component').then(m => m.LoginComponent) },
   { path: 'register', loadComponent: () => import('./features/auth/register/register.component').then(m => m.RegisterComponent) },
   { path: 'forgot-password', loadComponent: () => import('./features/auth/forgot-password/forgot-password.component').then(m => m.ForgotPasswordComponent) },
