@@ -71,7 +71,7 @@ public static class DbSeeder
         {
             Name = "Standard",
             AiProvider = AiProvider.Claude,
-            ModelName = "claude-haiku-4-5",
+            ModelName = "claude-haiku-4-5-20251001",
             IsDefault = true,
             IsEnabled = true
         });
