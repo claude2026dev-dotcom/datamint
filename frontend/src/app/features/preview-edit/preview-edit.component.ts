@@ -98,12 +98,14 @@ import { FieldJsonViewComponent } from '../../shared/components/field-json-view/
   `,
   styles: [`
     .page { padding-top: 40px; padding-bottom: 80px; }
-    /* The site-wide 1180px container is fine for prose pages, but cramps a data table that's
-       genuinely meant to show many fields/columns side by side - give this page more room, but
-       with extra side padding of its own (not just the site-wide 20px) so it still reads as
-       having deliberate margins instead of running edge-to-edge on a wide monitor. */
-    .page-wide { max-width: 1440px; padding-left: 32px; padding-right: 32px; }
-    @media (max-width: 640px) { .page-wide { padding-left: 16px; padding-right: 16px; } }
+    /* Widening this page's container used to be the fix for a cramped table, but any max-width
+       short of the viewport's actual width just renders full-bleed anyway - measured at a common
+       1280px viewport, a 1440px cap left only 8px of margin versus every other page's ~50px,
+       a real, measured mismatch. Now that the table itself sizes to its own content (fit-content,
+       not a forced 100%) instead of needing a wide container to avoid looking cramped, there's no
+       real reason for this page to have different side margins from any other page at all -
+       .page-wide is intentionally a no-op, kept only so the class name in the template still
+       makes sense to read; matching the site-wide 1180px container exactly is the actual fix. */
     .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     /* Both button groups share the same 46px height so the two-line mode-toggle (title +

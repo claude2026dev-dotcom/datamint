@@ -46,7 +46,9 @@ interface SectionGroup {
               </thead>
               <tbody>
                 @for (section of doc.sections; track section.label) {
-                  <tr class="section-row"><td colspan="3">{{ section.label }}</td></tr>
+                  @if (!isUnsectioned(doc)) {
+                    <tr class="section-row"><td colspan="3">{{ section.label }}</td></tr>
+                  }
                   @for (field of section.fields; track field.id; let odd = $odd) {
                     <tr [class.odd]="odd">
                       <td class="col-key">{{ field.fieldKey }}</td>
@@ -63,23 +65,30 @@ interface SectionGroup {
     } @else {
       <div class="dm-card table-card">
         <div class="table-scroll">
-          <table class="plain-table cols-table">
+          <table class="plain-table cols-table" [class.no-doc-col]="documents.length <= 1">
             <thead>
-              <tr>
-                <th class="doc-col">Document</th>
-                @for (group of sectionGroups; track group.label) {
-                  <th [attr.colspan]="group.columns.length" class="section-head"><span class="section-head-label">{{ group.label }}</span></th>
-                }
-              </tr>
-              <tr>
-                <th class="doc-col-spacer"></th>
-                @for (col of columns; track col.key) { <th>{{ col.key }}</th> }
-              </tr>
+              @if (hasRealSections()) {
+                <tr>
+                  @if (documents.length > 1) { <th class="doc-col">Document</th> }
+                  @for (group of sectionGroups; track group.label) {
+                    <th [attr.colspan]="group.columns.length" class="section-head"><span class="section-head-label">{{ group.label }}</span></th>
+                  }
+                </tr>
+                <tr>
+                  @if (documents.length > 1) { <th class="doc-col-spacer"></th> }
+                  @for (col of columns; track col.key) { <th>{{ col.key }}</th> }
+                </tr>
+              } @else {
+                <tr>
+                  @if (documents.length > 1) { <th class="doc-col single-row">Document</th> }
+                  @for (col of columns; track col.key) { <th class="single-row">{{ col.key }}</th> }
+                </tr>
+              }
             </thead>
             <tbody>
               @for (doc of documents; track doc.id) {
                 <tr>
-                  <td class="doc-col" [title]="doc.fileName">{{ doc.fileName }}</td>
+                  @if (documents.length > 1) { <td class="doc-col" [title]="doc.fileName">{{ doc.fileName }}</td> }
                   @for (col of columns; track col.key) {
                     <td>{{ findValue(doc, col.key) }}</td>
                   }
@@ -92,7 +101,10 @@ interface SectionGroup {
     }
   `,
   styles: [`
-    .table-card { padding: 0; margin-bottom: 20px; overflow: hidden; }
+    /* Fit-content (not a flat 100%) so a document with only 2-3 short fields renders a compact
+       card instead of a mostly-empty box stretched to the full width of a wide page container -
+       the card only ever grows as wide as it actually needs to, up to the available space. */
+    .table-card { padding: 0; margin-bottom: 20px; overflow: hidden; width: fit-content; max-width: 100%; }
     .doc-head { padding: 13px 16px; font-weight: 700; font-size: 0.94rem; border-bottom: 1px solid var(--dm-border); background: var(--dm-surface); }
     .table-scroll { max-height: 72vh; overflow: auto; }
     /* border-collapse:collapse + position:sticky cells is a well-documented Chromium/WebKit
@@ -101,16 +113,20 @@ interface SectionGroup {
        "text overlapping the header" artifacts this replaced. border-collapse:separate with
        per-cell bottom/right borders (instead of all four sides) draws the same clean grid
        without tripping that bug, since collapsed cells never need to be reconciled. */
-    /* table-layout:fixed + explicit widths (Field/Type fixed, Value takes the remainder) so the
-       Type column is always visible without needing a horizontal scroll first, no matter how
-       long a value is - a long value wraps inside its own cell instead of stretching the whole
-       table wider and pushing Type off-screen. */
-    .plain-table { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: fixed; }
+    /* table-layout:auto (content-driven), not fixed+100% - a fixed-percentage Value column
+       looks absurdly wide for a document with only a couple of short fields, stretched across
+       whatever width the page container happens to have. Auto layout sizes the table to its
+       own content instead (paired with .table-card's fit-content above), while col-type keeps
+       an explicit width the algorithm treats as a strong preference and col-key/col-val cap
+       their own growth with max-width + wrapping - so Type still can't get squeezed off-screen
+       by a long value, it just wraps within its own bound instead of growing the table wider. */
+    .plain-table { border-collapse: separate; border-spacing: 0; table-layout: auto; width: auto; }
     .plain-table th, .plain-table td { border-bottom: 1px solid var(--dm-border); border-right: 1px solid var(--dm-border); padding: 11px 16px; text-align: left; vertical-align: top; font-size: 0.92rem; background: var(--dm-bg, var(--dm-surface)); overflow-wrap: break-word; }
     .plain-table th:first-child, .plain-table td:first-child { border-left: 1px solid var(--dm-border); }
     .plain-table thead th { position: sticky; top: 0; z-index: 3; background: var(--dm-bg-elevated); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); font-weight: 700; border-top: 1px solid var(--dm-border); will-change: transform; }
-    .col-key { font-weight: 600; width: 26%; }
-    .col-type { width: 110px; }
+    .col-key { font-weight: 600; max-width: 320px; }
+    .col-val { max-width: 640px; }
+    .col-type { width: 110px; white-space: nowrap; }
     .type-pill { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: rgba(99,102,241,0.1); color: var(--dm-primary); white-space: nowrap; }
     .section-row td { background: var(--dm-surface); font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--dm-primary); border-left: 3px solid var(--dm-primary); }
     tbody tr.odd td { background: var(--dm-surface); }
@@ -120,13 +136,20 @@ interface SectionGroup {
        frozen-column boundary, not just a hunch. Re-assert it here with matching specificity. */
     tbody tr.odd td.doc-col { background: var(--dm-bg-elevated); }
 
-    /* The Rows table above is fixed-width so Field/Value/Type always fit without scrolling
-       first: the Columns table is the opposite case on purpose - it can have many field
-       columns and is meant to size to its content and scroll horizontally, so it overrides
-       back to natural auto-sizing. */
+    /* The Columns table is meant to size to its content and scroll horizontally when there are
+       many field columns. */
     .cols-table { table-layout: auto; width: auto; min-width: max-content; }
     .cols-table thead tr:first-child th { top: 0; height: 34px; }
     .cols-table thead tr:nth-child(2) th { top: 34px; height: 34px; }
+    /* When the document(s) have no real sections, the two-row header (group band + column
+       names) collapses to one plain row - it needs its own sticky-top rule since the generic
+       ".plain-table thead th" already covers top:0, but nothing sets a sensible row height. */
+    .single-row { top: 0; height: 34px; }
+    /* No frozen "Document" column at all in the single-document case (it would just repeat one
+       filename down every row) - the section-head label's sticky anchor has nothing to dock
+       against then, so it should sit flush left instead of leaving a 200px gap for a column
+       that was never rendered. */
+    .cols-table.no-doc-col .section-head-label { left: 0; }
     /* Sticky on the <th colspan> ITSELF doesn't hand off cleanly between adjacent sections: a
        table cell's sticky containing block is the whole scrolling area, not its own column
        span, so once a cell's natural position scrolls past the anchor it stays stuck there
@@ -223,5 +246,19 @@ export class FieldTableViewComponent implements OnChanges {
 
   findValue(doc: FieldEditorDocument, key: string): string {
     return doc.fields.find(f => f.fieldKey === key)?.fieldValue || '—';
+  }
+
+  /// True when every field in this document sits in the single default "General" bucket - i.e.
+  /// nobody ever grouped this document into real sections. Showing a lone "GENERAL" banner row
+  /// in that case is just noise (there's nothing being distinguished from), so both this and the
+  /// Columns view's equivalent check skip the section chrome entirely and render a flat table.
+  isUnsectioned(doc: TableDocument): boolean {
+    return doc.sections.length === 1 && doc.sections[0].label === 'General';
+  }
+
+  /// Same "nothing to distinguish" check as isUnsectioned, for the Columns view's own grouping
+  /// (built from all documents combined rather than per-document).
+  hasRealSections(): boolean {
+    return this.sectionGroups.length > 1 || (this.sectionGroups.length === 1 && this.sectionGroups[0].label !== 'General');
   }
 }

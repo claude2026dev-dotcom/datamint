@@ -87,15 +87,23 @@ interface CardDocument {
           @for (section of doc.sections; track section.label) {
             @if (sectionMatches(section)) {
               <div class="dm-card section-card">
-              <div class="section-head">
-                <input class="section-title" #titleInput [ngModel]="section.label" (blur)="renameSection(doc, section, titleInput.value)"
-                       title="Rename this section" />
-                <div class="section-actions">
-                  <span class="muted small">{{ editedCount(section) }} of {{ section.fields.length }} edited</span>
-                  <button type="button" class="link-btn" (click)="setSectionIncluded(doc, section, true)">All</button>
-                  <button type="button" class="link-btn" (click)="setSectionIncluded(doc, section, false)">None</button>
+              @if (!isFlatDoc(doc)) {
+                <div class="section-head">
+                  <input class="section-title" #titleInput [ngModel]="section.label" (blur)="renameSection(doc, section, titleInput.value)"
+                         title="Rename this section" />
+                  <div class="section-actions">
+                    <span class="muted small">{{ editedCount(section) }} of {{ section.fields.length }} edited</span>
+                    <button type="button" class="link-btn" (click)="setSectionIncluded(doc, section, true)">All</button>
+                    <button type="button" class="link-btn" (click)="setSectionIncluded(doc, section, false)">None</button>
+                    @if (section.label !== 'General') {
+                      <button type="button" class="link-btn remove-section-btn" (click)="removeSection(doc, section)"
+                              title="Ungroup these fields - they'll move into the unsectioned General group instead of being deleted">
+                        Remove section
+                      </button>
+                    }
+                  </div>
                 </div>
-              </div>
+              }
 
               <div class="field-list" cdkDropList [cdkDropListData]="section.fields" [cdkDropListDisabled]="!!searchTerm"
                    (cdkDropListDropped)="onDrop($event, doc, section)">
@@ -202,6 +210,11 @@ interface CardDocument {
     .doc-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
     .link-btn { background: none; border: none; padding: 2px 4px; font-size: 0.78rem; font-weight: 700; color: var(--dm-primary); cursor: pointer; white-space: nowrap; }
     .link-btn:hover { text-decoration: underline; }
+    /* Muted (not primary-colored like All/None) - this is a less common, lower-stakes action
+       (it ungroups fields into General, it never deletes data) and shouldn't visually compete
+       with the two everyday toggles next to it. */
+    .remove-section-btn { color: var(--dm-text-muted); margin-left: 4px; }
+    .remove-section-btn:hover { color: #DC2626; }
     .dot { color: var(--dm-text-muted); }
     .toolbar-hint { margin-left: 2px; }
 
@@ -369,6 +382,24 @@ export class FieldCardEditorComponent implements OnChanges {
     section.label = trimmed;
     for (const field of section.fields) field.sectionLabel = trimmed;
     this.sectionRenamed.emit({ docId: doc.id, oldLabel, newLabel: trimmed });
+  }
+
+  /// "Removing" a section doesn't delete its fields - it ungroups them by merging them into the
+  /// document's unsectioned "General" bucket, the same fallback every field without a real
+  /// section label already resolves to. Reuses renameSection's existing rename-all-fields-in-
+  /// this-section API call rather than needing a separate backend endpoint.
+  removeSection(doc: CardDocument, section: CardSection) {
+    this.renameSection(doc, section, 'General');
+  }
+
+  /// True when a document has nothing worth showing section chrome for - either it never had
+  /// real sections (everything AI-assigned to the default "General" bucket), or the user has
+  /// since removed/merged every section back into it. Showing a single lonely "GENERAL" banner
+  /// with rename/All/None controls in that case is just noise since there's nothing being
+  /// distinguished from - the document-level Select all/Unselect all above already covers the
+  /// same "All/None" functionality for the whole document.
+  isFlatDoc(doc: CardDocument): boolean {
+    return doc.sections.length === 1 && doc.sections[0].label === 'General';
   }
 
   onDrop(event: CdkDragDrop<ExtractedFieldEdit[]>, doc: CardDocument, targetSection: CardSection) {

@@ -96,6 +96,21 @@ type SheetMode = 'combined' | 'byFile' | 'separateFiles';
           </div>
         </div>
 
+        <!-- Combined/Multi-sheet/Separate files look identical as buttons - this line is the
+             only thing that actually explains what pressing "Excel"/"Email" will produce for
+             whichever one is currently selected, since the preview below (a single combined
+             table either way) can't show that difference on its own. -->
+        <p class="mode-caption muted small">
+          <app-icon name="sparkles" [size]="13" />
+          @if (sheetMode === 'combined') {
+            All {{ documents.length }} document(s) will export as one combined sheet/file.
+          } @else if (sheetMode === 'byFile') {
+            Exports as one workbook with a separate tab per document ({{ documents.length }} tabs).
+          } @else {
+            Exports as a .zip containing one separate file per document ({{ documents.length }} files).
+          }
+        </p>
+
         @if (emailModalOpen) {
           <app-export-modal [busy]="emailBusy" (confirmed)="onEmailConfirmed($event)" (cancelled)="emailModalOpen = false" />
         }
@@ -137,12 +152,14 @@ type SheetMode = 'combined' | 'byFile' | 'separateFiles';
   `,
   styles: [`
     .page { padding-top: 40px; padding-bottom: 80px; }
-    /* The site-wide 1180px container is fine for prose pages, but cramps a data table that's
-       genuinely meant to show many fields/columns side by side - give this page more room, but
-       with extra side padding of its own (not just the site-wide 20px) so it still reads as
-       having deliberate margins instead of running edge-to-edge on a wide monitor. */
-    .page-wide { max-width: 1440px; padding-left: 32px; padding-right: 32px; }
-    @media (max-width: 640px) { .page-wide { padding-left: 16px; padding-right: 16px; } }
+    /* Widening this page's container used to be the fix for a cramped table, but any max-width
+       short of the viewport's actual width just renders full-bleed anyway - measured at a common
+       1280px viewport, a 1440px cap left only 8px of margin versus every other page's ~50px,
+       a real, measured mismatch. Now that the table itself sizes to its own content (fit-content,
+       not a forced 100%) instead of needing a wide container to avoid looking cramped, there's no
+       real reason for this page to have different side margins from any other page at all -
+       .page-wide is intentionally a no-op, kept only so the class name in the template still
+       makes sense to read; matching the site-wide 1180px container exactly is the actual fix. */
     .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     /* Both button groups share the same 46px height so the two-line mode-toggle (title +
@@ -166,6 +183,8 @@ type SheetMode = 'combined' | 'byFile' | 'separateFiles';
     .btn-json { border-color: #378ADD; color: #185FA5; }
     .btn-json:hover { background: rgba(55,138,221,0.08); }
 
+    .mode-caption { display: flex; align-items: center; gap: 6px; margin: -10px 0 16px; }
+    .mode-caption app-icon { color: var(--dm-primary); flex-shrink: 0; }
     .toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
     .toggle-group { display: flex; gap: 10px; flex-wrap: wrap; }
     .view-toggle { display: flex; border: 1px solid var(--dm-border); border-radius: var(--dm-radius-sm); overflow: hidden; }
