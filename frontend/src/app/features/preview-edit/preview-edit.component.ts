@@ -36,7 +36,7 @@ import { FieldJsonViewComponent } from '../../shared/components/field-json-view/
         <p class="muted">Loading…</p>
       } @else {
       <div class="header">
-        <div>
+        <div class="header-title">
           <h1>{{ fileName }}</h1>
           <p class="muted">{{ pageCount }} page(s)</p>
         </div>
@@ -108,6 +108,15 @@ import { FieldJsonViewComponent } from '../../shared/components/field-json-view/
        .page-wide is intentionally a no-op, kept only so the class name in the template still
        makes sense to read; matching the site-wide 1180px container exactly is the actual fix. */
     .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+    /* A long original filename (these are user uploads, often long) would otherwise consume the
+       whole row's width as one unbroken line and push the Edit/Preview toggle onto its own row
+       below - inconsistent with a short-titled page like the batch review's "Combined preview"
+       header, which has room to keep both on one row. Letting the title shrink and wrap onto
+       multiple lines instead keeps the toggle anchored in the same spot regardless of filename
+       length, so this page and the batch one always look the same, not just when titles happen
+       to be short. */
+    .header-title { flex: 1 1 320px; min-width: 0; }
+    .header-title h1 { overflow-wrap: break-word; word-break: break-word; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     /* No custom size override here on purpose - the previous 46px/18px/0.88rem override made
        these read as noticeably smaller than a plain .dm-btn elsewhere in the app (measured: a

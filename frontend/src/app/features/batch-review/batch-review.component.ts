@@ -44,7 +44,7 @@ type SheetMode = 'combined' | 'byFile' | 'separateFiles';
         </div>
       } @else {
       <div class="header">
-        <div>
+        <div class="header-title">
           <h1>Combined preview — {{ documents.length }} file(s)</h1>
           <p class="muted">Edit any field below. Each file keeps its own labels and values.</p>
         </div>
@@ -163,6 +163,11 @@ type SheetMode = 'combined' | 'byFile' | 'separateFiles';
        .page-wide is intentionally a no-op, kept only so the class name in the template still
        makes sense to read; matching the site-wide 1180px container exactly is the actual fix. */
     .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+    /* Same fix as preview-edit.component.ts: let the title shrink/wrap instead of forcing the
+       Edit/Preview toggle onto its own row whenever the title text happens to be long, so the
+       toggle sits in the same spot on both pages regardless of title length. */
+    .header-title { flex: 1 1 320px; min-width: 0; }
+    .header-title h1 { overflow-wrap: break-word; word-break: break-word; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     /* No custom size override here on purpose - the previous 46px/18px/0.88rem override made
        these read as noticeably smaller than a plain .dm-btn elsewhere in the app (measured: a
