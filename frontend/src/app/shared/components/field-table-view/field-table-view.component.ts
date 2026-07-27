@@ -46,7 +46,7 @@ interface SectionGroup {
   template: `
     @if (viewMode === 'rows') {
       @for (doc of tableDocuments; track doc.id) {
-        <div class="dm-card table-card" [class.full-width]="tableDocuments.length > 1">
+        <div class="dm-card table-card">
           @if (tableDocuments.length > 1) {
             <div class="doc-head">{{ doc.fileName }}</div>
           }
@@ -135,22 +135,13 @@ interface SectionGroup {
        this component's internal grid lines (not the outer card border, which stays as-is) so
        rows/columns still read as clearly separated without looking like a heavy grid. */
     :host { --grid-line: color-mix(in srgb, var(--dm-border) 55%, transparent); }
-    /* Fit-content (not a flat 100%) so a document with only 2-3 short fields renders a compact
-       card instead of a mostly-empty box stretched to the full width of a wide page container -
-       the card only ever grows as wide as it actually needs to, up to the available space.
-       margin:0 auto centers that narrower card instead of leaving it flush left with a single
-       lopsided gap of blank space on the right - centering balances the leftover space evenly on
-       both sides, which reads as deliberate page margins instead of "something is missing". */
-    .table-card { padding: 0; margin: 0 auto 20px; overflow: hidden; width: fit-content; max-width: 100%; }
-    /* Fit-content works well for a single document, but stacking several independently-sized
-       cards looks sloppy and inconsistent when they're shown together (e.g. two copies of the
-       same document ending up different widths just because one has a longer edited value).
-       Bulk view shares one common width across every card instead - the table itself also needs
-       forcing to 100% here (not just the card), since an auto-width table doesn't stretch to
-       fill a wider ancestor on its own; it would otherwise stay content-sized and hug the left
-       edge of its now-wider card, which looks worse than the mismatch this is meant to fix. */
-    .table-card.full-width { width: 100%; margin-left: 0; margin-right: 0; }
-    .table-card.full-width .plain-table { width: 100%; }
+    /* Always spans the container's full width, matching every other card in the app (the edit
+       view's field cards, upload page, etc.) - a fit-content/centered card used to leave large,
+       empty gutters on both sides for a document with only a few short fields, which read as
+       unfinished/unprofessional rather than deliberate page margins. A document with genuinely
+       many columns still scrolls horizontally inside .table-scroll instead of being squeezed. */
+    .table-card { padding: 0; margin: 0 0 20px; overflow: hidden; width: 100%; }
+    .table-card .plain-table { width: 100%; }
     .doc-head { padding: 13px 16px; font-weight: 700; font-size: 0.94rem; border-bottom: 1px solid var(--dm-border); background: var(--dm-surface); }
     /* Thin, theme-matched scrollbar instead of the browser's default chunky one - transparent
        track so it only shows visual weight where the thumb actually is. */
