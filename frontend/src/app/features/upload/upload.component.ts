@@ -100,8 +100,9 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
               <div class="fields-actions">
                 <button type="button" class="dm-btn dm-btn-ghost add-field-btn" (click)="addFieldBox()">+ Add another field</button>
                 @if (!savingTemplateOpen) {
-                  <button type="button" class="dm-btn dm-btn-ghost save-template-btn" (click)="openSaveTemplate()" [disabled]="requestedFieldNames.length === 0">
-                    <app-icon name="file-text" [size]="14" /> Save as template
+                  <button type="button" class="dm-btn dm-btn-ghost save-template-btn" (click)="onSaveTemplateClick()" [disabled]="requestedFieldNames.length === 0 || savingTemplate">
+                    <app-icon name="file-text" [size]="14" />
+                    {{ savingTemplate ? 'Saving…' : (selectedTemplateId ? 'Update template' : 'Save as template') }}
                   </button>
                 }
               </div>
@@ -346,9 +347,36 @@ export class UploadComponent implements OnInit, AfterViewChecked {
   addFieldBox() { this.fieldBoxes.push(''); }
   removeFieldBox(index: number) { this.fieldBoxes.splice(index, 1); }
 
+  /// A template that's currently loaded (selected in the dropdown, even after its fields were
+  /// edited/added/removed) saves straight back into itself - re-asking for a name here would just
+  /// invite an accidental duplicate. Only when nothing is selected (a fresh, from-scratch field
+  /// list) does saving need a new name at all.
+  onSaveTemplateClick() {
+    if (this.selectedTemplateId) this.updateTemplate();
+    else this.openSaveTemplate();
+  }
+
   openSaveTemplate() {
     this.newTemplateName = '';
     this.savingTemplateOpen = true;
+  }
+
+  updateTemplate() {
+    const template = this.savedTemplates.find(t => t.id === this.selectedTemplateId);
+    if (!template || this.requestedFieldNames.length === 0) return;
+
+    this.savingTemplate = true;
+    this.fieldTemplateService.update(template.id, template.name, this.requestedFieldNames).subscribe({
+      next: res => {
+        this.savingTemplate = false;
+        this.savedTemplates = this.savedTemplates.map(t => t.id === res.template.id ? res.template : t);
+        this.toast.success('Template updated.');
+      },
+      error: err => {
+        this.savingTemplate = false;
+        this.toast.error(err?.error?.message || 'Could not update that template. Please try again.');
+      }
+    });
   }
 
   saveTemplate() {
