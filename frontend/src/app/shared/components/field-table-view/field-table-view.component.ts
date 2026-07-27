@@ -51,7 +51,7 @@ interface SectionGroup {
             <div class="doc-head">{{ doc.fileName }}</div>
           }
           <div class="table-scroll">
-            <table class="plain-table">
+            <table class="plain-table rows-table">
               <thead>
                 <tr><th class="col-key">Field</th><th class="col-val">Value</th><th class="col-type">Type</th></tr>
               </thead>
@@ -145,7 +145,12 @@ interface SectionGroup {
     .doc-head { padding: 13px 16px; font-weight: 700; font-size: 0.94rem; border-bottom: 1px solid var(--dm-border); background: var(--dm-surface); }
     /* Thin, theme-matched scrollbar instead of the browser's default chunky one - transparent
        track so it only shows visual weight where the thumb actually is. */
-    .table-scroll { max-height: 72vh; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--dm-border) transparent; }
+    /* scrollbar-gutter:stable reserves the scrollbar's width whether or not a vertical scrollbar
+       actually appears - without it, a shorter document (no scrollbar) renders a few pixels
+       wider than a taller stacked document that DOES need one, shifting the Field/Value/Type
+       column boundaries out of alignment between cards even though both use the same fixed
+       column widths. */
+    .table-scroll { max-height: 72vh; overflow: auto; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--dm-border) transparent; }
     .table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
     .table-scroll::-webkit-scrollbar-track { background: transparent; }
     .table-scroll::-webkit-scrollbar-thumb { background: var(--dm-border); border-radius: 4px; }
@@ -156,21 +161,25 @@ interface SectionGroup {
        "text overlapping the header" artifacts this replaced. border-collapse:separate with
        per-cell bottom/right borders (instead of all four sides) draws the same clean grid
        without tripping that bug, since collapsed cells never need to be reconciled. */
-    /* table-layout:auto (content-driven), not fixed+100% - a fixed-percentage Value column
-       looks absurdly wide for a document with only a couple of short fields, stretched across
-       whatever width the page container happens to have. Auto layout sizes the table to its
-       own content instead (paired with .table-card's fit-content above), while col-type keeps
-       an explicit width the algorithm treats as a strong preference and col-key/col-val cap
-       their own growth with max-width + wrapping - so Type still can't get squeezed off-screen
-       by a long value, it just wraps within its own bound instead of growing the table wider. */
     .plain-table { border-collapse: separate; border-spacing: 0; table-layout: auto; width: auto; }
-    .plain-table th, .plain-table td { border-bottom: 1px solid var(--grid-line); border-right: 1px solid var(--grid-line); padding: 11px 16px; text-align: left; vertical-align: top; font-size: 0.92rem; background: var(--dm-bg, var(--dm-surface)); overflow-wrap: break-word; }
+    .plain-table th, .plain-table td { border-bottom: 1px solid var(--grid-line); border-right: 1px solid var(--grid-line); padding: 14px 18px; text-align: left; vertical-align: top; font-size: 0.96rem; line-height: 1.45; background: var(--dm-bg, var(--dm-surface)); overflow-wrap: break-word; }
     .plain-table th:first-child, .plain-table td:first-child { border-left: 1px solid var(--grid-line); }
-    .plain-table thead th { position: sticky; top: 0; z-index: 3; background: var(--dm-bg-elevated); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); font-weight: 700; border-top: 1px solid var(--grid-line); will-change: transform; }
-    .col-key { font-weight: 600; max-width: 320px; }
-    .col-val { max-width: 640px; }
-    .col-type { width: 110px; white-space: nowrap; }
-    .type-pill { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: rgba(99,102,241,0.1); color: var(--dm-primary); white-space: nowrap; }
+    .plain-table thead th { position: sticky; top: 0; z-index: 3; background: var(--dm-bg-elevated); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); font-weight: 700; border-top: 1px solid var(--grid-line); will-change: transform; }
+    /* table-layout:auto sizes each <table> to ITS OWN content, independently of any sibling
+       table - fine for a single document, but in bulk Rows view every document gets its own
+       <table> stacked one after another, and each one would end up with a different Field/Type
+       column width depending on that one document's own longest label, leaving the Field/Value
+       boundary drift visibly from card to card down the page. table-layout:fixed with an
+       explicit width on Field/Type (col-val left unset, so it fills whatever's left) forces every
+       .rows-table to use the exact same column boundaries, since they all now share the same
+       full-bleed table width from .table-card - the alignment is then guaranteed by construction,
+       not by coincidence of similar content. */
+    .rows-table { table-layout: fixed; }
+    .rows-table .col-key { width: 260px; }
+    .rows-table .col-type { width: 148px; }
+    .col-key { font-weight: 600; }
+    .col-type { white-space: nowrap; }
+    .type-pill { display: inline-block; font-size: 0.74rem; font-weight: 600; padding: 4px 11px; border-radius: 999px; background: rgba(99,102,241,0.1); color: var(--dm-primary); white-space: nowrap; }
     .section-row td { background: var(--dm-surface); font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--dm-primary); border-left: 3px solid var(--dm-primary); }
     tbody tr.odd td { background: var(--dm-surface); }
 
@@ -181,8 +190,8 @@ interface SectionGroup {
     .line-items-row td { padding: 10px 16px; background: var(--dm-bg, var(--dm-surface)); }
     .mini-table-scroll { overflow-x: auto; }
     .mini-table { width: 100%; border-collapse: collapse; }
-    .mini-table th, .mini-table td { padding: 8px 12px; text-align: left; font-size: 0.86rem; border-bottom: 1px solid var(--grid-line); white-space: nowrap; }
-    .mini-table th { background: var(--dm-surface); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--dm-text-muted); font-weight: 700; }
+    .mini-table th, .mini-table td { padding: 10px 14px; text-align: left; font-size: 0.88rem; border-bottom: 1px solid var(--grid-line); white-space: nowrap; }
+    .mini-table th { background: var(--dm-surface); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--dm-text-muted); font-weight: 700; }
     .mini-table tbody tr:last-child td { border-bottom: none; }
     .mini-table tbody tr:nth-child(odd) td { background: var(--dm-surface); }
     /* tbody tr.odd td (3 type selectors) otherwise outranks td.doc-col (1 type selector) at
@@ -194,12 +203,12 @@ interface SectionGroup {
     /* The Columns table is meant to size to its content and scroll horizontally when there are
        many field columns. */
     .cols-table { table-layout: auto; width: auto; min-width: max-content; }
-    .cols-table thead tr:first-child th { top: 0; height: 34px; }
-    .cols-table thead tr:nth-child(2) th { top: 34px; height: 34px; }
+    .cols-table thead tr:first-child th { top: 0; height: 38px; }
+    .cols-table thead tr:nth-child(2) th { top: 38px; height: 38px; }
     /* When the document(s) have no real sections, the two-row header (group band + column
        names) collapses to one plain row - it needs its own sticky-top rule since the generic
        ".plain-table thead th" already covers top:0, but nothing sets a sensible row height. */
-    .single-row { top: 0; height: 34px; }
+    .single-row { top: 0; height: 38px; }
     /* Sticky on the <th colspan> ITSELF doesn't hand off cleanly between adjacent sections: a
        table cell's sticky containing block is the whole scrolling area, not its own column
        span, so once a cell's natural position scrolls past the anchor it stays stuck there
@@ -215,8 +224,8 @@ interface SectionGroup {
        overriding it here needs a matching-or-higher selector, not just ".section-head" alone. */
     .plain-table th.section-head { padding: 0; text-align: left; background: var(--dm-surface); box-shadow: inset 0 -1px 0 var(--dm-border); }
     .section-head-label {
-      position: sticky; left: 200px; z-index: 4; display: inline-block;
-      padding: 8px 14px; color: var(--dm-primary); font-weight: 700;
+      position: sticky; left: 220px; z-index: 4; display: inline-block;
+      padding: 9px 15px; color: var(--dm-primary); font-weight: 700;
     }
     /* box-shadow, not just border - separate border-collapse means a plain border alone
        reads faint against scrolled content sliding directly underneath. The shadow gives the
@@ -225,7 +234,7 @@ interface SectionGroup {
        column's own header cell ("Document") always wins the corner intersection. Width is a
        fixed value (not max-width) so the sticky section-head cells above have a known, matching
        left offset to dock against - a variable/content-sized frozen column would misalign them. */
-    .doc-col, .doc-col-spacer { position: sticky; left: 0; background: var(--dm-bg-elevated); font-weight: 600; z-index: 5; width: 200px; min-width: 200px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 2px 0 6px rgba(0,0,0,0.15); will-change: transform; }
+    .doc-col, .doc-col-spacer { position: sticky; left: 0; background: var(--dm-bg-elevated); font-weight: 600; z-index: 5; width: 220px; min-width: 220px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 2px 0 6px rgba(0,0,0,0.15); will-change: transform; }
     td.doc-col { background: var(--dm-bg-elevated); }
     /* The corner cells (<th class="doc-col">/<th class="doc-col-spacer"> inside thead) are
        matched by BOTH ".doc-col" (z-index:5) and ".plain-table thead th" (z-index:3, but wins
@@ -237,7 +246,7 @@ interface SectionGroup {
     .plain-table thead th.doc-col, .plain-table thead th.doc-col-spacer { z-index: 6; }
 
     @media (max-width: 640px) {
-      .plain-table th, .plain-table td { padding: 9px 12px; font-size: 0.86rem; }
+      .plain-table th, .plain-table td { padding: 10px 13px; font-size: 0.88rem; }
     }
   `]
 })
