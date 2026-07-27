@@ -53,6 +53,18 @@ export class DocumentService {
     return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/documents/${documentId}/sections/rename`, { oldLabel, newLabel });
   }
 
+  /// Ungroups every field in the document into a single unsectioned list. Reversible via
+  /// restoreSections - never deletes data, only regroups it.
+  flattenSections(documentId: string) {
+    return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/documents/${documentId}/sections/flatten`, {});
+  }
+
+  /// Undoes flattenSections (or any other section reshuffling) by putting every field back
+  /// under its own AI-original section.
+  restoreSections(documentId: string) {
+    return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/documents/${documentId}/sections/restore`, {});
+  }
+
   exportDocument(documentId: string, options: ExportOptions = { format: 'Excel', layout: 'RowsPerField' }) {
     const params = new HttpParams().set('format', options.format).set('layout', options.layout);
     return this.http.get(`${environment.apiBaseUrl}/documents/${documentId}/export`, { params, responseType: 'blob' });

@@ -124,7 +124,8 @@ type SheetMode = 'combined' | 'byFile' | 'separateFiles';
         }
       } @else if (mode === 'edit' && sheetMode === 'combined') {
         <app-field-card-editor [documents]="documents" (fieldSaved)="saveField($event)" (includeToggled)="toggleInclude($event)"
-                                (reordered)="onReordered($event)" (sectionRenamed)="onSectionRenamed($event)" />
+                                (reordered)="onReordered($event)" (sectionRenamed)="onSectionRenamed($event)"
+                                (sectionsFlattened)="onSectionsFlattened($event)" (sectionsRestored)="onSectionsRestored($event)" />
       } @else {
         <div class="tab-bar">
           @for (doc of documents; track doc.id) {
@@ -142,7 +143,8 @@ type SheetMode = 'combined' | 'byFile' | 'separateFiles';
             }
           } @else {
             <app-field-card-editor [documents]="[active]" (fieldSaved)="saveField($event)" (includeToggled)="toggleInclude($event)"
-                                    (reordered)="onReordered($event)" (sectionRenamed)="onSectionRenamed($event)" />
+                                    (reordered)="onReordered($event)" (sectionRenamed)="onSectionRenamed($event)"
+                                    (sectionsFlattened)="onSectionsFlattened($event)" (sectionsRestored)="onSectionsRestored($event)" />
           }
         }
       }
@@ -162,17 +164,21 @@ type SheetMode = 'combined' | 'byFile' | 'separateFiles';
        makes sense to read; matching the site-wide 1180px container exactly is the actual fix. */
     .header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
-    /* Both button groups share the same 46px height so the two-line mode-toggle (title +
-       subtitle) and the single-line Excel/JSON/Email actions read as one consistent, compact row
-       instead of one looking oversized next to the other. */
+    /* No custom size override here on purpose - the previous 46px/18px/0.88rem override made
+       these read as noticeably smaller than a plain .dm-btn elsewhere in the app (measured: a
+       standard button is 42.4px tall with 22px padding and 0.95rem text). Just inheriting the
+       global .dm-btn styling guarantees an exact match instead of an approximated one. */
     .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .actions .dm-btn { display: inline-flex; align-items: center; gap: 6px; height: 46px; padding: 0 18px; font-size: 0.88rem; }
+    .actions .dm-btn { display: inline-flex; align-items: center; gap: 6px; }
 
     /* Same border-radius scale as .view-toggle elsewhere in the app (a soft rectangle, not a
        pill) - the outer wrapper and inner buttons previously used different radii, which read
-       as a much rounder "pill" shape that stood out against the rest of the app's controls. */
-    .mode-toggle { display: flex; gap: 6px; padding: 5px; border-radius: var(--dm-radius-sm); background: var(--dm-surface); border: 1px solid var(--dm-border); flex-wrap: wrap; }
-    .mode-option { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; background: transparent; color: var(--dm-text-muted); border: 1px solid transparent; border-radius: var(--dm-radius-sm); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; white-space: nowrap; text-align: left; }
+       as a much rounder "pill" shape that stood out against the rest of the app's controls.
+       Height is tuned to land close to the standard .dm-btn's measured 42.4px once its own
+       padding is added, so the two-line mode-toggle and the single-line action buttons read as
+       one consistent row instead of one looking oversized or undersized next to the other. */
+    .mode-toggle { display: flex; gap: 6px; padding: 6px; border-radius: var(--dm-radius-sm); background: var(--dm-surface); border: 1px solid var(--dm-border); flex-wrap: wrap; }
+    .mode-option { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; background: transparent; color: var(--dm-text-muted); border: 1px solid transparent; border-radius: var(--dm-radius-sm); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; white-space: nowrap; text-align: left; }
     .mode-option span { display: flex; flex-direction: column; gap: 1px; }
     .mode-option strong { font-size: 0.9rem; font-weight: 700; }
     .mode-option small { font-size: 0.7rem; font-weight: 500; opacity: 0.85; }
@@ -294,6 +300,34 @@ export class BatchReviewComponent implements OnInit {
   onSectionRenamed(event: FieldCardSectionRenameEvent) {
     this.documentService.renameSection(event.docId, event.oldLabel, event.newLabel).subscribe({
       error: () => this.toast.error('Could not rename that section. Please try again.')
+    });
+  }
+
+  /// Flattening/restoring reshapes every field's grouping for ONE document at once - simplest
+  /// and safest to refetch just that document afterward and splice it back into `documents`,
+  /// rather than trying to reconstruct the new grouping locally.
+  private refetchDoc(docId: string) {
+    this.documentService.getDetail(docId).subscribe({
+      next: res => {
+        const idx = this.documents.findIndex(d => d.id === docId);
+        if (idx >= 0) this.documents[idx] = { id: res.id, fileName: res.originalFileName, fields: res.fields };
+        this.documents = [...this.documents];
+      },
+      error: () => this.toast.error('Could not refresh this document. Please reload the page.')
+    });
+  }
+
+  onSectionsFlattened(event: { docId: string }) {
+    this.documentService.flattenSections(event.docId).subscribe({
+      next: () => { this.toast.success('Sections removed - fields now show as one plain list.'); this.refetchDoc(event.docId); },
+      error: () => this.toast.error('Could not remove sections. Please try again.')
+    });
+  }
+
+  onSectionsRestored(event: { docId: string }) {
+    this.documentService.restoreSections(event.docId).subscribe({
+      next: () => { this.toast.success('Original sections restored.'); this.refetchDoc(event.docId); },
+      error: () => this.toast.error('Could not restore sections. Please try again.')
     });
   }
 

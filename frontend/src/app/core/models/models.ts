@@ -59,6 +59,9 @@ export interface ExtractedFieldEdit {
   originalSemanticType?: string | null;
   // AI-suggested group name (e.g. "Shipping Details") - falls back to "General".
   sectionLabel: string;
+  // The AI's original grouping - lets a document be flattened into an unsectioned list and then
+  // genuinely restored later, the same durable-revert pattern as originalSemanticType above.
+  originalSectionLabel?: string | null;
   includeInExport: boolean;
   sortOrder: number;
 }

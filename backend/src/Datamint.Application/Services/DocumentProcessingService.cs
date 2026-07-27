@@ -214,6 +214,7 @@ public class DocumentProcessingService
                     SemanticType = semanticType,
                     OriginalSemanticType = semanticType,
                     SectionLabel = string.IsNullOrWhiteSpace(field.SectionLabel) ? "General" : field.SectionLabel,
+                    OriginalSectionLabel = string.IsNullOrWhiteSpace(field.SectionLabel) ? "General" : field.SectionLabel,
                     SortOrder = order++
                 });
             }
@@ -429,6 +430,58 @@ public class DocumentProcessingService
         return Result.Success();
     }
 
+    /// <summary>Ungroups every field in the document into the single unsectioned "General"
+    /// bucket - fields are never deleted or reordered, only regrouped. Genuinely reversible via
+    /// <see cref="RestoreSectionsAsync"/> since each field's OriginalSectionLabel is untouched.</summary>
+    public async Task<Result> FlattenSectionsAsync(Guid documentId, CancellationToken ct = default)
+    {
+        var document = await _documents.GetWithDetailsAsync(documentId, ct);
+        if (document is null) return Result.Failure("Document not found.", "NOT_FOUND");
+
+        var changedCount = 0;
+        foreach (var field in document.ExtractedFields)
+        {
+            if (field.SectionLabel == "General") continue;
+            field.SectionLabel = "General";
+            changedCount++;
+        }
+
+        if (changedCount > 0)
+        {
+            await _documents.SaveChangesAsync(ct);
+            await _audit.LogAsync("Document.SectionsFlattened", document.UserId, "Document", documentId.ToString(), $"{{\"fieldsMoved\":{changedCount}}}", true, ct);
+        }
+
+        return Result.Success();
+    }
+
+    /// <summary>Undoes FlattenSectionsAsync (or any other section reshuffling) by putting every
+    /// field back under its own OriginalSectionLabel - the AI's original grouping, tracked
+    /// per-field from extraction and never overwritten by edits. A no-op for a field that was
+    /// never actually moved.</summary>
+    public async Task<Result> RestoreSectionsAsync(Guid documentId, CancellationToken ct = default)
+    {
+        var document = await _documents.GetWithDetailsAsync(documentId, ct);
+        if (document is null) return Result.Failure("Document not found.", "NOT_FOUND");
+
+        var restoredCount = 0;
+        foreach (var field in document.ExtractedFields)
+        {
+            var original = string.IsNullOrWhiteSpace(field.OriginalSectionLabel) ? "General" : field.OriginalSectionLabel;
+            if (field.SectionLabel == original) continue;
+            field.SectionLabel = original;
+            restoredCount++;
+        }
+
+        if (restoredCount > 0)
+        {
+            await _documents.SaveChangesAsync(ct);
+            await _audit.LogAsync("Document.SectionsRestored", document.UserId, "Document", documentId.ToString(), $"{{\"fieldsRestored\":{restoredCount}}}", true, ct);
+        }
+
+        return Result.Success();
+    }
+
     private static readonly ExportOptionsDto DefaultExportOptions = new();
 
     public async Task<Result<ExportResultDto>> ExportDocumentAsync(Guid documentId, ExportOptionsDto? options = null, CancellationToken ct = default)
@@ -572,7 +625,7 @@ public class DocumentProcessingService
         f.Id, f.FieldKey, f.OriginalFieldKey, f.FieldValue, f.PageNumber, f.WasEditedByUser,
         string.IsNullOrWhiteSpace(f.SemanticType) ? "Text" : f.SemanticType,
         string.IsNullOrWhiteSpace(f.SectionLabel) ? "General" : f.SectionLabel,
-        f.IncludeInExport, f.SortOrder, f.OriginalAiValue, f.OriginalSemanticType);
+        f.IncludeInExport, f.SortOrder, f.OriginalAiValue, f.OriginalSemanticType, f.OriginalSectionLabel);
 
     public static DocumentDetailDto MapToDetailDto(Document document) => new(
         document.Id,

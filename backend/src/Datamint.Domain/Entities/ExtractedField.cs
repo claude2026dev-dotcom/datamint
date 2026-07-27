@@ -32,6 +32,11 @@ public class ExtractedField : BaseEntity
     // "Billing Info", "Line Items" - free text, not a separate entity; renaming a section is
     // just a bulk update of this string across the fields that share it.
     public string? SectionLabel { get; set; }
+    // Untouched section grouping as the AI found it - lets a user flatten a document into an
+    // unsectioned list and then genuinely restore the original grouping later (not just an
+    // in-memory undo that's lost on reload), the same durable-revert pattern as
+    // OriginalFieldKey/OriginalAiValue/OriginalSemanticType above.
+    public string? OriginalSectionLabel { get; set; }
 
     // Per-field export toggle the user can flip while reviewing. Defaults true so every
     // newly-extracted field is included unless explicitly excluded.

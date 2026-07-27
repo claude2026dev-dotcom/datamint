@@ -295,6 +295,7 @@ public class DocumentsController : ControllerBase
                 f.FieldValue,
                 f.OriginalAiValue,
                 f.OriginalSemanticType,
+                f.OriginalSectionLabel,
                 f.PageNumber,
                 f.WasEditedByUser,
                 // Pre-existing rows extracted before these columns existed are null - fall back
@@ -334,6 +335,26 @@ public class DocumentsController : ControllerBase
         if (error is not null) return error;
 
         var result = await _service.RenameSectionAsync(id, dto.OldLabel, dto.NewLabel, ct);
+        return result.Succeeded ? Ok(new { success = true }) : BadRequest(new { success = false, message = result.Error });
+    }
+
+    [HttpPut("{id:guid}/sections/flatten")]
+    public async Task<IActionResult> FlattenSections(Guid id, CancellationToken ct)
+    {
+        var (_, error) = await GetOwnedDocumentAsync(id, ct);
+        if (error is not null) return error;
+
+        var result = await _service.FlattenSectionsAsync(id, ct);
+        return result.Succeeded ? Ok(new { success = true }) : BadRequest(new { success = false, message = result.Error });
+    }
+
+    [HttpPut("{id:guid}/sections/restore")]
+    public async Task<IActionResult> RestoreSections(Guid id, CancellationToken ct)
+    {
+        var (_, error) = await GetOwnedDocumentAsync(id, ct);
+        if (error is not null) return error;
+
+        var result = await _service.RestoreSectionsAsync(id, ct);
         return result.Succeeded ? Ok(new { success = true }) : BadRequest(new { success = false, message = result.Error });
     }
 

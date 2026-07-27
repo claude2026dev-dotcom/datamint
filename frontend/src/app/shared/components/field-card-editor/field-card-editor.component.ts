@@ -77,6 +77,22 @@ interface CardDocument {
           <span class="dot">·</span>
           <button type="button" class="link-btn" (click)="setDocIncluded(doc, false)">Unselect all</button>
           <span class="muted small toolbar-hint">for export</span>
+          <span class="dot">·</span>
+          <!-- Strictly one or the other, never both and never neither - exactly one control is
+               ever visible for this toggle, in the same spot each time, so it reads as a single
+               real-world switch flipping (like Undo) instead of two independent buttons that
+               could each seem to randomly appear or vanish. -->
+          @if (isFlatDoc(doc)) {
+            <button type="button" class="link-btn muted-link" (click)="restoreSections(doc)"
+                    title="Undo - bring back the original AI-detected sections">
+              ↺ Restore sections
+            </button>
+          } @else {
+            <button type="button" class="link-btn muted-link" (click)="flattenSections(doc)"
+                    title="Show every field in one plain list, with no section groupings">
+              Remove all sections
+            </button>
+          }
         </div>
 
         @if (searchTerm && !docHasMatch(doc)) {
@@ -95,12 +111,6 @@ interface CardDocument {
                     <span class="muted small">{{ editedCount(section) }} of {{ section.fields.length }} edited</span>
                     <button type="button" class="link-btn" (click)="setSectionIncluded(doc, section, true)">All</button>
                     <button type="button" class="link-btn" (click)="setSectionIncluded(doc, section, false)">None</button>
-                    @if (section.label !== 'General') {
-                      <button type="button" class="link-btn remove-section-btn" (click)="removeSection(doc, section)"
-                              title="Ungroup these fields - they'll move into the unsectioned General group instead of being deleted">
-                        Remove section
-                      </button>
-                    }
                   </div>
                 </div>
               }
@@ -120,7 +130,22 @@ interface CardDocument {
                     </div>
 
                     <div class="field-value-col">
-                      <textarea class="dm-input field-value" rows="1" appAutoGrow [(ngModel)]="field.fieldValue" (blur)="emitSave(doc, field)"></textarea>
+                      @if (field.semanticType === 'Date' && canUseDatePicker(field)) {
+                        <input type="date" class="dm-input field-value-compact" [ngModel]="toIsoDate(field.fieldValue)"
+                               (ngModelChange)="onDateValueChange(doc, field, $event)" />
+                      } @else if (field.semanticType === 'Boolean') {
+                        <select class="dm-input field-value-compact" [ngModel]="normalizeBoolean(field.fieldValue)"
+                                (ngModelChange)="onBooleanValueChange(doc, field, $event)">
+                          <option value="">—</option>
+                          <option value="true">Yes</option>
+                          <option value="false">No</option>
+                        </select>
+                      } @else if (isNumericType(field.semanticType)) {
+                        <input type="text" inputmode="decimal" class="dm-input field-value-compact"
+                               [(ngModel)]="field.fieldValue" (blur)="emitSave(doc, field)" />
+                      } @else {
+                        <textarea class="dm-input field-value" rows="1" appAutoGrow [(ngModel)]="field.fieldValue" (blur)="emitSave(doc, field)"></textarea>
+                      }
                       @if (field.wasEditedByUser && field.originalAiValue && field.originalAiValue !== field.fieldValue) {
                         <span class="original-hint" [title]="'AI originally extracted: ' + field.originalAiValue">
                           Originally: {{ field.originalAiValue }}
@@ -207,14 +232,14 @@ interface CardDocument {
     .muted { color: var(--dm-text-muted); }
     .small { font-size: 0.78rem; }
 
-    .doc-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .doc-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
     .link-btn { background: none; border: none; padding: 2px 4px; font-size: 0.78rem; font-weight: 700; color: var(--dm-primary); cursor: pointer; white-space: nowrap; }
     .link-btn:hover { text-decoration: underline; }
-    /* Muted (not primary-colored like All/None) - this is a less common, lower-stakes action
-       (it ungroups fields into General, it never deletes data) and shouldn't visually compete
-       with the two everyday toggles next to it. */
-    .remove-section-btn { color: var(--dm-text-muted); margin-left: 4px; }
-    .remove-section-btn:hover { color: #DC2626; }
+    /* Muted (not primary-colored like Select all/Unselect all) - flattening/restoring sections
+       is a less common, structural action (never deletes data, always reversible) and shouldn't
+       visually compete with the two everyday export toggles next to it. */
+    .muted-link { color: var(--dm-text-muted); }
+    .muted-link:hover { color: var(--dm-primary); }
     .dot { color: var(--dm-text-muted); }
     .toolbar-hint { margin-left: 2px; }
 
@@ -247,9 +272,14 @@ interface CardDocument {
 
     .field-value-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
     .field-value { resize: vertical; min-height: 36px; line-height: 1.4; font-family: inherit; font-size: 0.88rem; overflow-wrap: break-word; width: 100%; }
+    /* Single-line control for Date/Boolean/numeric types - these never need the multi-line
+       wrapping textarea does, and matching its height keeps the row's controls visually aligned. */
+    .field-value-compact { height: 36px; font-family: inherit; font-size: 0.88rem; width: 100%; padding: 7px 10px; }
     .original-hint { font-size: 0.72rem; color: var(--dm-accent); overflow-wrap: break-word; padding-left: 4px; }
 
-    .field-type-col { flex: 0 0 140px; display: flex; flex-direction: column; gap: 6px; }
+    /* Widened from 140px - at that width "Percentage"/"Custom…" visibly truncated inside the
+       select, a real bug, not just a look-and-feel preference. */
+    .field-type-col { flex: 0 0 170px; display: flex; flex-direction: column; gap: 6px; }
     .type-select { font-size: 0.78rem; font-weight: 600; padding: 6px 8px; border-radius: var(--dm-radius-sm); background: var(--dm-surface); color: var(--dm-text); border: 1px solid var(--dm-border); width: 100%; }
     .custom-type-input { font-size: 0.78rem; padding: 5px 8px; width: 100%; }
 
@@ -274,6 +304,8 @@ export class FieldCardEditorComponent implements OnChanges {
   @Output() includeToggled = new EventEmitter<FieldCardEvent>();
   @Output() reordered = new EventEmitter<FieldCardReorderEvent>();
   @Output() sectionRenamed = new EventEmitter<FieldCardSectionRenameEvent>();
+  @Output() sectionsFlattened = new EventEmitter<{ docId: string }>();
+  @Output() sectionsRestored = new EventEmitter<{ docId: string }>();
 
   semanticTypes = SEMANTIC_TYPES;
   customSentinel = CUSTOM_TYPE;
@@ -335,6 +367,84 @@ export class FieldCardEditorComponent implements OnChanges {
     return this.semanticTypes.includes(type);
   }
 
+  isNumericType(type: string): boolean {
+    return type === 'Number' || type === 'Currency' || type === 'Percentage';
+  }
+
+  private static readonly MONTH_NAMES = [
+    'january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december'
+  ];
+
+  private monthIndex(name: string): number {
+    const n = name.toLowerCase();
+    const exact = FieldCardEditorComponent.MONTH_NAMES.indexOf(n);
+    if (exact >= 0) return exact;
+    return FieldCardEditorComponent.MONTH_NAMES.findIndex(mn => mn.startsWith(n));
+  }
+
+  /// Extracts year/month/day as plain integers straight from the raw text, deliberately never
+  /// constructing a JS Date object for this - `new Date("31 March 2026")` parses in the local
+  /// timezone while `new Date("2026-03-31")` parses as UTC, so round-tripping through Date math
+  /// can silently shift the day by one depending on the browser's timezone offset. Covers the
+  /// same set of formats the backend's TryParseDate already recognizes for export.
+  private parseDateParts(raw: string): { y: number; m: number; d: number } | null {
+    const s = raw.trim();
+    let m = s.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+    if (m) {
+      const month = this.monthIndex(m[2]);
+      if (month >= 0) return { y: +m[3], m: month + 1, d: +m[1] };
+    }
+    m = s.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$/);
+    if (m) {
+      const month = this.monthIndex(m[1]);
+      if (month >= 0) return { y: +m[3], m: month + 1, d: +m[2] };
+    }
+    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) return { y: +m[1], m: +m[2], d: +m[3] };
+    m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+    if (m) {
+      const a = +m[1], b = +m[2], y = +m[3];
+      if (a > 12) return { y, m: b, d: a };
+      if (b > 12) return { y, m: a, d: b };
+      return { y, m: b, d: a }; // ambiguous - default to dd/MM, matching the app's other formats
+    }
+    return null;
+  }
+
+  toIsoDate(raw: string | null): string {
+    if (!raw) return '';
+    const parts = this.parseDateParts(raw);
+    if (!parts) return '';
+    return `${String(parts.y).padStart(4, '0')}-${String(parts.m).padStart(2, '0')}-${String(parts.d).padStart(2, '0')}`;
+  }
+
+  /// A real <input type=date> only makes sense to show if the current value is either empty (a
+  /// blank field the user hasn't touched) or actually parses as a date - otherwise the picker
+  /// would silently blank out text it can't represent. Falls back to a plain textarea for
+  /// anything unparseable, so an odd/free-text "date" value is never lost.
+  canUseDatePicker(field: ExtractedFieldEdit): boolean {
+    return !field.fieldValue || !!this.parseDateParts(field.fieldValue);
+  }
+
+  onDateValueChange(doc: CardDocument, field: ExtractedFieldEdit, isoValue: string) {
+    field.fieldValue = isoValue || null;
+    this.emitSave(doc, field);
+  }
+
+  normalizeBoolean(raw: string | null): string {
+    if (!raw) return '';
+    const v = raw.trim().toLowerCase();
+    if (['yes', 'y', 'true', '1'].includes(v)) return 'true';
+    if (['no', 'n', 'false', '0'].includes(v)) return 'false';
+    return '';
+  }
+
+  onBooleanValueChange(doc: CardDocument, field: ExtractedFieldEdit, value: string) {
+    field.fieldValue = value === 'true' ? 'Yes' : value === 'false' ? 'No' : null;
+    this.emitSave(doc, field);
+  }
+
   onTypeSelect(doc: CardDocument, field: ExtractedFieldEdit, value: string) {
     if (value === CUSTOM_TYPE) {
       if (this.isKnownType(field.semanticType)) field.semanticType = '';
@@ -384,22 +494,28 @@ export class FieldCardEditorComponent implements OnChanges {
     this.sectionRenamed.emit({ docId: doc.id, oldLabel, newLabel: trimmed });
   }
 
-  /// "Removing" a section doesn't delete its fields - it ungroups them by merging them into the
-  /// document's unsectioned "General" bucket, the same fallback every field without a real
-  /// section label already resolves to. Reuses renameSection's existing rename-all-fields-in-
-  /// this-section API call rather than needing a separate backend endpoint.
-  removeSection(doc: CardDocument, section: CardSection) {
-    this.renameSection(doc, section, 'General');
-  }
-
   /// True when a document has nothing worth showing section chrome for - either it never had
   /// real sections (everything AI-assigned to the default "General" bucket), or the user has
-  /// since removed/merged every section back into it. Showing a single lonely "GENERAL" banner
+  /// since flattened every section back into it. Showing a single lonely "GENERAL" banner
   /// with rename/All/None controls in that case is just noise since there's nothing being
   /// distinguished from - the document-level Select all/Unselect all above already covers the
   /// same "All/None" functionality for the whole document.
   isFlatDoc(doc: CardDocument): boolean {
     return doc.sections.length === 1 && doc.sections[0].label === 'General';
+  }
+
+  /// One clear, whole-document action instead of a confusing per-section "remove this one and
+  /// it moves into a bucket called General" control - the parent calls the backend flatten
+  /// endpoint and refetches, so this only needs to ask for it.
+  flattenSections(doc: CardDocument) {
+    this.sectionsFlattened.emit({ docId: doc.id });
+  }
+
+  /// Undoes flattenSections (or any manual regrouping) by putting every field back under its
+  /// own AI-original section - genuinely reversible since the parent's restore call is backed by
+  /// each field's persisted OriginalSectionLabel, not just an in-memory undo lost on reload.
+  restoreSections(doc: CardDocument) {
+    this.sectionsRestored.emit({ docId: doc.id });
   }
 
   onDrop(event: CdkDragDrop<ExtractedFieldEdit[]>, doc: CardDocument, targetSection: CardSection) {

@@ -2,9 +2,20 @@ import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ExtractedFieldEdit, FieldEditorDocument } from '../../../core/models/models';
 
+interface RepeatingTable {
+  columns: string[];
+  rows: (ExtractedFieldEdit | undefined)[][];
+}
+
 interface TableSection {
   label: string;
   fields: ExtractedFieldEdit[];
+  // Set when this section's fields look like AI-extracted repeating line items (the same field
+  // key appearing more than once, e.g. "Item Description" x3 for a 3-line invoice) - rendered as
+  // a proper mini-table (columns=field names, one row per item) instead of a flat key/value list
+  // that would otherwise interleave "Item Description"/"Item Quantity" pairs with no visual
+  // grouping between one line item and the next.
+  repeating: RepeatingTable | null;
 }
 
 interface TableDocument {
@@ -35,7 +46,7 @@ interface SectionGroup {
   template: `
     @if (viewMode === 'rows') {
       @for (doc of tableDocuments; track doc.id) {
-        <div class="dm-card table-card">
+        <div class="dm-card table-card" [class.full-width]="tableDocuments.length > 1">
           @if (tableDocuments.length > 1) {
             <div class="doc-head">{{ doc.fileName }}</div>
           }
@@ -49,12 +60,29 @@ interface SectionGroup {
                   @if (!isUnsectioned(doc)) {
                     <tr class="section-row"><td colspan="3">{{ section.label }}</td></tr>
                   }
-                  @for (field of section.fields; track field.id; let odd = $odd) {
-                    <tr [class.odd]="odd">
-                      <td class="col-key">{{ field.fieldKey }}</td>
-                      <td class="col-val">{{ field.fieldValue || '—' }}</td>
-                      <td class="col-type"><span class="type-pill">{{ field.semanticType }}</span></td>
+                  @if (section.repeating; as rep) {
+                    <tr class="line-items-row">
+                      <td colspan="3">
+                        <div class="mini-table-scroll">
+                          <table class="mini-table">
+                            <thead><tr>@for (col of rep.columns; track col) { <th>{{ col }}</th> }</tr></thead>
+                            <tbody>
+                              @for (row of rep.rows; track $index) {
+                                <tr>@for (cell of row; track $index) { <td>{{ cell?.fieldValue || '—' }}</td> }</tr>
+                              }
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
                     </tr>
+                  } @else {
+                    @for (field of section.fields; track field.id; let odd = $odd) {
+                      <tr [class.odd]="odd">
+                        <td class="col-key">{{ field.fieldKey }}</td>
+                        <td class="col-val">{{ field.fieldValue || '—' }}</td>
+                        <td class="col-type"><span class="type-pill">{{ field.semanticType }}</span></td>
+                      </tr>
+                    }
                   }
                 }
               </tbody>
@@ -101,12 +129,36 @@ interface SectionGroup {
     }
   `,
   styles: [`
+    /* A grid of borders on every cell compounds much more heavily than a single border around a
+       card - the standard --dm-border reads noticeably darker/harsher here than it does used
+       once around a card elsewhere in the app. This lighter, blended variant is scoped to just
+       this component's internal grid lines (not the outer card border, which stays as-is) so
+       rows/columns still read as clearly separated without looking like a heavy grid. */
+    :host { --grid-line: color-mix(in srgb, var(--dm-border) 55%, transparent); }
     /* Fit-content (not a flat 100%) so a document with only 2-3 short fields renders a compact
        card instead of a mostly-empty box stretched to the full width of a wide page container -
-       the card only ever grows as wide as it actually needs to, up to the available space. */
-    .table-card { padding: 0; margin-bottom: 20px; overflow: hidden; width: fit-content; max-width: 100%; }
+       the card only ever grows as wide as it actually needs to, up to the available space.
+       margin:0 auto centers that narrower card instead of leaving it flush left with a single
+       lopsided gap of blank space on the right - centering balances the leftover space evenly on
+       both sides, which reads as deliberate page margins instead of "something is missing". */
+    .table-card { padding: 0; margin: 0 auto 20px; overflow: hidden; width: fit-content; max-width: 100%; }
+    /* Fit-content works well for a single document, but stacking several independently-sized
+       cards looks sloppy and inconsistent when they're shown together (e.g. two copies of the
+       same document ending up different widths just because one has a longer edited value).
+       Bulk view shares one common width across every card instead - the table itself also needs
+       forcing to 100% here (not just the card), since an auto-width table doesn't stretch to
+       fill a wider ancestor on its own; it would otherwise stay content-sized and hug the left
+       edge of its now-wider card, which looks worse than the mismatch this is meant to fix. */
+    .table-card.full-width { width: 100%; margin-left: 0; margin-right: 0; }
+    .table-card.full-width .plain-table { width: 100%; }
     .doc-head { padding: 13px 16px; font-weight: 700; font-size: 0.94rem; border-bottom: 1px solid var(--dm-border); background: var(--dm-surface); }
-    .table-scroll { max-height: 72vh; overflow: auto; }
+    /* Thin, theme-matched scrollbar instead of the browser's default chunky one - transparent
+       track so it only shows visual weight where the thumb actually is. */
+    .table-scroll { max-height: 72vh; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--dm-border) transparent; }
+    .table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+    .table-scroll::-webkit-scrollbar-track { background: transparent; }
+    .table-scroll::-webkit-scrollbar-thumb { background: var(--dm-border); border-radius: 4px; }
+    .table-scroll::-webkit-scrollbar-thumb:hover { background: var(--dm-text-muted); }
     /* border-collapse:collapse + position:sticky cells is a well-documented Chromium/WebKit
        rendering bug: adjacent cell borders and backgrounds can repaint incorrectly during
        scroll, leaving ghosted/overlapping text right at the sticky boundary - exactly the
@@ -121,15 +173,27 @@ interface SectionGroup {
        their own growth with max-width + wrapping - so Type still can't get squeezed off-screen
        by a long value, it just wraps within its own bound instead of growing the table wider. */
     .plain-table { border-collapse: separate; border-spacing: 0; table-layout: auto; width: auto; }
-    .plain-table th, .plain-table td { border-bottom: 1px solid var(--dm-border); border-right: 1px solid var(--dm-border); padding: 11px 16px; text-align: left; vertical-align: top; font-size: 0.92rem; background: var(--dm-bg, var(--dm-surface)); overflow-wrap: break-word; }
-    .plain-table th:first-child, .plain-table td:first-child { border-left: 1px solid var(--dm-border); }
-    .plain-table thead th { position: sticky; top: 0; z-index: 3; background: var(--dm-bg-elevated); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); font-weight: 700; border-top: 1px solid var(--dm-border); will-change: transform; }
+    .plain-table th, .plain-table td { border-bottom: 1px solid var(--grid-line); border-right: 1px solid var(--grid-line); padding: 11px 16px; text-align: left; vertical-align: top; font-size: 0.92rem; background: var(--dm-bg, var(--dm-surface)); overflow-wrap: break-word; }
+    .plain-table th:first-child, .plain-table td:first-child { border-left: 1px solid var(--grid-line); }
+    .plain-table thead th { position: sticky; top: 0; z-index: 3; background: var(--dm-bg-elevated); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); font-weight: 700; border-top: 1px solid var(--grid-line); will-change: transform; }
     .col-key { font-weight: 600; max-width: 320px; }
     .col-val { max-width: 640px; }
     .col-type { width: 110px; white-space: nowrap; }
     .type-pill { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: rgba(99,102,241,0.1); color: var(--dm-primary); white-space: nowrap; }
     .section-row td { background: var(--dm-surface); font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--dm-primary); border-left: 3px solid var(--dm-primary); }
     tbody tr.odd td { background: var(--dm-surface); }
+
+    /* Repeating line items (AI-extracted duplicate field keys, e.g. multiple "Item Description"
+       entries for a multi-line invoice) render as a real nested table - columns=field names,
+       one row per item - instead of a flat key/value list that would otherwise interleave every
+       item's fields with no visual separation between one line item and the next. */
+    .line-items-row td { padding: 10px 16px; background: var(--dm-bg, var(--dm-surface)); }
+    .mini-table-scroll { overflow-x: auto; }
+    .mini-table { width: 100%; border-collapse: collapse; }
+    .mini-table th, .mini-table td { padding: 8px 12px; text-align: left; font-size: 0.86rem; border-bottom: 1px solid var(--grid-line); white-space: nowrap; }
+    .mini-table th { background: var(--dm-surface); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--dm-text-muted); font-weight: 700; }
+    .mini-table tbody tr:last-child td { border-bottom: none; }
+    .mini-table tbody tr:nth-child(odd) td { background: var(--dm-surface); }
     /* tbody tr.odd td (3 type selectors) otherwise outranks td.doc-col (1 type selector) at
        equal class-count, silently overwriting the frozen column's elevated background back to
        the plain row color on every odd row - a real, provable cause of "ghosting" right at the
@@ -215,8 +279,51 @@ export class FieldTableViewComponent implements OnChanges {
         if (!byLabel.has(label)) { byLabel.set(label, []); order.push(label); }
         byLabel.get(label)!.push(field);
       }
-      return { id: doc.id, fileName: doc.fileName, sections: order.map(label => ({ label, fields: byLabel.get(label)! })) };
+      return {
+        id: doc.id, fileName: doc.fileName,
+        sections: order.map(label => {
+          const fields = byLabel.get(label)!;
+          return { label, fields, repeating: this.detectRepeatingTable(fields) };
+        })
+      };
     });
+  }
+
+  /// A section reads as repeating line items only when EVERY distinct key repeats the exact same
+  /// number of times, at least twice, with at least 2 columns - a true uniform grid (e.g. "Item
+  /// Description"/"Item Quantity"/"Item Unit Price" each appearing 3 times over for a 3-line
+  /// invoice). Anything looser than that is deliberately rejected: a section can easily contain
+  /// ONE coincidentally-duplicated key without being a real repeating structure at all - e.g. a
+  /// messy extraction with "Total Amount" appearing twice ("$5.90" and "$5.90 USD") alongside a
+  /// "Tax Amount" that only appears once. Treating that as a table would misalign every column
+  /// after the stray duplicate, which is worse than just leaving it as a flat list.
+  private detectRepeatingTable(fields: ExtractedFieldEdit[]): RepeatingTable | null {
+    const columns: string[] = [];
+    const counts = new Map<string, number>();
+    for (const f of fields) {
+      if (!counts.has(f.fieldKey)) { counts.set(f.fieldKey, 0); columns.push(f.fieldKey); }
+      counts.set(f.fieldKey, counts.get(f.fieldKey)! + 1);
+    }
+    if (columns.length < 2) return null;
+    const expectedRows = fields.length / columns.length;
+    if (!Number.isInteger(expectedRows) || expectedRows < 2) return null;
+    for (const c of counts.values()) if (c !== expectedRows) return null;
+
+    const colIndex = new Map<string, number>();
+    columns.forEach((key, i) => colIndex.set(key, i));
+
+    const rows: (ExtractedFieldEdit | undefined)[][] = [];
+    let current: (ExtractedFieldEdit | undefined)[] = new Array(columns.length).fill(undefined);
+    for (const f of fields) {
+      const idx = colIndex.get(f.fieldKey)!;
+      if (current[idx] !== undefined) {
+        rows.push(current);
+        current = new Array(columns.length).fill(undefined);
+      }
+      current[idx] = f;
+    }
+    if (current.some(c => c !== undefined)) rows.push(current);
+    return { columns, rows };
   }
 
   private rebuildColumnsView() {
