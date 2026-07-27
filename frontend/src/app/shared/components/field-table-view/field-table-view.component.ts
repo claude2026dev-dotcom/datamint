@@ -93,22 +93,22 @@ interface SectionGroup {
     } @else {
       <div class="dm-card table-card">
         <div class="table-scroll">
-          <table class="plain-table cols-table" [class.no-doc-col]="documents.length <= 1">
+          <table class="plain-table cols-table">
             <thead>
               @if (hasRealSections()) {
                 <tr>
-                  @if (documents.length > 1) { <th class="doc-col">Document</th> }
+                  <th class="doc-col">Document</th>
                   @for (group of sectionGroups; track group.label) {
                     <th [attr.colspan]="group.columns.length" class="section-head"><span class="section-head-label">{{ group.label }}</span></th>
                   }
                 </tr>
                 <tr>
-                  @if (documents.length > 1) { <th class="doc-col-spacer"></th> }
+                  <th class="doc-col-spacer"></th>
                   @for (col of columns; track col.key) { <th>{{ col.key }}</th> }
                 </tr>
               } @else {
                 <tr>
-                  @if (documents.length > 1) { <th class="doc-col single-row">Document</th> }
+                  <th class="doc-col single-row">Document</th>
                   @for (col of columns; track col.key) { <th class="single-row">{{ col.key }}</th> }
                 </tr>
               }
@@ -116,7 +116,7 @@ interface SectionGroup {
             <tbody>
               @for (doc of documents; track doc.id) {
                 <tr>
-                  @if (documents.length > 1) { <td class="doc-col" [title]="doc.fileName">{{ doc.fileName }}</td> }
+                  <td class="doc-col" [title]="doc.fileName">{{ doc.fileName }}</td>
                   @for (col of columns; track col.key) {
                     <td>{{ findValue(doc, col.key) }}</td>
                   }
@@ -200,11 +200,6 @@ interface SectionGroup {
        names) collapses to one plain row - it needs its own sticky-top rule since the generic
        ".plain-table thead th" already covers top:0, but nothing sets a sensible row height. */
     .single-row { top: 0; height: 34px; }
-    /* No frozen "Document" column at all in the single-document case (it would just repeat one
-       filename down every row) - the section-head label's sticky anchor has nothing to dock
-       against then, so it should sit flush left instead of leaving a 200px gap for a column
-       that was never rendered. */
-    .cols-table.no-doc-col .section-head-label { left: 0; }
     /* Sticky on the <th colspan> ITSELF doesn't hand off cleanly between adjacent sections: a
        table cell's sticky containing block is the whole scrolling area, not its own column
        span, so once a cell's natural position scrolls past the anchor it stays stuck there
