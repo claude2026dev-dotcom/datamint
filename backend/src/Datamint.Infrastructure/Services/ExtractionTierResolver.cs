@@ -16,6 +16,16 @@ public class ExtractionTierResolver : IExtractionTierResolver
 
     public async Task<ExtractionTier> ResolveForUserAsync(Guid userId, CancellationToken ct = default)
     {
+        // A user-specific override (a hand-negotiated custom AI/prompt setup for exactly one
+        // customer, see UserExtractionTierOverride) is the most specific possible customization,
+        // so it wins over everything else - a role-level or plan-level default should never
+        // silently override a deal an admin made with one particular customer.
+        var tierFromUser = await _db.UserExtractionTierOverrides
+            .Where(u => u.UserId == userId)
+            .Select(u => u.ExtractionTier)
+            .FirstOrDefaultAsync(ct);
+        if (tierFromUser is { IsEnabled: true }) return tierFromUser;
+
         // A role-level override (e.g. every "Admin" account pinned to a specific tier) takes
         // priority over anything plan-based - it's meant to bypass the normal plan/subscription
         // path entirely for whichever accounts an admin has chosen to override.

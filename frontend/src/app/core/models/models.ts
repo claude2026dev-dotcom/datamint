@@ -102,6 +102,14 @@ export interface Plan {
   isActive: boolean;
   isFreeTrial: boolean;
   extractionTierId?: string | null;
+  isContactOnly: boolean;
+}
+
+export interface UserTierOverride {
+  userId: string;
+  userEmail: string;
+  extractionTierId: string | null;
+  extractionTierName: string | null;
 }
 
 export interface SubscriptionStatus {

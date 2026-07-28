@@ -138,6 +138,12 @@ public class AdminExtractionTiersController : ControllerBase
         var planCount = await _db.Plans.CountAsync(p => p.ExtractionTierId == id, ct);
         if (planCount > 0) return Conflict(new { success = false, message = $"This tier is still mapped to {planCount} plan(s) - remap or delete those plans first." });
 
+        var roleOverrideCount = await _db.RoleExtractionTierOverrides.CountAsync(r => r.ExtractionTierId == id, ct);
+        if (roleOverrideCount > 0) return Conflict(new { success = false, message = "This tier is still pinned to a role override - clear it from the Roles page first." });
+
+        var userOverrideCount = await _db.UserExtractionTierOverrides.CountAsync(u => u.ExtractionTierId == id, ct);
+        if (userOverrideCount > 0) return Conflict(new { success = false, message = $"This tier is still assigned to {userOverrideCount} customer(s) as a personal override - clear those first." });
+
         tier.IsDeleted = true;
         await _db.SaveChangesAsync(ct);
         await _audit.LogAsync("ExtractionTier.Deleted", _currentUser.UserId, "ExtractionTier", tier.Id.ToString(), tier.Name, ct: ct);

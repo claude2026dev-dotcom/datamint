@@ -22,6 +22,12 @@ public class Plan : BaseEntity
     // (re-)activated a second time by the same user. Looked up by this flag, not by matching
     // Name == "Free", so renaming the plan can never silently break either check.
     public bool IsFreeTrial { get; set; } = false;
+    // Shown publicly on the pricing page (unlike IsFreeTrial) but not self-serve purchasable -
+    // its price is display-only ("Custom pricing"), and both checkout endpoints reject it
+    // server-side. The pricing page instead routes its CTA to Contact-us, where a human
+    // negotiates the actual setup, and an admin then hand-creates/assigns whatever Extraction
+    // Tier customization was agreed (see UserExtractionTierOverride) once terms are settled.
+    public bool IsContactOnly { get; set; } = false;
     public bool IsActive { get; set; } = true;
     public string? ProviderPlanId { get; set; }        // Gateway-side plan id, once created
 

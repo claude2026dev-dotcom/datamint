@@ -29,7 +29,7 @@ public class AdminPlansController : ControllerBase
     }
 
     private static PlanDto ToDto(Plan p, int activeSubscribers = 0) =>
-        new(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyPageLimit, p.IsRecurring, p.IsActive, p.IsFreeTrial, p.ExtractionTierId, activeSubscribers);
+        new(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyPageLimit, p.IsRecurring, p.IsActive, p.IsFreeTrial, p.ExtractionTierId, activeSubscribers, p.IsContactOnly);
 
     [HttpGet]
     public async Task<IActionResult> GetPlans([FromQuery] PlanFilterDto filter, CancellationToken ct)
@@ -65,6 +65,8 @@ public class AdminPlansController : ControllerBase
             return BadRequest(new { success = false, message = "Billing cycle must be 'Monthly' or 'Yearly'." });
         if (dto.IsFreeTrial && await _db.Plans.AnyAsync(p => p.IsFreeTrial, ct))
             return BadRequest(new { success = false, message = "A free trial plan already exists - only one plan can be flagged as the free trial." });
+        if (dto.IsFreeTrial && dto.IsContactOnly)
+            return BadRequest(new { success = false, message = "A plan can't be both the free trial and contact-only - the free trial must stay self-serve." });
 
         var plan = new Plan
         {
@@ -77,7 +79,8 @@ public class AdminPlansController : ControllerBase
             IsRecurring = dto.IsRecurring,
             IsFreeTrial = dto.IsFreeTrial,
             IsActive = true,
-            ExtractionTierId = dto.ExtractionTierId
+            ExtractionTierId = dto.ExtractionTierId,
+            IsContactOnly = dto.IsContactOnly
         };
         _db.Plans.Add(plan);
         await _db.SaveChangesAsync(ct);
@@ -96,6 +99,8 @@ public class AdminPlansController : ControllerBase
             return BadRequest(new { success = false, message = "Name is required." });
         if (!Enum.TryParse<PlanBillingCycle>(dto.BillingCycle, out var cycle))
             return BadRequest(new { success = false, message = "Billing cycle must be 'Monthly' or 'Yearly'." });
+        if (plan.IsFreeTrial && dto.IsContactOnly)
+            return BadRequest(new { success = false, message = "The free trial plan can't be marked contact-only - it must stay self-serve." });
 
         plan.Name = dto.Name.Trim();
         plan.Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
@@ -107,6 +112,7 @@ public class AdminPlansController : ControllerBase
         // reinterpret every existing Subscription row created under the plan's original
         // semantics; delete and recreate the plan instead if these truly need to change.
         plan.ExtractionTierId = dto.ExtractionTierId;
+        plan.IsContactOnly = dto.IsContactOnly;
         await _db.SaveChangesAsync(ct);
         await _audit.LogAsync("Plan.Updated", _currentUser.UserId, "Plan", plan.Id.ToString(), ct: ct);
 

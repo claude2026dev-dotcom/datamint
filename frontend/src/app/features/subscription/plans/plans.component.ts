@@ -36,17 +36,24 @@ import { Plan } from '../../../core/models/models';
             @if (plan.id === currentPlanId) { <span class="ribbon current-ribbon">Your current plan</span> }
             <h3>{{ plan.name }}</h3>
             <div class="price">
-              <span class="amount">{{ plan.price === 0 ? 'Free' : (plan.currency + ' ' + plan.price) }}</span>
-              @if (plan.price > 0) { <span class="cycle">/ {{ plan.billingCycle.toLowerCase() }}</span> }
+              @if (plan.isContactOnly) {
+                <span class="amount">Custom pricing</span>
+              } @else {
+                <span class="amount">{{ plan.price === 0 ? 'Free' : (plan.currency + ' ' + plan.price) }}</span>
+                @if (plan.price > 0) { <span class="cycle">/ {{ plan.billingCycle.toLowerCase() }}</span> }
+              }
             </div>
             <p class="desc">{{ plan.description }}</p>
             <ul>
               <li>{{ plan.monthlyPageLimit === -1 ? 'Unlimited' : plan.monthlyPageLimit }} pages / month</li>
               <li>AI-powered key/value extraction</li>
               <li>Excel export &amp; email delivery</li>
+              @if (plan.isContactOnly) { <li>Custom AI setup tailored to your documents</li> }
             </ul>
             @if (plan.id === currentPlanId) {
               <a routerLink="/profile/plan" class="dm-btn dm-btn-ghost">Manage plan</a>
+            } @else if (plan.isContactOnly) {
+              <a [routerLink]="['/contact']" [queryParams]="{ plan: plan.name }" class="dm-btn dm-btn-primary">Contact us</a>
             } @else {
               <button class="dm-btn" [class.dm-btn-primary]="plan.name !== 'Free'" [class.dm-btn-ghost]="plan.name === 'Free'"
                       [disabled]="activating" (click)="choosePlan(plan)">

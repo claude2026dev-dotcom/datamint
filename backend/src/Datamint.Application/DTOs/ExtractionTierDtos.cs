@@ -14,3 +14,7 @@ public record ExtractionTierFilterDto(string? Search = null, bool? IsEnabled = n
 public record RoleTierOverrideDto(string Role, Guid? ExtractionTierId, string? ExtractionTierName);
 
 public record UpdateRoleTierOverrideRequestDto(Guid? ExtractionTierId);
+
+public record UserTierOverrideDto(Guid UserId, string UserEmail, Guid? ExtractionTierId, string? ExtractionTierName);
+
+public record SetUserTierOverrideRequestDto(Guid ExtractionTierId);

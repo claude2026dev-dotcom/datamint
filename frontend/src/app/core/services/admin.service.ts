@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
-import { ExtractionTier, OAuthClientDetail, OAuthClientListItem, OAuthClientSecretReveal, OAuthScope, RoleTierOverride } from '../models/models';
+import { ExtractionTier, OAuthClientDetail, OAuthClientListItem, OAuthClientSecretReveal, OAuthScope, RoleTierOverride, UserTierOverride } from '../models/models';
 
 @Injectable({ providedIn: 'root' })
 export class AdminService {
@@ -115,6 +115,20 @@ export class AdminService {
 
   updateRoleTierOverride(role: string, extractionTierId: string | null) {
     return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/admin/role-tier-overrides/${role}`, { extractionTierId });
+  }
+
+  // ---------- User Extraction Tier Overrides (per-customer customization) ----------
+
+  getUserTierOverride(userId: string) {
+    return this.http.get<{ success: boolean; item: UserTierOverride }>(`${environment.apiBaseUrl}/admin/user-tier-overrides/${userId}`);
+  }
+
+  setUserTierOverride(userId: string, extractionTierId: string) {
+    return this.http.put<{ success: boolean; item: UserTierOverride }>(`${environment.apiBaseUrl}/admin/user-tier-overrides/${userId}`, { extractionTierId });
+  }
+
+  clearUserTierOverride(userId: string) {
+    return this.http.delete<{ success: boolean }>(`${environment.apiBaseUrl}/admin/user-tier-overrides/${userId}`);
   }
 
   // ---------- OAuth Clients ----------

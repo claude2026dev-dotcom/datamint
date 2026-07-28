@@ -38,7 +38,7 @@ public class SubscriptionController : ControllerBase
         return Ok(new
         {
             success = true,
-            plans = plans.Select(p => new PlanDto(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyPageLimit, p.IsRecurring, p.IsActive, p.IsFreeTrial, p.ExtractionTierId))
+            plans = plans.Select(p => new PlanDto(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyPageLimit, p.IsRecurring, p.IsActive, p.IsFreeTrial, p.ExtractionTierId, IsContactOnly: p.IsContactOnly))
         });
     }
 
@@ -113,6 +113,8 @@ public class SubscriptionController : ControllerBase
     {
         var plan = await _db.Plans.FirstOrDefaultAsync(p => p.Id == dto.PlanId && p.IsActive, ct);
         if (plan is null) return NotFound(new { success = false, message = "Selected plan was not found." });
+        if (plan.IsContactOnly)
+            return BadRequest(new { success = false, message = "This plan requires a custom quote - please contact us to get set up." });
         if (plan.Price != 0)
             return BadRequest(new { success = false, message = "This plan requires payment - use checkout instead." });
 
@@ -155,6 +157,8 @@ public class SubscriptionController : ControllerBase
     {
         var plan = await _db.Plans.FirstOrDefaultAsync(p => p.Id == dto.PlanId && p.IsActive, ct);
         if (plan is null) return NotFound(new { success = false, message = "Selected plan was not found." });
+        if (plan.IsContactOnly)
+            return BadRequest(new { success = false, message = "This plan requires a custom quote - please contact us to get set up." });
         if (plan.Price == 0)
             return BadRequest(new { success = false, message = "This plan is free - use activate-free instead." });
 

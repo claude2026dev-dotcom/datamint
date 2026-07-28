@@ -18,6 +18,7 @@ interface PlanForm {
   isRecurring: boolean;
   isFreeTrial: boolean;
   extractionTierId: string | null;
+  isContactOnly: boolean;
 }
 
 @Component({
@@ -52,17 +53,25 @@ interface PlanForm {
               <span class="plan-name">{{ p.name }}</span>
               <div class="badges">
                 @if (p.isFreeTrial) { <span class="badge badge-trial">Free trial</span> }
+                @if (p.isContactOnly) { <span class="badge badge-contact">Contact-only</span> }
                 <span class="badge" [class.badge-ok]="p.isActive" [class.badge-fail]="!p.isActive">{{ p.isActive ? 'Active' : 'Hidden' }}</span>
               </div>
             </div>
             @if (p.isFreeTrial) {
               <p class="plan-desc trial-note">Auto-granted once at sign-up — never shown on the public pricing page.</p>
             }
+            @if (p.isContactOnly) {
+              <p class="plan-desc trial-note">Custom pricing — visitors are routed to Contact us instead of self-serve checkout.</p>
+            }
             @if (p.description) { <p class="plan-desc">{{ p.description }}</p> }
 
             <div class="plan-price">
-              <span class="amount">{{ p.currency }} {{ p.price }}</span>
-              <span class="cycle">{{ p.isRecurring ? '/ ' + (p.billingCycle === 'Monthly' ? 'mo' : 'yr') : '(one-time)' }}</span>
+              @if (p.isContactOnly) {
+                <span class="amount">Custom pricing</span>
+              } @else {
+                <span class="amount">{{ p.currency }} {{ p.price }}</span>
+                <span class="cycle">{{ p.isRecurring ? '/ ' + (p.billingCycle === 'Monthly' ? 'mo' : 'yr') : '(one-time)' }}</span>
+              }
             </div>
 
             <div class="plan-meta">
@@ -187,6 +196,10 @@ interface PlanForm {
             <input type="checkbox" [(ngModel)]="form.isFreeTrial" [disabled]="modalMode === 'edit'" />
             <span>This is the free trial plan — auto-granted once at sign-up, hidden from the pricing page, and can't be re-activated once used. Only one plan should have this checked.</span>
           </label>
+          <label class="checkbox-field">
+            <input type="checkbox" [(ngModel)]="form.isContactOnly" [disabled]="form.isFreeTrial" />
+            <span>Custom pricing — no self-serve checkout. Visitors see "Custom pricing" and a Contact us button instead; an admin sets up their extraction customization manually after they reach out.</span>
+          </label>
 
           <label class="field">
             <span>Extraction tier <span class="hint">(controls which AI provider/model/prompt this plan's uploads use — invisible to the customer)</span></span>
@@ -244,6 +257,7 @@ interface PlanForm {
     .badge-ok { background: rgba(52, 211, 153, 0.15); color: var(--dm-success); }
     .badge-fail { background: rgba(248, 113, 113, 0.15); color: var(--dm-danger); }
     .badge-trial { background: rgba(99, 102, 241, 0.15); color: var(--dm-primary-light); }
+    .badge-contact { background: rgba(251, 191, 36, 0.15); color: #f59e0b; }
     .badge-refunded { background: rgba(148, 163, 184, 0.15); color: var(--dm-text-muted); }
     .trial-note { font-style: italic; }
 
@@ -349,7 +363,7 @@ export class AdminSubscriptionsComponent implements OnInit {
   }
 
   emptyForm(): PlanForm {
-    return { id: null, name: '', description: '', price: 0, currency: 'INR', billingCycle: 'Monthly', monthlyPageLimit: 50, unlimited: false, isRecurring: true, isFreeTrial: false, extractionTierId: null };
+    return { id: null, name: '', description: '', price: 0, currency: 'INR', billingCycle: 'Monthly', monthlyPageLimit: 50, unlimited: false, isRecurring: true, isFreeTrial: false, extractionTierId: null, isContactOnly: false };
   }
 
   load() {
@@ -383,7 +397,8 @@ export class AdminSubscriptionsComponent implements OnInit {
       unlimited: p.monthlyPageLimit === -1,
       isRecurring: p.isRecurring,
       isFreeTrial: p.isFreeTrial,
-      extractionTierId: p.extractionTierId ?? null
+      extractionTierId: p.extractionTierId ?? null,
+      isContactOnly: p.isContactOnly ?? false
     };
     this.formError = '';
     this.modalMode = 'edit';
@@ -396,6 +411,7 @@ export class AdminSubscriptionsComponent implements OnInit {
     if (!this.form.name.trim()) { this.formError = 'Plan name is required.'; return; }
     if (this.form.price < 0) { this.formError = 'Price can\'t be negative.'; return; }
     if (!this.form.unlimited && this.form.monthlyPageLimit < 1) { this.formError = 'Page limit must be at least 1, or mark it unlimited.'; return; }
+    if (this.form.isFreeTrial && this.form.isContactOnly) { this.formError = 'The free trial plan can\'t be contact-only — it must stay self-serve.'; return; }
     this.formError = '';
 
     const payload = {
@@ -407,7 +423,8 @@ export class AdminSubscriptionsComponent implements OnInit {
       monthlyPageLimit: this.form.unlimited ? -1 : this.form.monthlyPageLimit,
       isRecurring: this.form.isRecurring,
       isFreeTrial: this.form.isFreeTrial,
-      extractionTierId: this.form.extractionTierId
+      extractionTierId: this.form.extractionTierId,
+      isContactOnly: this.form.isContactOnly
     };
 
     const request = this.modalMode === 'create'

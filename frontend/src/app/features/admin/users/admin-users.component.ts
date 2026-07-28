@@ -7,6 +7,7 @@ import { ToastService } from '../../../core/services/toast.service';
 import { ConfirmDialogService } from '../../../core/services/confirm-dialog.service';
 import { IconComponent } from '../../../shared/components/icon/icon.component';
 import { LoadingHintComponent } from '../../../shared/components/loading-hint/loading-hint.component';
+import { ExtractionTier, UserTierOverride } from '../../../core/models/models';
 
 @Component({
   selector: 'app-admin-users',
@@ -125,6 +126,9 @@ import { LoadingHintComponent } from '../../../shared/components/loading-hint/lo
                       <button class="icon-btn" [disabled]="!u.hasPassword || resettingId === u.id"
                               [title]="u.hasPassword ? 'Send password reset link' : 'Signs in with Google — no password to reset'"
                               (click)="sendPasswordReset(u)"><app-icon name="key" [size]="16" /></button>
+                      <button class="icon-btn" title="AI customization — assign a personal extraction tier override" (click)="openTierOverride(u)">
+                        <app-icon name="sparkles" [size]="16" />
+                      </button>
                       <button class="icon-btn" [class.warning]="u.isActive" [disabled]="u.id === myId || u.isSuperAdmin"
                               [title]="u.isSuperAdmin ? 'The super admin account cannot be disabled' : (u.isActive ? 'Disable this account' : 'Re-enable this account')" (click)="toggle(u)">
                         <app-icon [name]="u.isActive ? 'pause' : 'play'" [size]="16" />
@@ -185,6 +189,42 @@ import { LoadingHintComponent } from '../../../shared/components/loading-hint/lo
           </select>
         </div>
       }
+    }
+
+    @if (tierModalOpen) {
+      <div class="modal-backdrop" (click)="closeTierOverride()">
+        <div class="dm-card modal-panel" (click)="$event.stopPropagation()">
+          <h2>AI customization</h2>
+          <p class="muted modal-sub">{{ tierModalUser?.email }}</p>
+
+          @if (tierModalLoading) {
+            <div class="skeleton" style="height: 40px;"></div>
+          } @else {
+            <label class="field">
+              <span>Personal extraction tier override <span class="hint">(takes priority over their role and plan — use this for a hand-negotiated custom setup)</span></span>
+              <select class="dm-input" [(ngModel)]="tierModalSelection">
+                <option [ngValue]="null">No override — use role/plan default</option>
+                @for (t of tiers; track t.id) {
+                  <option [ngValue]="t.id">{{ t.name }}{{ t.isDefault ? ' (default)' : '' }}</option>
+                }
+              </select>
+            </label>
+            @if (tierModalCurrent?.extractionTierId) {
+              <p class="muted current-override-note">Currently overridden to: <strong>{{ tierModalCurrent?.extractionTierName }}</strong></p>
+            }
+          }
+
+          <div class="modal-actions">
+            <button class="dm-btn dm-btn-ghost" (click)="closeTierOverride()">Cancel</button>
+            @if (tierModalCurrent?.extractionTierId) {
+              <button class="dm-btn dm-btn-ghost danger" [disabled]="tierModalSaving" (click)="clearTierOverride()">Clear override</button>
+            }
+            <button class="dm-btn dm-btn-primary" [disabled]="tierModalSaving || !tierModalSelection" (click)="saveTierOverride()">
+              {{ tierModalSaving ? 'Saving…' : 'Save' }}
+            </button>
+          </div>
+        </div>
+      </div>
     }
   `,
   styles: [`
@@ -278,6 +318,27 @@ import { LoadingHintComponent } from '../../../shared/components/loading-hint/lo
       .actions-col { flex-wrap: wrap; }
       .actions-col::before { align-self: center; }
     }
+
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(4, 6, 14, 0.6); backdrop-filter: blur(2px);
+      display: flex; align-items: flex-start; justify-content: center; z-index: 9000; padding: 40px 20px; overflow-y: auto;
+    }
+    .modal-panel { padding: 28px; width: 100%; max-width: 460px; display: flex; flex-direction: column; gap: 14px; margin: auto 0; }
+    .modal-panel h2 { font-size: 1.15rem; margin: 0; }
+    .modal-sub { margin: -8px 0 0; font-size: 0.82rem; }
+    .field { display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; color: var(--dm-text-muted); }
+    .field .hint { font-weight: 400; font-size: 0.74rem; }
+    .current-override-note { font-size: 0.82rem; margin: -4px 0 0; }
+    .current-override-note strong { color: var(--dm-text); }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+    .modal-actions .danger { border-color: var(--dm-danger); color: var(--dm-danger); }
+    .modal-actions .danger:hover { background: rgba(248,113,113,0.1); }
+    @media (max-width: 520px) {
+      .modal-backdrop { padding: 20px 12px; }
+      .modal-panel { padding: 20px; }
+      .modal-actions { flex-direction: column-reverse; }
+      .modal-actions .dm-btn { width: 100%; }
+    }
   `]
 })
 export class AdminUsersComponent implements OnInit, OnDestroy {
@@ -303,6 +364,14 @@ export class AdminUsersComponent implements OnInit, OnDestroy {
   editRole = 'User';
   resettingId: string | null = null;
   reactivatingId: string | null = null;
+
+  tiers: ExtractionTier[] = [];
+  tierModalOpen = false;
+  tierModalUser: any = null;
+  tierModalLoading = false;
+  tierModalSaving = false;
+  tierModalCurrent: UserTierOverride | null = null;
+  tierModalSelection: string | null = null;
 
   private searchDebounce: ReturnType<typeof setTimeout> | undefined;
   private readonly avatarPalette = ['#6366f1', '#22c55e', '#f97316', '#ec4899', '#06b6d4', '#a855f7', '#eab308'];
@@ -443,6 +512,65 @@ export class AdminUsersComponent implements OnInit, OnDestroy {
         if (this.users.length === 0 && this.page > 1) { this.page--; this.reload(); }
       },
       error: err => this.toast.error(err?.error?.message || 'Could not deactivate that user.')
+    });
+  }
+
+  openTierOverride(u: any) {
+    this.tierModalUser = u;
+    this.tierModalOpen = true;
+    this.tierModalLoading = true;
+    this.tierModalCurrent = null;
+    this.tierModalSelection = null;
+
+    if (this.tiers.length === 0) {
+      this.adminService.getExtractionTiers({ pageSize: 100 }).subscribe({
+        next: res => { this.tiers = res.items; },
+        error: () => {}
+      });
+    }
+
+    this.adminService.getUserTierOverride(u.id).subscribe({
+      next: res => {
+        this.tierModalCurrent = res.item;
+        this.tierModalSelection = res.item.extractionTierId;
+        this.tierModalLoading = false;
+      },
+      error: () => {
+        this.tierModalLoading = false;
+        this.toast.error('Could not load this user\'s AI customization. Please try again.');
+      }
+    });
+  }
+
+  closeTierOverride() {
+    this.tierModalOpen = false;
+    this.tierModalUser = null;
+  }
+
+  saveTierOverride() {
+    if (!this.tierModalUser || !this.tierModalSelection) return;
+    this.tierModalSaving = true;
+    this.adminService.setUserTierOverride(this.tierModalUser.id, this.tierModalSelection).subscribe({
+      next: res => {
+        this.tierModalSaving = false;
+        this.tierModalCurrent = res.item;
+        this.toast.success(`${this.tierModalUser.email} now uses a personal extraction tier override.`);
+        this.tierModalOpen = false;
+      },
+      error: err => { this.tierModalSaving = false; this.toast.error(err?.error?.message || 'Could not save this override.'); }
+    });
+  }
+
+  clearTierOverride() {
+    if (!this.tierModalUser) return;
+    this.tierModalSaving = true;
+    this.adminService.clearUserTierOverride(this.tierModalUser.id).subscribe({
+      next: () => {
+        this.tierModalSaving = false;
+        this.toast.success(`Personal AI customization cleared for ${this.tierModalUser.email}.`);
+        this.tierModalOpen = false;
+      },
+      error: err => { this.tierModalSaving = false; this.toast.error(err?.error?.message || 'Could not clear this override.'); }
     });
   }
 

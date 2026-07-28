@@ -1,6 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { ContactService } from '../../core/services/contact.service';
 import { ToastService } from '../../core/services/toast.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
@@ -52,14 +53,19 @@ import { BackButtonComponent } from '../../shared/components/back-button/back-bu
     .state-icon { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 6px; background: rgba(52,211,153,0.15); color: var(--dm-success); }
   `]
 })
-export class ContactComponent {
+export class ContactComponent implements OnInit {
   name = '';
   email = '';
   message = '';
   sending = false;
   sent = false;
 
-  constructor(private contactService: ContactService, private toast: ToastService) {}
+  constructor(private contactService: ContactService, private toast: ToastService, private route: ActivatedRoute) {}
+
+  ngOnInit() {
+    const plan = this.route.snapshot.queryParamMap.get('plan');
+    if (plan) this.message = `I'm interested in the ${plan} plan — please help me set up a custom extraction configuration.`;
+  }
 
   submit() {
     if (!this.name.trim() || !this.email.trim() || !this.message.trim()) {

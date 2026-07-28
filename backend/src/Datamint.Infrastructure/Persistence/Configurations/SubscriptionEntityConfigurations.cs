@@ -47,6 +47,23 @@ public class RoleExtractionTierOverrideConfiguration : IEntityTypeConfiguration<
     }
 }
 
+public class UserExtractionTierOverrideConfiguration : IEntityTypeConfiguration<UserExtractionTierOverride>
+{
+    public void Configure(EntityTypeBuilder<UserExtractionTierOverride> b)
+    {
+        // At most one override row per user - a second PUT for the same user updates this row
+        // rather than creating a sibling one.
+        b.HasIndex(u => u.UserId).IsUnique();
+        b.HasOne(u => u.User).WithMany().HasForeignKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
+        // Restrict (not SetNull, since ExtractionTierId isn't nullable here) - deleting a tier
+        // that's still pinned to a specific customer would silently and invisibly change what
+        // AI/prompt that customer's extractions use, exactly the kind of surprise this whole
+        // feature exists to prevent. AdminExtractionTiersController.DeleteTier blocks the delete
+        // with a clear message instead of ever hitting this constraint.
+        b.HasOne(u => u.ExtractionTier).WithMany().HasForeignKey(u => u.ExtractionTierId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public class PaymentTransactionConfiguration : IEntityTypeConfiguration<PaymentTransaction>
 {
     public void Configure(EntityTypeBuilder<PaymentTransaction> b)

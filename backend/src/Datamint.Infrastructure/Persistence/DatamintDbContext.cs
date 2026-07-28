@@ -21,6 +21,7 @@ public class DatamintDbContext : DbContext
 
     public DbSet<ExtractionTier> ExtractionTiers => Set<ExtractionTier>();
     public DbSet<RoleExtractionTierOverride> RoleExtractionTierOverrides => Set<RoleExtractionTierOverride>();
+    public DbSet<UserExtractionTierOverride> UserExtractionTierOverrides => Set<UserExtractionTierOverride>();
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<DocumentPage> DocumentPages => Set<DocumentPage>();
     public DbSet<ExtractedField> ExtractedFields => Set<ExtractedField>();
