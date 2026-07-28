@@ -64,6 +64,8 @@ public class JwtTokenService : IJwtTokenService
         if (user is not null)
         {
             claims.Add(new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()));
+            claims.Add(new Claim(JwtRegisteredClaimNames.Email, user.Email));
+            claims.Add(new Claim(ClaimTypes.Role, user.Role));
             claims.Add(new Claim(JwtClaimTypes.SecurityStamp, user.SecurityStamp));
         }
 
