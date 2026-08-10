@@ -131,8 +131,13 @@ h1, h2, h3, h4 { font-weight: 700; letter-spacing: -0.02em; margin: 0; }
   &:focus { border-color: var(--dm-primary); box-shadow: 0 0 0 3px rgba(99,102,241,0.2); }
 }
 
+// scrollbar-color is the Firefox equivalent of the ::-webkit-scrollbar-thumb rule below - both
+// need to be set for the same visible-in-both-themes result cross-browser. See --dm-scrollbar-thumb
+// in _tokens.scss for why this derives from --dm-text-muted rather than --dm-border.
+* { scrollbar-width: thin; scrollbar-color: var(--dm-scrollbar-thumb) transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: var(--dm-border); border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: var(--dm-scrollbar-thumb); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--dm-scrollbar-thumb-hover); }
 
 // Global (not component-scoped) on purpose: app-icon is nested inside buttons/links
 // owned by whatever component uses it, so a rule scoped to app-icon's own styles

@@ -37,6 +37,15 @@
   --dm-gradient-primary: linear-gradient(135deg, #6366f1 0%, #22d3ee 100%);
 
   --dm-font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  // --dm-border alone (#e1e4ee light / barely different from --dm-bg #f4f5fa) is what every
+  // scrollbar thumb used to be styled with - readable in dark mode where --dm-border has real
+  // contrast against --dm-bg, but nearly invisible in light mode. --dm-text-muted keeps enough
+  // contrast in BOTH themes to actually see a scrollbar exists, so scrollbars derive from it
+  // instead - color-mix keeps the resting state soft/unobtrusive, with hover going to the full,
+  // more visible color as an affordance that it's interactive.
+  --dm-scrollbar-thumb: color-mix(in srgb, var(--dm-text-muted) 55%, transparent);
+  --dm-scrollbar-thumb-hover: var(--dm-text-muted);
 }
 
 :root[data-theme='dark'] {
