@@ -28,10 +28,9 @@ public class SubscriptionController : ControllerBase
         _billing = billing;
     }
 
-    /// <summary>Public plans list for the pricing page. Prices are data-driven — edit from Admin > Plans once decided.
-    /// The free trial plan is deliberately excluded - it's auto-granted once at sign-in
-    /// (see AuthController.EnsureFreePlanActivatedAsync), never something to pick from a
-    /// list, so it never appears here as a selectable card.</summary>
+    /// <summary>Public plans list for the pricing page. The free trial plan is deliberately
+    /// excluded - it's auto-granted once at sign-in (see AuthController), never something to
+    /// pick from a list.</summary>
     [HttpGet("plans")]
     public async Task<IActionResult> GetPlans(CancellationToken ct)
     {
@@ -39,15 +38,15 @@ public class SubscriptionController : ControllerBase
         return Ok(new
         {
             success = true,
-            plans = plans.Select(p => new PlanDto(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyPageLimit, p.IsRecurring, p.IsActive, p.IsFreeTrial))
+            plans = plans.Select(p => new PlanDto(p.Id, p.Name, p.Description, p.Price, p.Currency, p.BillingCycle.ToString(), p.MonthlyPageLimit, p.IsRecurring, p.IsActive, p.IsFreeTrial, p.ExtractionTierId, IsContactOnly: p.IsContactOnly))
         });
     }
 
     /// <summary>Cancelling doesn't end access immediately - it just stops the plan from
-    /// renewing, so a subscription is still "usable" for the rest of the cycle already
-    /// paid for. Every place that needs to know "can this user still upload/see their
-    /// plan as active" checks this same condition (Active, or Cancelled but not yet
-    /// past EndAtUtc) rather than a plain Status == Active.</summary>
+    /// renewing, so a subscription is still "usable" for the rest of the cycle already paid
+    /// for. Every place that needs to know "can this user still upload" checks this same
+    /// condition (Active, or Cancelled but not yet past EndAtUtc) rather than a plain
+    /// Status == Active.</summary>
     [HttpGet("status")]
     [Authorize]
     public async Task<IActionResult> GetStatus(CancellationToken ct)
@@ -74,8 +73,8 @@ public class SubscriptionController : ControllerBase
         });
     }
 
-    /// <summary>Cancels the caller's active plan - it keeps working until the current
-    /// billing period ends (they already paid for it), it just won't renew.</summary>
+    /// <summary>Cancels the caller's active plan - it keeps working until the current billing
+    /// period ends (they already paid for it), it just won't renew.</summary>
     [HttpPost("cancel")]
     [Authorize]
     public async Task<IActionResult> CancelSubscription(CancellationToken ct)
@@ -106,27 +105,25 @@ public class SubscriptionController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// For $0 plans (the Free tier, or any plan whose real price hasn't been set
-    /// from Admin > Plans yet) - activates the subscription directly, no payment
-    /// gateway round-trip, since there's nothing to charge.
-    /// </summary>
+    /// <summary>For $0 plans - activates the subscription directly, no payment gateway
+    /// round-trip, since there's nothing to charge.</summary>
     [HttpPost("activate-free")]
     [Authorize]
     public async Task<IActionResult> ActivateFreePlan(ActivatePlanRequestDto dto, CancellationToken ct)
     {
         var plan = await _db.Plans.FirstOrDefaultAsync(p => p.Id == dto.PlanId && p.IsActive, ct);
         if (plan is null) return NotFound(new { success = false, message = "Selected plan was not found." });
+        if (plan.IsContactOnly)
+            return BadRequest(new { success = false, message = "This plan requires a custom quote - please contact us to get set up." });
         if (plan.Price != 0)
             return BadRequest(new { success = false, message = "This plan requires payment - use checkout instead." });
 
         var userId = _currentUser.UserId!.Value;
 
-        // The free trial is a one-time perk granted automatically at sign-in, never
-        // something to (re-)pick manually - without this check, cancelling back to it
-        // (or hitting this endpoint directly) would hand out a brand new Subscription
-        // row with PagesUsedThisCycle reset to 0, letting the same user re-earn the
-        // trial's page allowance indefinitely.
+        // The free trial is a one-time perk granted automatically at sign-in, never something
+        // to (re-)pick manually - without this check, hitting this endpoint directly would hand
+        // out a brand new Subscription row with PagesUsedThisCycle reset to 0, letting the same
+        // user re-earn the trial's page allowance indefinitely.
         if (plan.IsFreeTrial)
         {
             var alreadyHadTrial = await _db.Subscriptions.AnyAsync(s => s.UserId == userId && s.Plan.IsFreeTrial, ct);
@@ -160,6 +157,8 @@ public class SubscriptionController : ControllerBase
     {
         var plan = await _db.Plans.FirstOrDefaultAsync(p => p.Id == dto.PlanId && p.IsActive, ct);
         if (plan is null) return NotFound(new { success = false, message = "Selected plan was not found." });
+        if (plan.IsContactOnly)
+            return BadRequest(new { success = false, message = "This plan requires a custom quote - please contact us to get set up." });
         if (plan.Price == 0)
             return BadRequest(new { success = false, message = "This plan is free - use activate-free instead." });
 

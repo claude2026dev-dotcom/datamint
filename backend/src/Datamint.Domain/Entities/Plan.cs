@@ -3,9 +3,8 @@ using Datamint.Domain.Enums;
 namespace Datamint.Domain.Entities;
 
 /// <summary>
-/// Subscription plan/tier. Pricing and limits are intentionally data-driven
-/// (stored in DB, editable from the admin dashboard) instead of hard-coded,
-/// since pricing is still to be decided.
+/// Subscription plan/tier. Pricing and limits are intentionally data-driven (stored in DB,
+/// editable from the admin dashboard) instead of hard-coded.
 /// </summary>
 public class Plan : BaseEntity
 {
@@ -14,20 +13,28 @@ public class Plan : BaseEntity
     public decimal Price { get; set; }
     public string Currency { get; set; } = "INR";
     public PlanBillingCycle BillingCycle { get; set; } = PlanBillingCycle.Monthly;
-    public int MonthlyPageLimit { get; set; }         // -1 = unlimited. Pages, not uploads/files - one upload can hold many files, one file many pages.
+    public int MonthlyPageLimit { get; set; }         // -1 = unlimited. Pages, not uploads/files.
     // false = a one-time lifetime allowance that never renews or resets (e.g. a free trial);
-    // true = a normal recurring plan that renews each BillingCycle. Configurable per plan
-    // from Admin > Plans so this never needs a code change to adjust.
+    // true = a normal recurring plan that renews each BillingCycle.
     public bool IsRecurring { get; set; } = true;
-    // Marks THE onboarding free trial plan - auto-granted once per user at first
-    // sign-in (see AuthController.EnsureFreePlanActivatedAsync) instead of ever being
-    // manually chosen. Never shown as a selectable option on the public pricing page,
-    // and can never be (re-)activated a second time by the same user - both enforced
-    // in SubscriptionController. Looked up by this flag, not by matching Name == "Free",
-    // so renaming the plan from Admin > Plans can never silently break either check.
+    // Marks THE onboarding free trial plan - auto-granted once per user at first sign-in.
+    // Never shown as a selectable option on the public pricing page, and can never be
+    // (re-)activated a second time by the same user. Looked up by this flag, not by matching
+    // Name == "Free", so renaming the plan can never silently break either check.
     public bool IsFreeTrial { get; set; } = false;
+    // Shown publicly on the pricing page (unlike IsFreeTrial) but not self-serve purchasable -
+    // its price is display-only ("Custom pricing"), and both checkout endpoints reject it
+    // server-side. The pricing page instead routes its CTA to Contact-us, where a human
+    // negotiates the actual setup, and an admin then hand-creates/assigns whatever Extraction
+    // Tier customization was agreed (see UserExtractionTierOverride) once terms are settled.
+    public bool IsContactOnly { get; set; } = false;
     public bool IsActive { get; set; } = true;
-    public string? ProviderPlanId { get; set; }        // Gateway-side plan id, once created (which gateway is Payment:Provider in appsettings)
+    public string? ProviderPlanId { get; set; }        // Gateway-side plan id, once created
+
+    // Which AI provider/model/prompt-customization this plan's extractions use - entirely
+    // invisible to the subscriber. Null falls back to the one tier flagged IsDefault.
+    public Guid? ExtractionTierId { get; set; }
+    public ExtractionTier? ExtractionTier { get; set; }
 
     public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
 

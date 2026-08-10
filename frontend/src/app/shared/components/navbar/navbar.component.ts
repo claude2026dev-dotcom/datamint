@@ -25,8 +25,9 @@ import { environment } from '../../../../environments/environment';
 
         <div class="links" [class.open]="menuOpen">
           @if (auth.isLoggedIn()) { <a routerLink="/home" routerLinkActive="active" (click)="menuOpen = false">Home</a> }
-          <a routerLink="/upload" routerLinkActive="active" (click)="menuOpen = false">Upload</a>
+          @if (auth.isLoggedIn()) { <a routerLink="/upload" routerLinkActive="active" (click)="menuOpen = false">Upload</a> }
           @if (auth.isLoggedIn()) { <a routerLink="/documents" routerLinkActive="active" (click)="menuOpen = false">My documents</a> }
+          @if (auth.isLoggedIn()) { <a routerLink="/field-templates" routerLinkActive="active" (click)="menuOpen = false">Templates</a> }
           <a routerLink="/plans" routerLinkActive="active" (click)="menuOpen = false">Pricing</a>
           @if (auth.isAdmin()) { <a routerLink="/admin" routerLinkActive="active" (click)="menuOpen = false">Admin</a> }
           <!-- Only rendered (and only ever visible) below the mobile breakpoint - the standalone
@@ -61,9 +62,6 @@ import { environment } from '../../../../environments/environment';
                   </div>
                   <a routerLink="/profile" class="dropdown-item" (click)="profileOpen = false">
                     <app-icon name="user" [size]="16" /> My profile
-                  </a>
-                  <a routerLink="/profile/plan" class="dropdown-item" (click)="profileOpen = false">
-                    <app-icon name="credit-card" [size]="16" /> Current plan
                   </a>
                   <a routerLink="/profile/security" class="dropdown-item" (click)="profileOpen = false">
                     <app-icon name="key" [size]="16" /> Security
@@ -103,6 +101,16 @@ import { environment } from '../../../../environments/environment';
     </nav>
   `,
   styles: [`
+    /* app-root lays out its children (offline-banner/navbar/router-outlet/footer/...) as a
+       column flexbox so a short page's footer still sits at the viewport bottom (see
+       styles.scss). That makes THIS component's own host element a flex item whose height
+       auto-sizes to exactly its content (~65px) - which then becomes .dm-nav's containing
+       block for position:sticky purposes, leaving it zero px of room to ever "stick" (it's
+       already pinned at the bottom of a box exactly its own height, so it just scrolls with
+       the page like position:static). display:contents removes the host's own box from the
+       render tree entirely, so .dm-nav becomes effectively a direct flex child of app-root
+       (whose height spans the full page) and gets real travel room to stick against. */
+    :host { display: contents; }
     .dm-nav { position: sticky; top: 0; z-index: 100; background: var(--dm-nav-bg); backdrop-filter: blur(10px); border-bottom: 1px solid var(--dm-border); }
     .dm-nav-inner { display: flex; align-items: center; gap: 24px; height: 64px; position: relative; }
     .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 1.1rem; color: var(--dm-text); text-decoration: none; }

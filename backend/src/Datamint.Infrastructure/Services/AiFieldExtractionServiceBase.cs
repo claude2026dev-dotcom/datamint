@@ -1,21 +1,28 @@
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
+using Datamint.Domain.Entities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Datamint.Infrastructure.Services;
 
 /// <summary>
-/// Shared orchestration for every AI field-extraction provider - previously duplicated nearly
-/// line-for-line between ClaudeFieldExtractionService and OpenAiFieldExtractionService. Each
-/// provider subclass owns only its own wire format (how to serialize a prompt + optional images
-/// into that provider's specific HTTP request shape) via <see cref="CallModelAsync"/> - this base
-/// class deliberately does not try to build a "generic" image content block both providers share,
-/// since that's exactly the kind of shared abstraction that drifts the moment one provider's API
-/// changes.
+/// Shared orchestration for every AI field-extraction provider - each provider subclass owns
+/// only its own wire format (how to serialize a prompt + optional images + model name into that
+/// provider's specific HTTP request shape) via <see cref="CallModelAsync"/>. The model and any
+/// prompt customization used for a given call are resolved from the caller's ExtractionTier, not
+/// static config - this is what lets an admin map different subscription plans to different
+/// models/prompts without either provider class knowing anything about plans or tiers.
 /// </summary>
 public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
 {
+    /// <summary>The only extraction-failure text ever shown to an end user - identical across
+    /// every provider (missing key, non-2xx response, network error, whatever) so a user can
+    /// never infer which AI is configured, or that "extraction" is even AI-driven under the
+    /// hood, from the wording of a failure. Real detail goes server-side only, via Logger.</summary>
+    protected const string GenericExtractionFailureMessage =
+        "We couldn't extract data from this document right now. Please try again shortly, or contact support if this continues.";
+
     protected readonly HttpClient Http;
     protected readonly IConfiguration Config;
     protected readonly ILogger Logger;
@@ -29,21 +36,24 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         _maxEmptyResultRetries = int.TryParse(config["Ai:MaxEmptyResultRetries"], out var retries) ? retries : 1;
     }
 
-    /// <summary>The provider's own API key config value (e.g. Config["Claude:ApiKey"]).</summary>
+    /// <summary>The provider's own API key config value (e.g. Config["Claude:ApiKey"]) - always
+    /// a global secret, never per-tier (tiers only ever choose a model/prompt, never hold a
+    /// credential).</summary>
     protected abstract string? ApiKey { get; }
 
     /// <summary>Shown to the caller when <see cref="ApiKey"/> is missing.</summary>
     protected abstract string MissingApiKeyMessage { get; }
 
     /// <summary>
-    /// Sends one prompt (+ optional page images, for vision-capable calls) to the provider and
-    /// returns its raw text reply. Each provider builds its own request/content shape here.
+    /// Sends one prompt (+ optional page images, for vision-capable calls) to the provider using
+    /// the given model name and returns its raw text reply. Each provider builds its own
+    /// request/content shape here.
     /// </summary>
     protected abstract Task<(string? text, string? error)> CallModelAsync(
-        string apiKey, string prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct);
+        string apiKey, string modelName, string prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct);
 
     public async Task<AiExtractionResultDto> ExtractStructuredDataAsync(
-        IEnumerable<PdfPageTextDto> pages, IReadOnlyList<string>? requestedFields = null, CancellationToken ct = default)
+        IEnumerable<PdfPageTextDto> pages, ExtractionTier tier, IReadOnlyList<string>? requestedFields = null, CancellationToken ct = default)
     {
         var apiKey = ApiKey;
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -69,8 +79,8 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         List<ExtractedFieldDto> fields;
         while (true)
         {
-            var firstPassPrompt = AiExtractionPromptHelper.BuildPrompt(pageList, requestedFields, isRetryAfterEmptyResult: attempt > 0);
-            var (firstPassText, firstPassError) = await CallModelAsync(apiKey, firstPassPrompt, images, ct);
+            var firstPassPrompt = AiExtractionPromptHelper.BuildPrompt(pageList, tier, requestedFields, isRetryAfterEmptyResult: attempt > 0);
+            var (firstPassText, firstPassError) = await CallModelAsync(apiKey, tier.ModelName, firstPassPrompt, images, ct);
             if (firstPassError is not null)
                 return new AiExtractionResultDto(new List<ExtractedFieldDto>(), false, firstPassError);
 
@@ -79,7 +89,7 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
                 : ReconcileFormattedFields(AiExtractionPromptHelper.ParseFieldsJson(firstPassText!), requestedFields!);
 
             var verifyPrompt = AiExtractionPromptHelper.BuildVerificationPrompt(pageList, fields, isDynamicMode);
-            var (verifyText, verifyError) = await CallModelAsync(apiKey, verifyPrompt, Array.Empty<PageImageDto>(), ct);
+            var (verifyText, verifyError) = await CallModelAsync(apiKey, tier.ModelName, verifyPrompt, Array.Empty<PageImageDto>(), ct);
             if (verifyError is null && verifyText is not null)
             {
                 try
@@ -108,31 +118,32 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
     /// <summary>
     /// Formatted mode's "extract ONLY these fields" contract is enforced here in code, not just
     /// via prompt wording - once page images are attached, a model reliably ignores an
-    /// instruction to limit itself and reports everything else it sees in the image too (this
-    /// was observed directly: the exact same request came back with 5x the requested field count
-    /// once an image was attached, unchanged by strengthening the prompt further). Reconciling
-    /// against the caller's exact requested list after every parse guarantees the contract
-    /// regardless of what the model actually returns: exactly one entry per requested field, in
-    /// the requested order, with the caller's exact casing as the key - extras are dropped,
-    /// missing ones become null.
+    /// instruction to limit itself and reports everything else it sees in the image too.
+    /// Reconciling against the caller's exact requested list after every parse guarantees the
+    /// contract regardless of what the model actually returns.
     /// </summary>
     private static List<ExtractedFieldDto> ReconcileFormattedFields(List<ExtractedFieldDto> fields, IReadOnlyList<string> requestedFields)
     {
+        // Trimmed + case-insensitive on both sides: the model can echo a requested key back
+        // with incidental leading/trailing whitespace (or differing case) even though it
+        // otherwise matched the right field - neither should ever cause a real match to be
+        // missed and silently reported as "not found" (null) instead.
         var byKey = new Dictionary<string, ExtractedFieldDto>(StringComparer.OrdinalIgnoreCase);
         foreach (var field in fields)
-            if (!byKey.ContainsKey(field.Key)) byKey[field.Key] = field;
+        {
+            var trimmedKey = field.Key.Trim();
+            if (!byKey.ContainsKey(trimmedKey)) byKey[trimmedKey] = field;
+        }
 
         return requestedFields
-            .Select(name => byKey.TryGetValue(name, out var f) ? f with { Key = name } : new ExtractedFieldDto(name, null, null))
+            .Select(name => byKey.TryGetValue(name.Trim(), out var f) ? f with { Key = name } : new ExtractedFieldDto(name, null, null))
             .ToList();
     }
 
     /// <summary>
-    /// Dynamic mode: zero fields is a strong failure signal - there's no fixed target to miss, so
-    /// an empty result is a real pipeline symptom. Formatted mode: "every requested field is null"
-    /// is equally the CORRECT answer when a document genuinely doesn't have what was asked for -
-    /// only worth retrying when there's clearly real content to re-examine (a non-trivial amount
-    /// of page text), which suggests the miss is a pipeline hiccup rather than the honest truth.
+    /// Dynamic mode: zero fields is a strong failure signal. Formatted mode: "every requested
+    /// field is null" is equally the CORRECT answer when a document genuinely doesn't have what
+    /// was asked for - only worth retrying when there's clearly real content to re-examine.
     /// </summary>
     private static bool ShouldRetryEmptyResult(List<ExtractedFieldDto> fields, bool isDynamicMode, List<PdfPageTextDto> pages)
     {
@@ -143,7 +154,7 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         return pages.Sum(p => p.Text?.Length ?? 0) > 200;
     }
 
-    public async Task<Dictionary<string, string>> HarmonizeFieldKeysAsync(IReadOnlyList<string> distinctKeys, CancellationToken ct = default)
+    public async Task<Dictionary<string, string>> HarmonizeFieldKeysAsync(IReadOnlyList<string> distinctKeys, ExtractionTier tier, CancellationToken ct = default)
     {
         if (distinctKeys.Count < 2) return new Dictionary<string, string>();
 
@@ -151,7 +162,7 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         if (string.IsNullOrWhiteSpace(apiKey)) return new Dictionary<string, string>();
 
         var prompt = AiExtractionPromptHelper.BuildHarmonizationPrompt(distinctKeys);
-        var (text, error) = await CallModelAsync(apiKey, prompt, Array.Empty<PageImageDto>(), ct);
+        var (text, error) = await CallModelAsync(apiKey, tier.ModelName, prompt, Array.Empty<PageImageDto>(), ct);
         if (error is not null || text is null) return new Dictionary<string, string>();
 
         try

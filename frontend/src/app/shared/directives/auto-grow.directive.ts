@@ -12,9 +12,6 @@ export class AutoGrowDirective implements AfterViewInit {
   constructor(private el: ElementRef<HTMLTextAreaElement>) {}
 
   ngAfterViewInit() {
-    // Runs after the textarea has its real content (ngModel binds asynchronously
-    // relative to construction), and deferred one tick so scrollHeight reflects
-    // final layout rather than a pre-render measurement of zero.
     setTimeout(() => this.resize());
   }
 

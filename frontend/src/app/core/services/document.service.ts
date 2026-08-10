@@ -20,28 +20,29 @@ export class DocumentService {
       `${environment.apiBaseUrl}/documents/upload`, form);
   }
 
-  /// Read-only pre-upload check: returns each file's page count / OCR need without touching
+  /// Read-only pre-upload check: returns each file's page count without touching
   /// quota or saving anything permanent, so a page-range picker can be offered before committing.
   peek(files: File[]) {
     const form = new FormData();
     files.forEach(f => form.append('files', f));
-    return this.http.post<{ success: boolean; files: { fileName: string; pageCount: number; requiresOcr: boolean }[] }>(
+    return this.http.post<{ success: boolean; files: { fileName: string; pageCount: number }[] }>(
       `${environment.apiBaseUrl}/documents/peek`, form);
   }
 
   getDetail(id: string) {
     return this.http.get<{
-      success: boolean; id: string; originalFileName: string; pageCount: number; requiresOcr: boolean;
-      status: string; extractionMode: string; requestedFields: string | null; fields: ExtractedFieldEdit[];
+      success: boolean; id: string; originalFileName: string; contentType: string; pageCount: number;
+      status: string; extractionMode: string; requestedFields: string | null; uploadBatchId: string;
+      createdAtUtc: string; fields: ExtractedFieldEdit[];
     }>(`${environment.apiBaseUrl}/documents/${id}`);
   }
 
-  updateField(documentId: string, fieldId: string, newValue: string, newKey?: string, includeInExport?: boolean) {
+  updateField(documentId: string, fieldId: string, newValue: string, newKey?: string, includeInExport?: boolean, newSemanticType?: string) {
     // The backend recomputes wasEditedByUser from the actual before/after diff and
     // returns the resulting field state - callers should use that returned value
     // instead of assuming "the save succeeded" means "something was edited".
     return this.http.put<{ success: boolean; field: ExtractedFieldEdit }>(
-      `${environment.apiBaseUrl}/documents/${documentId}/fields`, { fieldId, newValue, newKey, includeInExport });
+      `${environment.apiBaseUrl}/documents/${documentId}/fields`, { fieldId, newValue, newKey, includeInExport, newSemanticType });
   }
 
   reorderFields(documentId: string, fields: { fieldId: string; sectionLabel: string; sortOrder: number }[]) {
@@ -52,23 +53,35 @@ export class DocumentService {
     return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/documents/${documentId}/sections/rename`, { oldLabel, newLabel });
   }
 
+  /// Ungroups every field in the document into a single unsectioned list. Reversible via
+  /// restoreSections - never deletes data, only regroups it.
+  flattenSections(documentId: string) {
+    return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/documents/${documentId}/sections/flatten`, {});
+  }
+
+  /// Undoes flattenSections (or any other section reshuffling) by putting every field back
+  /// under its own AI-original section.
+  restoreSections(documentId: string) {
+    return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/documents/${documentId}/sections/restore`, {});
+  }
+
   exportDocument(documentId: string, options: ExportOptions = { format: 'Excel', layout: 'RowsPerField' }) {
     const params = new HttpParams().set('format', options.format).set('layout', options.layout);
     return this.http.get(`${environment.apiBaseUrl}/documents/${documentId}/export`, { params, responseType: 'blob' });
   }
 
-  sendEmail(documentId: string, toAddress: string, message?: string, options?: ExportOptions) {
+  sendEmail(documentId: string, toAddress: string, cc?: string, message?: string, options?: ExportOptions) {
     return this.http.post<{ success: boolean; message: string }>(
-      `${environment.apiBaseUrl}/documents/${documentId}/send-email`, { documentId, toAddress, message, options });
+      `${environment.apiBaseUrl}/documents/${documentId}/send-email`, { documentId, toAddress, cc, message, options });
   }
 
   batchExport(documentIds: string[], exportMode: BatchExportMode = 'SingleSheet', options?: ExportOptions) {
     return this.http.post(`${environment.apiBaseUrl}/documents/batch-export`, { documentIds, exportMode, options }, { responseType: 'blob' });
   }
 
-  batchSendEmail(documentIds: string[], toAddress: string, exportMode: BatchExportMode = 'SingleSheet', options?: ExportOptions) {
+  batchSendEmail(documentIds: string[], toAddress: string, cc?: string, exportMode: BatchExportMode = 'SingleSheet', options?: ExportOptions) {
     return this.http.post<{ success: boolean; message: string }>(
-      `${environment.apiBaseUrl}/documents/batch-send-email`, { documentIds, toAddress, exportMode, options });
+      `${environment.apiBaseUrl}/documents/batch-send-email`, { documentIds, toAddress, cc, exportMode, options });
   }
 
   getMine() {

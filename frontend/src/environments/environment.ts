@@ -2,7 +2,7 @@ export const environment = {
   production: false,
   // Bump alongside package.json's version, backend/Directory.Build.props's <Version>, and
   // the other two environment files together on release - see docs/WORKFLOW.md.
-  version: '1.0.0',
+  version: '2.0.0',
   // Relative on purpose: proxy.conf.json forwards /api to the backend during
   // `ng serve`, so the browser always calls the SAME origin it loaded the app
   // from. A hardcoded https://localhost:5001/api only works when the browser
@@ -17,7 +17,5 @@ export const environment = {
   // to switch every brand mark over automatically, same as the backend's App:LogoUrl.
   logoUrl: null as string | null,
   // >>> Paste the SAME Google OAuth Web Client ID used in the backend appsettings.json <<<
-  googleClientId: '1037509001460-5uqo0jqbcrnpne9509s4dac5gfi6t7td.apps.googleusercontent.com',
-  // >>> Payment gateway public key (safe to expose client-side) <<<
-  paymentPublicKey: 'YOUR_PAYMENT_GATEWAY_PUBLIC_KEY'
+  googleClientId: '1037509001460-5uqo0jqbcrnpne9509s4dac5gfi6t7td.apps.googleusercontent.com'
 };

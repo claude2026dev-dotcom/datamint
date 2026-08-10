@@ -5,6 +5,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { SettingsNavComponent } from '../../shared/components/settings-nav/settings-nav.component';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
+import { LoadingHintComponent } from '../../shared/components/loading-hint/loading-hint.component';
 
 const MAX_AVATAR_MB = 5;
 const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp'];
@@ -12,7 +13,7 @@ const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gi
 @Component({
   selector: 'app-profile',
   standalone: true,
-  imports: [CommonModule, FormsModule, SettingsNavComponent, BackButtonComponent],
+  imports: [CommonModule, FormsModule, SettingsNavComponent, BackButtonComponent, LoadingHintComponent],
   template: `
     <div class="dm-container page">
       <app-back-button />
@@ -20,7 +21,24 @@ const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gi
       <app-settings-nav />
 
       @if (loading) {
-        <p class="muted">Loading…</p>
+        <div class="dm-card section skeleton-block">
+          <div class="skeleton-line" style="width: 40%; height: 18px;"></div>
+          <div class="skeleton-row">
+            <div class="skeleton-circle"></div>
+            <div class="skeleton-line" style="width: 120px; height: 34px;"></div>
+          </div>
+        </div>
+        <div class="dm-card section skeleton-block">
+          <div class="skeleton-line" style="width: 30%; height: 18px;"></div>
+          <div class="skeleton-line" style="width: 100%; height: 38px;"></div>
+          <div class="skeleton-line" style="width: 100%; height: 38px;"></div>
+        </div>
+        <app-loading-hint [loading]="loading" />
+      } @else if (error) {
+        <div class="dm-card error-banner">
+          <p>{{ error }}</p>
+          <button class="dm-btn dm-btn-ghost" (click)="load()">Retry</button>
+        </div>
       } @else {
         <div class="dm-card section">
           <h3>Profile picture</h3>
@@ -95,12 +113,25 @@ const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gi
       .avatar-actions { width: 100%; }
       .avatar-actions .dm-btn { flex: 1; }
     }
+
+    .error-banner { padding: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-color: var(--dm-danger); margin-bottom: 18px; }
+    .error-banner p { margin: 0; color: var(--dm-danger); font-size: 0.9rem; }
+
+    .skeleton-block { display: flex; flex-direction: column; gap: 14px; }
+    .skeleton-row { display: flex; align-items: center; gap: 18px; }
+    .skeleton-line, .skeleton-circle {
+      background: linear-gradient(90deg, var(--dm-surface) 25%, var(--dm-surface-hover) 50%, var(--dm-surface) 75%);
+      background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; border-radius: 6px;
+    }
+    .skeleton-circle { width: 72px; height: 72px; border-radius: 50%; flex-shrink: 0; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
   `]
 })
 export class ProfileComponent implements OnInit {
   @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
 
   loading = true;
+  error = '';
   saving = false;
   uploading = false;
   removing = false;
@@ -116,11 +147,23 @@ export class ProfileComponent implements OnInit {
   ) {}
 
   ngOnInit() {
-    this.auth.getProfile().subscribe(res => {
-      this.email = res.profile.email;
-      this.displayName = res.profile.displayName ?? '';
-      this.avatarUrl = res.profile.avatarUrl ?? null;
-      this.loading = false;
+    this.load();
+  }
+
+  load() {
+    this.loading = true;
+    this.error = '';
+    this.auth.getProfile().subscribe({
+      next: res => {
+        this.email = res.profile.email;
+        this.displayName = res.profile.displayName ?? '';
+        this.avatarUrl = res.profile.avatarUrl ?? null;
+        this.loading = false;
+      },
+      error: () => {
+        this.loading = false;
+        this.error = 'Could not load your profile. Please try again.';
+      }
     });
   }
 

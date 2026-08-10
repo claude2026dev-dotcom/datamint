@@ -1,4 +1,3 @@
-using Datamint.Application.Common;
 using Datamint.Application.Interfaces;
 using Datamint.Domain.Entities;
 using Datamint.Infrastructure.Persistence;
@@ -8,14 +7,14 @@ using Microsoft.Extensions.Logging;
 
 namespace Datamint.Infrastructure.Services;
 
+/// <summary>Every subscription/payment lifecycle email (plan activated, payment succeeded/
+/// failed, refund issued, plan expiring soon, cancellation confirmed) goes through here,
+/// mirroring IAuthNotificationService's separation for account-lifecycle email.</summary>
 public class BillingNotificationService : NotificationServiceBase, IBillingNotificationService
 {
-    private readonly IInvoicePdfService _invoicePdf;
-
-    public BillingNotificationService(IEmailService email, DatamintDbContext db, ILogger<BillingNotificationService> logger, IConfiguration config, IHttpContextAccessor httpContextAccessor, IInvoicePdfService invoicePdf)
+    public BillingNotificationService(IEmailService email, DatamintDbContext db, ILogger<BillingNotificationService> logger, IConfiguration config, IHttpContextAccessor httpContextAccessor)
         : base(email, db, logger, config, httpContextAccessor)
     {
-        _invoicePdf = invoicePdf;
     }
 
     public Task SendPlanActivatedEmailAsync(ApplicationUser user, string planName, CancellationToken ct = default)
@@ -30,35 +29,18 @@ public class BillingNotificationService : NotificationServiceBase, IBillingNotif
         return SendAndLog(user.Id, user.Email, $"Your {planName} plan is active", body, ct);
     }
 
-    public async Task SendPaymentSuccessEmailAsync(ApplicationUser user, string planName, decimal amount, string currency,
+    public Task SendPaymentSuccessEmailAsync(ApplicationUser user, string planName, decimal amount, string currency,
         string invoiceNumber, DateTime paidAtUtc, CancellationToken ct = default)
     {
-        var table = EmailTemplateHelper.InvoiceTable(
-            invoiceNumber, paidAtUtc,
-            lines: new[] { (planName + " plan", $"{currency} {amount:0.00}") },
-            totalLabel: "Total paid", totalValue: $"{currency} {amount:0.00}");
-
         var body = Wrap(
             title: "Payment successful",
             greeting: Greeting(user),
-            bodyHtml: $"<p>Thanks — your payment went through and your <strong>{planName}</strong> plan is active.</p>{table}" +
-                      "<p style=\"color:#767b93;font-size:13px;\">A PDF copy of this receipt is attached to this email.</p>",
+            bodyHtml: $"<p>Thanks — your payment of <strong>{currency} {amount:0.00}</strong> went through and your <strong>{planName}</strong> plan is active.</p>" +
+                      $"<p style=\"color:#767b93;font-size:13px;\">Receipt reference: {invoiceNumber} · Paid {paidAtUtc:MMM d, yyyy}</p>",
             ctaLabel: "Start extracting",
             ctaPath: "/upload"
         );
-
-        var pdfBytes = _invoicePdf.Generate(new InvoicePdfDetails(
-            AppName, invoiceNumber, paidAtUtc, user.DisplayName ?? user.Email, user.Email, planName, amount, currency));
-        var tempPath = Path.Combine(Path.GetTempPath(), $"{invoiceNumber}.pdf");
-        await File.WriteAllBytesAsync(tempPath, pdfBytes, ct);
-        try
-        {
-            await SendAndLog(user.Id, user.Email, $"Payment successful — {invoiceNumber}", body, ct, tempPath, $"{invoiceNumber}.pdf");
-        }
-        finally
-        {
-            if (File.Exists(tempPath)) File.Delete(tempPath);
-        }
+        return SendAndLog(user.Id, user.Email, $"Payment successful — {invoiceNumber}", body, ct);
     }
 
     public Task SendPaymentFailedEmailAsync(ApplicationUser user, string planName, decimal amount, string currency, CancellationToken ct = default)
@@ -95,7 +77,7 @@ public class BillingNotificationService : NotificationServiceBase, IBillingNotif
             title: "Your plan ends soon",
             greeting: Greeting(user),
             bodyHtml: $"<p>Your <strong>{planName}</strong> plan ends on <strong>{endAtUtc:MMM d, yyyy}</strong>. " +
-                      "Renew before then to keep uninterrupted access — after that date you'll be moved to the Free plan.</p>",
+                      "Renew before then to keep uninterrupted access.</p>",
             ctaLabel: "Renew my plan",
             ctaPath: "/plans"
         );
@@ -105,7 +87,7 @@ public class BillingNotificationService : NotificationServiceBase, IBillingNotif
     public Task SendPlanCancelledEmailAsync(ApplicationUser user, string planName, DateTime? endAtUtc, CancellationToken ct = default)
     {
         var accessNote = endAtUtc is not null
-            ? $"You'll keep access to <strong>{planName}</strong> until <strong>{endAtUtc:MMM d, yyyy}</strong>, then you'll move to the Free plan."
+            ? $"You'll keep access to <strong>{planName}</strong> until <strong>{endAtUtc:MMM d, yyyy}</strong>."
             : $"Your <strong>{planName}</strong> plan has been cancelled.";
 
         var body = Wrap(
@@ -117,18 +99,5 @@ public class BillingNotificationService : NotificationServiceBase, IBillingNotif
             ctaPath: "/plans"
         );
         return SendAndLog(user.Id, user.Email, $"Your {planName} plan has been cancelled", body, ct);
-    }
-
-    public Task SendAbandonedCheckoutEmailAsync(ApplicationUser user, string planName, decimal amount, string currency, Guid planId, CancellationToken ct = default)
-    {
-        var body = Wrap(
-            title: "Still interested?",
-            greeting: Greeting(user),
-            bodyHtml: $"<p>You started checking out for the <strong>{planName}</strong> plan ({currency} {amount:0.00}) but didn't finish. " +
-                      "Your cart's still here whenever you're ready — it only takes a minute.</p>",
-            ctaLabel: $"Finish subscribing to {planName}",
-            ctaPath: $"/checkout/{planId}"
-        );
-        return SendAndLog(user.Id, user.Email, $"Complete your {planName} subscription", body, ct);
     }
 }

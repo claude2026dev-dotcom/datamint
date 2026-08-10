@@ -1,47 +1,55 @@
 using System.Text.Json;
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
+using Datamint.Domain.Entities;
 
 namespace Datamint.Infrastructure.Services;
 
+/// <summary>Exports extracted fields as structured JSON, grouped by section - the same
+/// grouping the review UI's section-editor shows on screen, so the JSON export mirrors
+/// exactly what the user saw and edited.</summary>
 public class JsonExportService : IJsonExportService
 {
-    private static readonly JsonSerializerOptions WriteOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
 
-    /// <summary>Same include-filter every export path applies: an explicit IncludedFieldIds
-    /// override wins if given, otherwise each field's own saved IncludeInExport flag decides.</summary>
-    private static IEnumerable<ExtractedFieldEditDto> FilterFields(IEnumerable<ExtractedFieldEditDto> fields, ExportOptionsDto options) =>
-        options.IncludedFieldIds is { Count: > 0 } ids
+    private static List<ExtractedField> FilterFields(List<ExtractedField> fields, List<Guid>? includedFieldIds) =>
+        (includedFieldIds is { Count: > 0 } ids
             ? fields.Where(f => ids.Contains(f.Id))
-            : fields.Where(f => f.IncludeInExport);
+            : fields.Where(f => f.IncludeInExport))
+        .ToList();
 
-    private static JsonExportDocumentDto ToDocumentDto(DocumentDetailDto document, ExportOptionsDto options)
+    private static object BuildDocumentPayload(string fileName, List<ExtractedField> fields, List<Guid>? includedFieldIds)
     {
-        var sections = FilterFields(document.Fields, options)
-            .OrderBy(f => f.SortOrder)
-            .GroupBy(f => f.SectionLabel)
-            .Select(g => new JsonExportSectionDto(
-                g.Key,
-                g.Select(f => new JsonExportFieldDto(f.FieldKey, f.FieldValue, f.SemanticType, f.OriginalFieldKey, f.WasEditedByUser, f.PageNumber)).ToList()))
-            .ToList();
+        var filtered = FilterFields(fields, includedFieldIds).OrderBy(f => f.SortOrder).ToList();
+        var sections = filtered
+            .GroupBy(f => f.SectionLabel ?? "General")
+            .Select(g => new
+            {
+                section = g.Key,
+                fields = g.Select(f => new
+                {
+                    key = f.FieldKey,
+                    value = f.FieldValue,
+                    page = f.PageNumber,
+                    type = f.SemanticType,
+                    edited = f.WasEditedByUser
+                })
+            });
 
-        return new JsonExportDocumentDto(document.Id, document.OriginalFileName, sections);
+        return new { fileName, sections };
     }
 
-    public Task<byte[]> GenerateDocumentJsonAsync(DocumentDetailDto document, ExportOptionsDto options, CancellationToken ct = default)
+    public ExportResultDto ExportSingle(string fileName, List<ExtractedField> fields, List<Guid>? includedFieldIds)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(ToDocumentDto(document, options), WriteOptions);
-        return Task.FromResult(bytes);
+        var payload = BuildDocumentPayload(fileName, fields, includedFieldIds);
+        var json = JsonSerializer.Serialize(payload, SerializerOptions);
+        return new ExportResultDto(System.Text.Encoding.UTF8.GetBytes(json), "application/json", $"{Path.GetFileNameWithoutExtension(fileName)}.json");
     }
 
-    public Task<byte[]> GenerateBatchJsonAsync(List<DocumentDetailDto> documents, ExportOptionsDto options, CancellationToken ct = default)
+    public ExportResultDto ExportBatch(List<(string FileName, List<ExtractedField> Fields)> documents)
     {
-        var included = options.IncludedDocumentIds is { Count: > 0 } docIds
-            ? documents.Where(d => docIds.Contains(d.Id))
-            : documents;
-
-        var batch = new JsonExportBatchDto(included.Select(d => ToDocumentDto(d, options)).ToList());
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(batch, WriteOptions);
-        return Task.FromResult(bytes);
+        var payload = documents.Select(d => BuildDocumentPayload(d.FileName, d.Fields, null)).ToList();
+        var json = JsonSerializer.Serialize(payload, SerializerOptions);
+        return new ExportResultDto(System.Text.Encoding.UTF8.GetBytes(json), "application/json", "extracted-data.json");
     }
 }

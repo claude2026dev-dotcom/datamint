@@ -37,7 +37,6 @@ import {
           <span class="doc-name" [title]="group.documents[0].originalFileName">{{ group.documents[0].originalFileName }}</span>
           <span class="doc-meta">
             {{ group.documents[0].pageCount }} page(s) · {{ formatFileSize(group.documents[0].fileSizeBytes) }} · {{ group.documents[0].createdAtUtc | date:'MMM d, h:mm a' }}
-            @if (group.documents[0].requiresOcr) { · OCR }
           </span>
           @if (group.documents[0].status === 'Failed' && group.documents[0].failureReason) {
             <span class="failure-reason">{{ group.documents[0].failureReason }}</span>

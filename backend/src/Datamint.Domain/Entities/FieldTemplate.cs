@@ -8,11 +8,11 @@ namespace Datamint.Domain.Entities;
 public class FieldTemplate : BaseEntity
 {
     public Guid UserId { get; set; }
-    public ApplicationUser? User { get; set; }
+    public ApplicationUser User { get; set; } = default!;
     public string Name { get; set; } = default!;
 
-    // Comma-separated field names - the same format DocumentsController.Upload's
-    // requestedFields form field already uses, so a saved template's Fields can be
-    // passed straight through to an upload without any reshaping.
+    // Comma-separated field names - the same format the upload form's requestedFields field
+    // uses, so a saved template's Fields can be passed straight through to an upload without
+    // any reshaping.
     public string Fields { get; set; } = default!;
 }

@@ -17,7 +17,10 @@ import { AuthService } from '../../../core/services/auth.service';
 
           <form (ngSubmit)="submit()" #f="ngForm">
             <label>Email</label>
-            <input class="dm-input" type="email" name="email" [(ngModel)]="email" required />
+            <input class="dm-input" type="email" name="email" #emailField="ngModel" [(ngModel)]="email" required email (blur)="emailTouched = true" />
+            @if (emailTouched && emailField.invalid && email) {
+              <p class="field-error">Enter a valid email address.</p>
+            }
 
             <button class="dm-btn dm-btn-primary submit" type="submit" [disabled]="f.invalid || loading">
               {{ loading ? 'Sending…' : 'Send reset link' }}
@@ -37,6 +40,7 @@ import { AuthService } from '../../../core/services/auth.service';
     .auth-card { width: 100%; max-width: 400px; padding: 32px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     label { display: block; margin: 14px 0 6px; font-size: 0.85rem; color: var(--dm-text-muted); }
+    .field-error { color: var(--dm-danger); font-size: 0.78rem; margin: 6px 0 0; }
     .submit { width: 100%; margin-top: 20px; }
     .footer-link { margin-top: 18px; text-align: center; }
     .footer-link a { color: var(--dm-primary-light); }
@@ -44,6 +48,7 @@ import { AuthService } from '../../../core/services/auth.service';
 })
 export class ForgotPasswordComponent {
   email = '';
+  emailTouched = false;
   loading = false;
   submitted = false;
 

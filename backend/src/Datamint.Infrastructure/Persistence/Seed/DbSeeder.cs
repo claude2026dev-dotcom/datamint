@@ -1,18 +1,20 @@
 using Datamint.Domain.Entities;
 using Datamint.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace Datamint.Infrastructure.Persistence.Seed;
 
 /// <summary>
 /// Seeds a default admin user (change the password immediately after first
-/// login — default is admin@datamint.local / ChangeMe123!) and three placeholder
-/// plans so the Plans page + admin dashboard aren't empty on first run. Pricing
-/// is a placeholder — edit from the admin dashboard once you've decided real numbers.
+/// login — default is admin@datamint.local / ChangeMe123!), plus the default OAuth2 scopes
+/// and the built-in "Swagger UI" OAuth client Swagger's own Authorize button uses.
 /// </summary>
 public static class DbSeeder
 {
-    public static async Task SeedAsync(DatamintDbContext db)
+    public const string SwaggerClientId = "datamint-swagger-ui";
+
+    public static async Task SeedAsync(DatamintDbContext db, IConfiguration config)
     {
         await db.Database.MigrateAsync();
 
@@ -39,13 +41,122 @@ public static class DbSeeder
             if (earliestAdmin is not null) earliestAdmin.IsSuperAdmin = true;
         }
 
-        if (!await db.Plans.AnyAsync())
+        await db.SaveChangesAsync();
+        await SeedOAuthAsync(db, config);
+        await SeedExtractionTiersAsync(db);
+        await SeedPlansAsync(db);
+        await SeedRoleExtractionTierOverridesAsync(db);
+    }
+
+    /// <summary>One row per role, created once with no override (ExtractionTierId null) - the
+    /// admin Roles tab only ever edits these two rows, never creates/deletes them.</summary>
+    private static async Task SeedRoleExtractionTierOverridesAsync(DatamintDbContext db)
+    {
+        foreach (var role in new[] { "Admin", "User" })
         {
-            db.Plans.AddRange(
-                new Plan { Name = "Free", Price = 0, MonthlyPageLimit = 2, BillingCycle = PlanBillingCycle.Monthly, IsRecurring = false, IsFreeTrial = true, Description = "A one-time trial of 2 pages when you create your account - doesn't renew." },
-                new Plan { Name = "Starter", Price = 0, MonthlyPageLimit = 200, BillingCycle = PlanBillingCycle.Monthly, IsRecurring = true, Description = "Placeholder price — set from Admin > Plans." },
-                new Plan { Name = "Pro", Price = 0, MonthlyPageLimit = -1, BillingCycle = PlanBillingCycle.Monthly, IsRecurring = true, Description = "Unlimited pages. Placeholder price — set from Admin > Plans." }
-            );
+            if (await db.RoleExtractionTierOverrides.AnyAsync(r => r.Role == role)) continue;
+            db.RoleExtractionTierOverrides.Add(new RoleExtractionTierOverride { Role = role });
+        }
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Exactly one tier is ever flagged IsDefault - the fallback used for a Plan with
+    /// no ExtractionTierId. Create-once: an admin's later edits to the default tier's model or
+    /// prompt customization must never be silently reverted by a subsequent app restart.</summary>
+    private static async Task SeedExtractionTiersAsync(DatamintDbContext db)
+    {
+        if (await db.ExtractionTiers.AnyAsync(t => t.IsDefault)) return;
+
+        db.ExtractionTiers.Add(new ExtractionTier
+        {
+            Name = "Standard",
+            AiProvider = AiProvider.Claude,
+            ModelName = "claude-haiku-4-5-20251001",
+            IsDefault = true,
+            IsEnabled = true
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Seeds the free trial plan (10 pages, one-time, non-recurring) every user is
+    /// auto-granted once at first sign-in - see AuthController.EnsureFreePlanActivatedAsync.
+    /// Create-once, same reasoning as the admin user seed: an admin's later edits (e.g.
+    /// changing the trial page count) must never be reverted by a restart.</summary>
+    private static async Task SeedPlansAsync(DatamintDbContext db)
+    {
+        if (await db.Plans.AnyAsync(p => p.IsFreeTrial)) return;
+
+        db.Plans.Add(new Plan
+        {
+            Name = "Free Trial",
+            Description = "A one-time trial of 10 pages to try Datamint out - doesn't renew.",
+            Price = 0,
+            MonthlyPageLimit = 10,
+            IsRecurring = false,
+            IsFreeTrial = true,
+            IsActive = true
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Unlike the admin-user seed above (create-once), this re-runs its sync check on every
+    /// startup: the built-in Swagger client's redirect_uri is environment-specific
+    /// (different host in dev vs. prod), so a create-once seed would go stale the moment the
+    /// app moves environments. Never destructive - only ever ADDS a missing default scope or a
+    /// missing-for-this-environment redirect_uri, never removes anything an admin may have
+    /// since customized via the OAuth Clients admin UI.
+    /// </summary>
+    private static async Task SeedOAuthAsync(DatamintDbContext db, IConfiguration config)
+    {
+        var defaultScopes = new (string Name, string DisplayName, string Description)[]
+        {
+            ("profile", "View your profile", "See your basic Datamint account information."),
+            ("api.access", "Access the API on your behalf", "Call the Datamint API as you, within the limits of any other granted scopes.")
+        };
+
+        foreach (var (name, displayName, description) in defaultScopes)
+        {
+            if (await db.OAuthScopes.AnyAsync(s => s.Name == name)) continue;
+            db.OAuthScopes.Add(new OAuthScope
+            {
+                Name = name,
+                DisplayName = displayName,
+                Description = description,
+                IsDefault = true,
+                IsEnabled = true
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var apiBaseUrl = (config["App:ApiBaseUrl"] ?? "https://localhost:5001").TrimEnd('/');
+        var swaggerRedirectUri = $"{apiBaseUrl}/swagger/oauth2-redirect.html";
+
+        var swaggerClient = await db.OAuthClients
+            .Include(c => c.RedirectUris).Include(c => c.Scopes)
+            .FirstOrDefaultAsync(c => c.ClientId == SwaggerClientId);
+
+        if (swaggerClient is null)
+        {
+            var scopes = await db.OAuthScopes.Where(s => defaultScopes.Select(d => d.Name).Contains(s.Name)).ToListAsync();
+            db.OAuthClients.Add(new OAuthClient
+            {
+                ClientId = SwaggerClientId,
+                Name = "Swagger UI",
+                ClientSecretHash = null, // public client - PKCE is its authentication
+                IsConfidential = false,
+                RequireConsent = false, // first-party developer tooling, not a third-party app
+                GrantTypes = OAuthGrantTypes.AuthorizationCode | OAuthGrantTypes.RefreshToken,
+                AccessTokenLifetimeMinutes = 30,
+                RefreshTokenLifetimeDays = 7,
+                IsEnabled = true,
+                RedirectUris = new List<OAuthRedirectUri> { new() { Uri = swaggerRedirectUri } },
+                Scopes = scopes
+            });
+        }
+        else if (!swaggerClient.RedirectUris.Any(r => r.Uri == swaggerRedirectUri))
+        {
+            swaggerClient.RedirectUris.Add(new OAuthRedirectUri { OAuthClientId = swaggerClient.Id, Uri = swaggerRedirectUri });
         }
 
         await db.SaveChangesAsync();

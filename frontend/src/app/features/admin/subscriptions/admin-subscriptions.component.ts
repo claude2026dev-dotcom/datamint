@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { AdminService } from '../../../core/services/admin.service';
 import { ToastService } from '../../../core/services/toast.service';
 import { ConfirmDialogService } from '../../../core/services/confirm-dialog.service';
+import { ExtractionTier } from '../../../core/models/models';
 
 interface PlanForm {
   id: string | null;
@@ -16,6 +17,8 @@ interface PlanForm {
   unlimited: boolean;
   isRecurring: boolean;
   isFreeTrial: boolean;
+  extractionTierId: string | null;
+  isContactOnly: boolean;
 }
 
 @Component({
@@ -50,17 +53,25 @@ interface PlanForm {
               <span class="plan-name">{{ p.name }}</span>
               <div class="badges">
                 @if (p.isFreeTrial) { <span class="badge badge-trial">Free trial</span> }
+                @if (p.isContactOnly) { <span class="badge badge-contact">Contact-only</span> }
                 <span class="badge" [class.badge-ok]="p.isActive" [class.badge-fail]="!p.isActive">{{ p.isActive ? 'Active' : 'Hidden' }}</span>
               </div>
             </div>
             @if (p.isFreeTrial) {
               <p class="plan-desc trial-note">Auto-granted once at sign-up — never shown on the public pricing page.</p>
             }
+            @if (p.isContactOnly) {
+              <p class="plan-desc trial-note">Custom pricing — visitors are routed to Contact us instead of self-serve checkout.</p>
+            }
             @if (p.description) { <p class="plan-desc">{{ p.description }}</p> }
 
             <div class="plan-price">
-              <span class="amount">{{ p.currency }} {{ p.price }}</span>
-              <span class="cycle">{{ p.isRecurring ? '/ ' + (p.billingCycle === 'Monthly' ? 'mo' : 'yr') : '(one-time)' }}</span>
+              @if (p.isContactOnly) {
+                <span class="amount">Custom pricing</span>
+              } @else {
+                <span class="amount">{{ p.currency }} {{ p.price }}</span>
+                <span class="cycle">{{ p.isRecurring ? '/ ' + (p.billingCycle === 'Monthly' ? 'mo' : 'yr') : '(one-time)' }}</span>
+              }
             </div>
 
             <div class="plan-meta">
@@ -71,6 +82,10 @@ interface PlanForm {
               <div class="meta-item">
                 <span class="meta-label">Subscribers</span>
                 <span class="meta-value">{{ p.activeSubscribers }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">Extraction tier</span>
+                <span class="meta-value">{{ tierName(p.extractionTierId) }}</span>
               </div>
             </div>
 
@@ -178,8 +193,22 @@ interface PlanForm {
             <span>Renews each billing cycle (uncheck for a one-time lifetime allowance, e.g. a free trial)</span>
           </label>
           <label class="checkbox-field">
-            <input type="checkbox" [(ngModel)]="form.isFreeTrial" />
+            <input type="checkbox" [(ngModel)]="form.isFreeTrial" [disabled]="modalMode === 'edit'" />
             <span>This is the free trial plan — auto-granted once at sign-up, hidden from the pricing page, and can't be re-activated once used. Only one plan should have this checked.</span>
+          </label>
+          <label class="checkbox-field">
+            <input type="checkbox" [(ngModel)]="form.isContactOnly" [disabled]="form.isFreeTrial" />
+            <span>Custom pricing — no self-serve checkout. Visitors see "Custom pricing" and a Contact us button instead; an admin sets up their extraction customization manually after they reach out.</span>
+          </label>
+
+          <label class="field">
+            <span>Extraction tier <span class="hint">(controls which AI provider/model/prompt this plan's uploads use — invisible to the customer)</span></span>
+            <select class="dm-input" [(ngModel)]="form.extractionTierId">
+              <option [ngValue]="null">Use the default tier</option>
+              @for (t of tiers; track t.id) {
+                <option [ngValue]="t.id">{{ t.name }}{{ t.isDefault ? ' (default)' : '' }}</option>
+              }
+            </select>
           </label>
 
           @if (formError) { <p class="form-error">{{ formError }}</p> }
@@ -213,7 +242,7 @@ interface PlanForm {
     .amount { font-size: 1.6rem; font-weight: 800; }
     .cycle { color: var(--dm-text-muted); font-size: 0.85rem; }
 
-    .plan-meta { display: flex; gap: 20px; padding: 12px 0; border-top: 1px solid var(--dm-border); border-bottom: 1px solid var(--dm-border); }
+    .plan-meta { display: flex; gap: 20px; padding: 12px 0; border-top: 1px solid var(--dm-border); border-bottom: 1px solid var(--dm-border); flex-wrap: wrap; }
     .meta-item { display: flex; flex-direction: column; gap: 2px; }
     .meta-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); }
     .meta-value { font-weight: 700; font-size: 0.92rem; }
@@ -228,20 +257,18 @@ interface PlanForm {
     .badge-ok { background: rgba(52, 211, 153, 0.15); color: var(--dm-success); }
     .badge-fail { background: rgba(248, 113, 113, 0.15); color: var(--dm-danger); }
     .badge-trial { background: rgba(99, 102, 241, 0.15); color: var(--dm-primary-light); }
+    .badge-contact { background: rgba(251, 191, 36, 0.15); color: #f59e0b; }
     .badge-refunded { background: rgba(148, 163, 184, 0.15); color: var(--dm-text-muted); }
     .trial-note { font-style: italic; }
 
     .section-head { margin: 34px 0 14px; }
     .section-head h2 { font-size: 1.1rem; margin: 0; }
     .tx-card.skeleton { height: 140px; background: linear-gradient(90deg, var(--dm-surface) 25%, var(--dm-surface-hover) 50%, var(--dm-surface) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
-    .tx-table-wrap { padding: 0; overflow-x: auto; }
+    .tx-table-wrap { padding: 0; overflow-x: auto; overflow-y: visible; }
     .tx-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; white-space: nowrap; }
     .tx-table th { text-align: left; padding: 12px 16px; color: var(--dm-text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--dm-border); }
     .tx-table td { padding: 12px 16px; border-bottom: 1px solid var(--dm-border); }
     .tx-table tr:last-child td { border-bottom: none; }
-    /* Below this width a horizontally-scrolling table is an awkward way to read a handful of
-       fields per row - restack each row as label/value pairs instead, same pattern used for
-       the plan cards above. */
     @media (max-width: 640px) {
       .tx-table-wrap { overflow-x: visible; }
       .tx-table, .tx-table thead, .tx-table tbody, .tx-table tr, .tx-table td { display: block; white-space: normal; width: 100%; }
@@ -258,14 +285,10 @@ interface PlanForm {
       position: fixed; inset: 0; background: rgba(4, 6, 14, 0.6); backdrop-filter: blur(2px);
       display: flex; align-items: flex-start; justify-content: center; z-index: 9000; padding: 40px 20px; overflow-y: auto;
     }
-    /* align-items: flex-start (not center) is deliberate - a centered flex item taller
-       than its container overflows equally above AND below, and content pushed above
-       the scroll container's natural top can never be scrolled back into view. Anchoring
-       to the top means a tall form (e.g. this one on a short mobile viewport) just grows
-       downward into the already-scrollable backdrop instead of clipping its own heading. */
     .modal-panel { padding: 28px; width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 14px; margin: auto 0; }
     .modal-panel h2 { font-size: 1.15rem; margin: 0 0 4px; }
     .field { display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; color: var(--dm-text-muted); flex: 1; min-width: 0; }
+    .field .hint { font-weight: 400; font-size: 0.74rem; }
     .field textarea { resize: vertical; font-family: inherit; }
     .field-row { display: flex; gap: 12px; }
     .checkbox-field { display: flex; align-items: flex-start; gap: 8px; font-size: 0.86rem; color: var(--dm-text); }
@@ -286,6 +309,8 @@ export class AdminSubscriptionsComponent implements OnInit {
   loading = true;
   error = '';
 
+  tiers: ExtractionTier[] = [];
+
   transactions: any[] = [];
   txLoading = true;
 
@@ -300,7 +325,19 @@ export class AdminSubscriptionsComponent implements OnInit {
     private confirmDialog: ConfirmDialogService
   ) {}
 
-  ngOnInit() { this.load(); this.loadTransactions(); }
+  ngOnInit() {
+    this.load();
+    this.loadTransactions();
+    this.adminService.getExtractionTiers({ pageSize: 100 }).subscribe({
+      next: res => { this.tiers = res.items; },
+      error: () => {}
+    });
+  }
+
+  tierName(id: string | null | undefined): string {
+    if (!id) return 'Default';
+    return this.tiers.find(t => t.id === id)?.name ?? 'Default';
+  }
 
   loadTransactions() {
     this.txLoading = true;
@@ -326,14 +363,14 @@ export class AdminSubscriptionsComponent implements OnInit {
   }
 
   emptyForm(): PlanForm {
-    return { id: null, name: '', description: '', price: 0, currency: 'INR', billingCycle: 'Monthly', monthlyPageLimit: 50, unlimited: false, isRecurring: true, isFreeTrial: false };
+    return { id: null, name: '', description: '', price: 0, currency: 'INR', billingCycle: 'Monthly', monthlyPageLimit: 50, unlimited: false, isRecurring: true, isFreeTrial: false, extractionTierId: null, isContactOnly: false };
   }
 
   load() {
     this.loading = true;
     this.error = '';
     this.adminService.getPlans().subscribe({
-      next: res => { this.plans = res.plans; this.loading = false; },
+      next: res => { this.plans = res.items; this.loading = false; },
       error: () => { this.loading = false; this.error = 'Could not load plans. Please try again.'; }
     });
   }
@@ -359,7 +396,9 @@ export class AdminSubscriptionsComponent implements OnInit {
       monthlyPageLimit: p.monthlyPageLimit === -1 ? 50 : p.monthlyPageLimit,
       unlimited: p.monthlyPageLimit === -1,
       isRecurring: p.isRecurring,
-      isFreeTrial: p.isFreeTrial
+      isFreeTrial: p.isFreeTrial,
+      extractionTierId: p.extractionTierId ?? null,
+      isContactOnly: p.isContactOnly ?? false
     };
     this.formError = '';
     this.modalMode = 'edit';
@@ -372,6 +411,7 @@ export class AdminSubscriptionsComponent implements OnInit {
     if (!this.form.name.trim()) { this.formError = 'Plan name is required.'; return; }
     if (this.form.price < 0) { this.formError = 'Price can\'t be negative.'; return; }
     if (!this.form.unlimited && this.form.monthlyPageLimit < 1) { this.formError = 'Page limit must be at least 1, or mark it unlimited.'; return; }
+    if (this.form.isFreeTrial && this.form.isContactOnly) { this.formError = 'The free trial plan can\'t be contact-only — it must stay self-serve.'; return; }
     this.formError = '';
 
     const payload = {
@@ -382,7 +422,9 @@ export class AdminSubscriptionsComponent implements OnInit {
       billingCycle: this.form.billingCycle,
       monthlyPageLimit: this.form.unlimited ? -1 : this.form.monthlyPageLimit,
       isRecurring: this.form.isRecurring,
-      isFreeTrial: this.form.isFreeTrial
+      isFreeTrial: this.form.isFreeTrial,
+      extractionTierId: this.form.extractionTierId,
+      isContactOnly: this.form.isContactOnly
     };
 
     const request = this.modalMode === 'create'

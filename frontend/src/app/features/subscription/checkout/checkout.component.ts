@@ -3,15 +3,17 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { SubscriptionService } from '../../../core/services/subscription.service';
 import { ToastService } from '../../../core/services/toast.service';
-import { environment } from '../../../../environments/environment';
 import { BackButtonComponent } from '../../../shared/components/back-button/back-button.component';
 import { IconComponent } from '../../../shared/components/icon/icon.component';
 import { Plan } from '../../../core/models/models';
 
-declare const Razorpay: any; // loaded via https://checkout.razorpay.com/v1/checkout.js in index.html - only invoked when order.provider is a real gateway
-
 type CheckoutStage = 'loading' | 'confirm' | 'processing' | 'success' | 'failed';
 
+/// Only the Fake payment provider is wired up server-side today (see Payment:Provider in
+/// Program.cs) - the whole order/pay/verify round trip below runs for real against the
+/// backend, just with a simulated gateway instead of a real one, so the checkout, webhook-
+/// style verification, and failure-handling code paths are all exercised exactly as they
+/// would be with a real provider later.
 @Component({
   selector: 'app-checkout',
   standalone: true,
@@ -59,10 +61,10 @@ type CheckoutStage = 'loading' | 'confirm' | 'processing' | 'success' | 'failed'
           }
         }
 
-        @if (isFakeProvider && (stage === 'confirm' || stage === 'processing')) {
+        @if (stage === 'confirm' || stage === 'processing') {
           <div class="test-mode">
             <div class="test-mode-head"><app-icon name="flask" [size]="15" /> Test mode</div>
-            <p>No real gateway is configured — payments are simulated locally so you can test the full flow end-to-end.</p>
+            <p>No real payment gateway is configured yet — payments are simulated locally so you can test the full flow end-to-end.</p>
             @if (order) {
               <div class="test-mode-actions">
                 <button class="dm-btn dm-btn-ghost tiny" [disabled]="stage === 'processing'" (click)="simulate(true)">Simulate success</button>
@@ -116,8 +118,6 @@ export class CheckoutComponent implements OnInit {
   order: { orderId: string; amount: number; currency: string; keyId: string; provider: string } | null = null;
   failureMessage = '';
 
-  get isFakeProvider() { return this.order?.provider === 'Fake'; }
-
   constructor(
     private route: ActivatedRoute,
     private subscriptionService: SubscriptionService,
@@ -129,8 +129,6 @@ export class CheckoutComponent implements OnInit {
     this.planId = this.route.snapshot.paramMap.get('planId')!;
     this.subscriptionService.getPlans().subscribe({
       next: res => { this.plan = res.plans.find(p => p.id === this.planId) ?? null; this.stage = 'confirm'; },
-      // The plan might be a non-public one (e.g. mid-price-change) - still let checkout proceed,
-      // just without the summary card; the backend re-validates the plan regardless.
       error: () => { this.stage = 'confirm'; }
     });
   }
@@ -140,35 +138,15 @@ export class CheckoutComponent implements OnInit {
     this.subscriptionService.createOrder(this.planId).subscribe({
       next: res => {
         this.order = res.order;
-        if (this.isFakeProvider) {
-          this.stage = 'confirm'; // wait for the explicit "Simulate success/failure" click below
-          return;
-        }
-        this.openRealCheckout(res.order);
+        this.stage = 'confirm'; // wait for the explicit "Simulate success/failure" click below
       },
       error: () => { this.stage = 'failed'; this.failureMessage = 'Could not start checkout. Please try again.'; }
     });
   }
 
-  private openRealCheckout(order: { orderId: string; amount: number; currency: string; keyId: string }) {
-    const options = {
-      key: order.keyId || environment.paymentPublicKey,
-      amount: order.amount * 100,
-      currency: order.currency,
-      order_id: order.orderId,
-      name: environment.appName,
-      description: 'Subscription payment',
-      handler: (response: any) => this.verify(order.orderId, response.razorpay_payment_id, response.razorpay_signature),
-      modal: { ondismiss: () => { this.stage = 'confirm'; } },
-      theme: { color: '#6366f1' }
-    };
-    new Razorpay(options).open();
-  }
-
-  /// Fake provider only: no real checkout widget exists, so this simulates what the widget's
-  /// handler callback would deliver - a matching id/signature pair for success, or a deliberately
-  /// wrong one to exercise the real failure path (backend verification, transaction Status update,
-  /// audit log) exactly as it would for a real declined payment.
+  /// Simulates what a real gateway widget's callback would deliver - a matching id/signature
+  /// pair for success, or a deliberately wrong one to exercise the real failure path (backend
+  /// verification, transaction Status update, audit log) exactly as it would for a declined payment.
   simulate(success: boolean) {
     if (!this.order) return;
     this.stage = 'processing';

@@ -32,3 +32,10 @@ frontend/.certs/
 # Claude Code local-machine settings (permission grants etc.) - not shared
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+# azd per-environment state - contains provisioned secret values (JWT, SMTP,
+# Claude/OpenAI keys) and machine-specific env selection. The deployment PLAN
+# (.azure/deployment-plan.md) is deliberately tracked; only the environment
+# subfolders azd itself creates are excluded here.
+.azure/*/
+!.azure/deployment-plan.md

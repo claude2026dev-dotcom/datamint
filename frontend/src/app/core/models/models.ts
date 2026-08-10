@@ -9,18 +9,11 @@ export interface UserProfile {
   avatarUrl?: string | null;
 }
 
-export interface AuthResponse {
-  accessToken: string;
-  refreshToken: string;
-  accessTokenExpiresAtUtc: string;
-  user: UserProfile;
-}
-
 export interface DocumentSummary {
   id: string;
   originalFileName: string;
+  contentType: string;
   pageCount: number;
-  requiresOcr: boolean;
   status: 'Uploaded' | 'Processing' | 'Extracted' | 'Reviewed' | 'Exported' | 'Failed';
   createdAtUtc: string;
   failureReason?: string;
@@ -33,8 +26,8 @@ export type BatchExportMode = 'SingleSheet' | 'MultipleSheets' | 'SeparateFiles'
 export type ExportFormat = 'Excel' | 'Json';
 
 // RowsPerField: one row per field (per-document/per-sheet). ColumnsPerField: one column per
-// field key, one row per document - today's implicit batch "SingleSheet" transpose, now
-// selectable everywhere and orthogonal to BatchExportMode (which only controls sheet/file count).
+// field key, one row per document - selectable both at export time and for the on-screen
+// review grid's own view-mode toggle.
 export type ExportLayout = 'RowsPerField' | 'ColumnsPerField';
 
 export interface ExportOptions {
@@ -51,16 +44,43 @@ export interface ExtractedFieldEdit {
   fieldKey: string;
   originalFieldKey: string;
   fieldValue: string | null;
+  // The AI's original, untouched value - only present to power the review page's "Edit" tab
+  // showing what changed vs. what the AI first found. Never written into an exported file.
+  originalAiValue?: string | null;
   pageNumber: number | null;
   wasEditedByUser: boolean;
-  // AI-suggested classification (e.g. "Address"/"Date"/"Amount"/"Generic") - always a concrete
-  // string, backend falls back to "Generic" for rows extracted before this existed.
+  // AI-suggested classification, matching real spreadsheet cell data types (see SEMANTIC_TYPES
+  // below) - always a concrete string, backend falls back to "Text" for rows extracted before
+  // this existed. User-editable via the Edit tab's type picker; changing it counts as an edit
+  // alongside the key/value (see DocumentProcessingService.UpdateFieldAsync).
   semanticType: string;
+  // The AI's original classification - lets the Edit tab show "Originally: X" once a user has
+  // corrected the type, the same comparison originalAiValue powers for the value.
+  originalSemanticType?: string | null;
   // AI-suggested group name (e.g. "Shipping Details") - falls back to "General".
   sectionLabel: string;
+  // The AI's original grouping - lets a document be flattened into an unsectioned list and then
+  // genuinely restored later, the same durable-revert pattern as originalSemanticType above.
+  originalSectionLabel?: string | null;
   includeInExport: boolean;
   sortOrder: number;
 }
+
+// Shared shape for anything rendering one-document-or-many field data (the card editor, the
+// read-only preview table): a document is just its id/name plus the fields belonging to it.
+export interface FieldEditorDocument {
+  id: string;
+  fileName: string;
+  fields: ExtractedFieldEdit[];
+}
+
+// Curated, human-friendly type list offered by the Edit tab's type picker - matches the fixed
+// vocabulary the AI itself classifies into (AiExtractionPromptHelper.TypeAndSectionInstructions),
+// so a manual correction and an AI classification always draw from the same set. The picker still
+// accepts a free-text/custom entry beyond this list - SemanticType is just a string end to end.
+export const SEMANTIC_TYPES: string[] = [
+  'Text', 'Number', 'Currency', 'Date', 'Percentage', 'Boolean'
+];
 
 export interface FieldTemplate {
   id: string;
@@ -81,6 +101,15 @@ export interface Plan {
   isRecurring: boolean;
   isActive: boolean;
   isFreeTrial: boolean;
+  extractionTierId?: string | null;
+  isContactOnly: boolean;
+}
+
+export interface UserTierOverride {
+  userId: string;
+  userEmail: string;
+  extractionTierId: string | null;
+  extractionTierName: string | null;
 }
 
 export interface SubscriptionStatus {
@@ -97,4 +126,78 @@ export interface SubscriptionStatus {
   monthlyPageLimit: number;
   isRecurring: boolean;
   cancelAtPeriodEnd: boolean;
+}
+
+export interface RoleTierOverride {
+  role: string;
+  extractionTierId: string | null;
+  extractionTierName: string | null;
+}
+
+export interface ExtractionTier {
+  id: string;
+  name: string;
+  aiProvider: 'Claude' | 'OpenAI';
+  modelName: string;
+  customOutputFormatExample?: string | null;
+  customInstructions?: string | null;
+  isDefault: boolean;
+  isEnabled: boolean;
+  planCount: number;
+  createdAtUtc: string;
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  refreshToken: string;
+  accessTokenExpiresAtUtc: string;
+  user: UserProfile;
+}
+
+export type OAuthGrantType = 'authorization_code' | 'client_credentials' | 'refresh_token';
+
+export interface OAuthClientListItem {
+  id: string;
+  clientId: string;
+  name: string;
+  logoUrl?: string | null;
+  isConfidential: boolean;
+  isEnabled: boolean;
+  grantTypes: OAuthGrantType[];
+  redirectUriCount: number;
+  createdAtUtc: string;
+  createdByEmail?: string | null;
+}
+
+export interface OAuthClientDetail {
+  id: string;
+  clientId: string;
+  name: string;
+  logoUrl?: string | null;
+  isConfidential: boolean;
+  requireConsent: boolean;
+  isEnabled: boolean;
+  grantTypes: OAuthGrantType[];
+  redirectUris: string[];
+  scopeNames: string[];
+  accessTokenLifetimeMinutes: number;
+  refreshTokenLifetimeDays: number;
+  createdAtUtc: string;
+  createdByEmail?: string | null;
+}
+
+export interface OAuthClientSecretReveal {
+  clientId: string;
+  clientSecret: string;
+}
+
+export interface OAuthScope {
+  id: string;
+  name: string;
+  displayName: string;
+  description?: string | null;
+  isDefault: boolean;
+  isEnabled: boolean;
+  clientCount: number;
+  createdAtUtc: string;
 }

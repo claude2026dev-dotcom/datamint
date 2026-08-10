@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
+import { ExtractionTier, OAuthClientDetail, OAuthClientListItem, OAuthClientSecretReveal, OAuthScope, RoleTierOverride, UserTierOverride } from '../models/models';
 
 @Injectable({ providedIn: 'root' })
 export class AdminService {
@@ -51,7 +52,7 @@ export class AdminService {
   }
 
   getPlans() {
-    return this.http.get<{ success: boolean; plans: any[] }>(`${environment.apiBaseUrl}/admin/plans`);
+    return this.http.get<{ success: boolean; items: any[]; total: number; page: number; pageSize: number }>(`${environment.apiBaseUrl}/admin/plans`);
   }
 
   createPlan(payload: any) {
@@ -79,6 +80,125 @@ export class AdminService {
 
   refundTransaction(id: string, reason?: string) {
     return this.http.post<{ success: boolean; message: string }>(`${environment.apiBaseUrl}/admin/transactions/${id}/refund`, { reason });
+  }
+
+  // ---------- Extraction Tiers ----------
+
+  getExtractionTiers(params: { page?: number; pageSize?: number; search?: string; isEnabled?: boolean } = {}) {
+    const cleaned = this.stripEmpty(params);
+    return this.http.get<{ success: boolean; items: ExtractionTier[]; total: number; page: number; pageSize: number }>(
+      `${environment.apiBaseUrl}/admin/extraction-tiers`, { params: cleaned }
+    );
+  }
+
+  createExtractionTier(payload: { name: string; aiProvider: string; modelName: string; customOutputFormatExample?: string | null; customInstructions?: string | null }) {
+    return this.http.post<{ success: boolean; tier: ExtractionTier }>(`${environment.apiBaseUrl}/admin/extraction-tiers`, payload);
+  }
+
+  updateExtractionTier(id: string, payload: { name: string; aiProvider: string; modelName: string; customOutputFormatExample?: string | null; customInstructions?: string | null }) {
+    return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/admin/extraction-tiers/${id}`, payload);
+  }
+
+  deleteExtractionTier(id: string) {
+    return this.http.delete<{ success: boolean }>(`${environment.apiBaseUrl}/admin/extraction-tiers/${id}`);
+  }
+
+  toggleExtractionTierActive(id: string) {
+    return this.http.put<{ success: boolean; isEnabled: boolean }>(`${environment.apiBaseUrl}/admin/extraction-tiers/${id}/toggle-active`, {});
+  }
+
+  // ---------- Role Extraction Tier Overrides ----------
+
+  getRoleTierOverrides() {
+    return this.http.get<{ success: boolean; items: RoleTierOverride[] }>(`${environment.apiBaseUrl}/admin/role-tier-overrides`);
+  }
+
+  updateRoleTierOverride(role: string, extractionTierId: string | null) {
+    return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/admin/role-tier-overrides/${role}`, { extractionTierId });
+  }
+
+  // ---------- User Extraction Tier Overrides (per-customer customization) ----------
+
+  getUserTierOverride(userId: string) {
+    return this.http.get<{ success: boolean; item: UserTierOverride }>(`${environment.apiBaseUrl}/admin/user-tier-overrides/${userId}`);
+  }
+
+  setUserTierOverride(userId: string, extractionTierId: string) {
+    return this.http.put<{ success: boolean; item: UserTierOverride }>(`${environment.apiBaseUrl}/admin/user-tier-overrides/${userId}`, { extractionTierId });
+  }
+
+  clearUserTierOverride(userId: string) {
+    return this.http.delete<{ success: boolean }>(`${environment.apiBaseUrl}/admin/user-tier-overrides/${userId}`);
+  }
+
+  // ---------- OAuth Clients ----------
+
+  getOAuthClients(params: {
+    page?: number; pageSize?: number; search?: string; grantType?: string;
+    isEnabled?: boolean; sortBy?: string; sortDir?: string;
+  } = {}) {
+    const cleaned = this.stripEmpty(params);
+    return this.http.get<{ success: boolean; items: OAuthClientListItem[]; total: number; page: number; pageSize: number }>(
+      `${environment.apiBaseUrl}/admin/oauth/clients`, { params: cleaned }
+    );
+  }
+
+  getOAuthClient(id: string) {
+    return this.http.get<{ success: boolean; client: OAuthClientDetail }>(`${environment.apiBaseUrl}/admin/oauth/clients/${id}`);
+  }
+
+  createOAuthClient(payload: {
+    name: string; logoUrl?: string | null; isConfidential: boolean; requireConsent: boolean;
+    redirectUris: string[]; grantTypes: string[]; scopeNames: string[];
+    accessTokenLifetimeMinutes: number; refreshTokenLifetimeDays: number;
+  }) {
+    return this.http.post<{ success: boolean; client: OAuthClientDetail; secret: OAuthClientSecretReveal | null }>(
+      `${environment.apiBaseUrl}/admin/oauth/clients`, payload
+    );
+  }
+
+  updateOAuthClient(id: string, payload: {
+    name: string; logoUrl?: string | null; requireConsent: boolean; redirectUris: string[];
+    grantTypes: string[]; scopeNames: string[]; accessTokenLifetimeMinutes: number; refreshTokenLifetimeDays: number;
+  }) {
+    return this.http.put<{ success: boolean; client: OAuthClientDetail }>(`${environment.apiBaseUrl}/admin/oauth/clients/${id}`, payload);
+  }
+
+  deleteOAuthClient(id: string) {
+    return this.http.delete<{ success: boolean }>(`${environment.apiBaseUrl}/admin/oauth/clients/${id}`);
+  }
+
+  toggleOAuthClientActive(id: string) {
+    return this.http.put<{ success: boolean; isEnabled: boolean }>(`${environment.apiBaseUrl}/admin/oauth/clients/${id}/toggle-active`, {});
+  }
+
+  regenerateOAuthClientSecret(id: string) {
+    return this.http.post<{ success: boolean; secret: OAuthClientSecretReveal }>(`${environment.apiBaseUrl}/admin/oauth/clients/${id}/regenerate-secret`, {});
+  }
+
+  // ---------- OAuth Scopes ----------
+
+  getOAuthScopes(params: { page?: number; pageSize?: number; search?: string; isEnabled?: boolean } = {}) {
+    const cleaned = this.stripEmpty(params);
+    return this.http.get<{ success: boolean; items: OAuthScope[]; total: number; page: number; pageSize: number }>(
+      `${environment.apiBaseUrl}/admin/oauth/scopes`, { params: cleaned }
+    );
+  }
+
+  createOAuthScope(payload: { name: string; displayName: string; description?: string; isDefault: boolean }) {
+    return this.http.post<{ success: boolean; scope: OAuthScope }>(`${environment.apiBaseUrl}/admin/oauth/scopes`, payload);
+  }
+
+  updateOAuthScope(id: string, payload: { displayName: string; description?: string; isDefault: boolean }) {
+    return this.http.put<{ success: boolean }>(`${environment.apiBaseUrl}/admin/oauth/scopes/${id}`, payload);
+  }
+
+  deleteOAuthScope(id: string) {
+    return this.http.delete<{ success: boolean }>(`${environment.apiBaseUrl}/admin/oauth/scopes/${id}`);
+  }
+
+  toggleOAuthScopeActive(id: string) {
+    return this.http.put<{ success: boolean; isEnabled: boolean }>(`${environment.apiBaseUrl}/admin/oauth/scopes/${id}/toggle-active`, {});
   }
 
   private stripEmpty(obj: Record<string, any>): Record<string, string> {

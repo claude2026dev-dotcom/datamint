@@ -21,7 +21,7 @@ import { environment } from '../../../../environments/environment';
         <nav class="footer-links">
           <a routerLink="/terms">Terms</a>
           <a routerLink="/privacy">Privacy</a>
-          <a href="mailto:claude2026dev@gmail.com" class="contact-link">
+          <a routerLink="/contact" class="contact-link">
             <app-icon name="inbox" [size]="14" /> Contact us
           </a>
         </nav>

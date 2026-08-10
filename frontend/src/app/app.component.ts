@@ -5,14 +5,16 @@ import { NavbarComponent } from './shared/components/navbar/navbar.component';
 import { ToastComponent } from './shared/components/toast/toast.component';
 import { ConfirmDialogComponent } from './shared/components/confirm-dialog/confirm-dialog.component';
 import { FooterComponent } from './shared/components/footer/footer.component';
+import { OfflineBannerComponent } from './shared/components/offline-banner/offline-banner.component';
 import { environment } from '../environments/environment';
 import { AuthService } from './core/services/auth.service';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, NavbarComponent, ToastComponent, ConfirmDialogComponent, FooterComponent],
+  imports: [RouterOutlet, NavbarComponent, ToastComponent, ConfirmDialogComponent, FooterComponent, OfflineBannerComponent],
   template: `
+    <app-offline-banner></app-offline-banner>
     <app-navbar></app-navbar>
     <router-outlet></router-outlet>
     <app-footer></app-footer>
@@ -24,7 +26,7 @@ export class AppComponent {
   // index.html's static <title> is a build-time fallback for pre-JS crawlers; this is the
   // single source of truth once Angular boots, so a project rename only needs environment.appName.
   constructor(titleService: Title, auth: AuthService) {
-    titleService.setTitle(`${environment.appName} — Extract PDF Data with AI`);
+    titleService.setTitle(environment.appName);
     // Reconcile the cached session (used for an instant navbar render) against the
     // server once per app load - see AuthService.refreshCurrentUser for why this can drift.
     auth.refreshCurrentUser();

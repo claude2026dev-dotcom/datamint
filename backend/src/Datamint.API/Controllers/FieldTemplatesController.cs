@@ -11,9 +11,7 @@ namespace Datamint.API.Controllers;
 /// <summary>
 /// A user's saved, reusable field-name sets for "Formatted" extraction mode - lets someone who
 /// repeatedly uploads the same kind of document pick a saved list from the upload page instead
-/// of retyping the same field names every time. Always scoped to the caller's own account -
-/// there's no sharing/anonymous concept here, so ownership is just a plain UserId filter rather
-/// than the owner-vs-404 dance Document endpoints need for shareable links.
+/// of retyping the same field names every time. Always scoped to the caller's own account.
 /// </summary>
 [ApiController]
 [Route("api/field-templates")]

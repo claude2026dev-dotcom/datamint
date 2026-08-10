@@ -11,15 +11,11 @@
 
   "App": {
     "Name": "Datamint",
-    "FrontendBaseUrl": "https://yourdomain.com"
+    "FrontendBaseUrl": "https://yourdomain.com",
+    "ApiBaseUrl": "https://api.yourdomain.com"
   },
 
   "Cors": {
     "AllowedOrigins": [ "https://yourdomain.com" ]
-  },
-
-  "// Payment": "Switch to the real gateway once live credentials exist - Fake is fine for QA, never for Production",
-  "Payment": {
-    "Provider": "Razorpay"
   }
 }

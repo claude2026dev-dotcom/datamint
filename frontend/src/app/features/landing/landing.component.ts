@@ -4,6 +4,8 @@ import { RouterLink } from '@angular/router';
 import { trigger, transition, style, animate, query, stagger } from '@angular/animations';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 
+/// Public marketing page - pitches the actual product (AI document field extraction) rather
+/// than a placeholder "coming soon" state, now that upload/review/export are real features.
 @Component({
   selector: 'app-landing',
   standalone: true,
@@ -22,77 +24,61 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
     <section class="hero" [@staggerIn]>
       <div class="glow"></div>
       <div class="dm-container hero-inner">
-        <span class="badge reveal"><app-icon name="sparkles" [size]="14" /> AI-powered PDF data extraction</span>
-        <h1 class="reveal">Turn any PDF into clean, editable data — in seconds</h1>
-        <p class="sub reveal">Upload scanned or digital PDFs, let AI pull out every field, review and edit the results, then export to Excel or send it straight to your inbox.</p>
+        <span class="badge reveal"><app-icon name="sparkles" [size]="14" /> AI-powered document extraction</span>
+        <h1 class="reveal">Turn any PDF or scan into structured data</h1>
+        <p class="sub reveal">Upload invoices, statements, forms, or reports — Datamint's AI finds every field automatically, or extracts exactly the fields you name. Review, edit, and export to Excel or JSON in minutes.</p>
         <div class="cta reveal">
-          <a routerLink="/upload" class="dm-btn dm-btn-primary">Try it free — 2 uploads, no card needed</a>
+          <a routerLink="/register" class="dm-btn dm-btn-primary">Start free</a>
           <a routerLink="/plans" class="dm-btn dm-btn-ghost">See pricing</a>
-        </div>
-
-        <div class="mock reveal">
-          <div class="mock-doc">
-            <div class="mock-line" style="width:70%"></div>
-            <div class="mock-line" style="width:50%"></div>
-            <div class="mock-line" style="width:85%"></div>
-          </div>
-          <div class="mock-arrow"><app-icon name="arrow-right" [size]="26" /></div>
-          <div class="mock-table">
-            <div class="row"><span>Reference #</span><span>REF-2026-014</span></div>
-            <div class="row"><span>Amount</span><span>₹24,500</span></div>
-            <div class="row"><span>Date</span><span>05 Jul 2026</span></div>
-          </div>
         </div>
       </div>
     </section>
 
-    <section class="features dm-container">
-      <div class="feature-grid">
-        <div class="dm-card feature">
-          <div class="icon"><app-icon name="scan" [size]="26" /></div>
-          <h3>OCR built-in</h3>
-          <p>Scanned or photographed PDFs work automatically — no manual pre-processing.</p>
-        </div>
-        <div class="dm-card feature">
-          <div class="icon"><app-icon name="cpu" [size]="26" /></div>
-          <h3>AI-structured output</h3>
-          <p>Every field is pulled into clean key/value pairs, ready to review and edit.</p>
-        </div>
-        <div class="dm-card feature">
-          <div class="icon"><app-icon name="grid" [size]="26" /></div>
-          <h3>One-click Excel export</h3>
-          <p>Download a formatted spreadsheet, or have it emailed to you directly.</p>
-        </div>
+    <section class="dm-container features reveal">
+      <div class="feature-card">
+        <div class="feature-icon"><app-icon name="upload-cloud" [size]="22" /></div>
+        <h3>Upload anything</h3>
+        <p class="muted">PDFs and photos/scans, single files or bulk batches, with per-page selection.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><app-icon name="cpu" [size]="22" /></div>
+        <h3>AI-driven extraction</h3>
+        <p class="muted">Auto-detect every field, or tell us exactly which ones you want — every document, consistently.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><app-icon name="edit" [size]="22" /></div>
+        <h3>Review &amp; edit</h3>
+        <p class="muted">Every field stays fully editable before export — nothing is locked in as AI-final.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><app-icon name="file-text" [size]="22" /></div>
+        <h3>Export your way</h3>
+        <p class="muted">Excel or JSON, single sheet or one file per document, plus direct email delivery.</p>
       </div>
     </section>
   `,
   styles: [`
-    .hero { position: relative; overflow: hidden; padding: 90px 0 60px; }
+    .hero { position: relative; overflow: hidden; padding: 120px 0 100px; }
     .glow { position: absolute; top: -120px; left: 50%; transform: translateX(-50%); width: 700px; height: 400px;
             background: radial-gradient(circle, rgba(99,102,241,0.35), transparent 70%); filter: blur(40px); pointer-events: none; }
     .hero-inner { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 18px; }
     .badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: var(--dm-surface); border: 1px solid var(--dm-border); font-size: 0.8rem; color: var(--dm-accent); }
     h1 { font-size: 2.6rem; max-width: 780px; line-height: 1.15; }
-    .sub { color: var(--dm-text-muted); max-width: 560px; font-size: 1.05rem; }
+    .sub { color: var(--dm-text-muted); max-width: 600px; font-size: 1.05rem; }
     .cta { display: flex; gap: 14px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
-    .mock { display: flex; align-items: center; gap: 18px; margin-top: 50px; background: var(--dm-surface); border: 1px solid var(--dm-border); border-radius: var(--dm-radius-lg); padding: 26px; box-shadow: var(--dm-shadow); }
-    .mock-doc { width: 140px; background: var(--dm-bg-elevated); border-radius: var(--dm-radius-sm); padding: 16px; display: flex; flex-direction: column; gap: 8px; }
-    .mock-line { height: 8px; border-radius: 4px; background: var(--dm-border); }
-    .mock-arrow { color: var(--dm-primary-light); display: flex; }
-    .mock-table { display: flex; flex-direction: column; gap: 8px; min-width: 220px; text-align: left; }
-    .mock-table .row { display: flex; justify-content: space-between; gap: 20px; font-size: 0.85rem; padding: 6px 10px; background: var(--dm-bg-elevated); border-radius: 6px; }
-    .mock-table .row span:first-child { color: var(--dm-text-muted); }
 
-    .features { padding: 50px 0 90px; }
-    .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-    .feature { padding: 26px; }
-    .feature .icon { color: var(--dm-primary-light); margin-bottom: 12px; }
-    .feature p { color: var(--dm-text-muted); font-size: 0.92rem; margin-top: 6px; }
+    .features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; padding-bottom: 100px; }
+    .feature-card { padding: 24px; border: 1px solid var(--dm-border); border-radius: var(--dm-radius-lg); background: var(--dm-surface); }
+    .feature-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--dm-gradient-primary); color: white; margin-bottom: 14px; }
+    .feature-card h3 { font-size: 1rem; margin-bottom: 6px; }
+    .muted { color: var(--dm-text-muted); font-size: 0.88rem; line-height: 1.5; }
 
     @media (max-width: 900px) {
       h1 { font-size: 2rem; }
-      .mock { flex-direction: column; }
-      .feature-grid { grid-template-columns: 1fr; }
+      .features { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 560px) {
+      .features { grid-template-columns: 1fr; }
     }
   `]
 })

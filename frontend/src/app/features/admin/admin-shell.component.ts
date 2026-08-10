@@ -28,8 +28,20 @@ import { IconComponent } from '../../shared/components/icon/icon.component';
           <a routerLink="/admin/users" routerLinkActive="active" title="Users">
             <app-icon name="users" [size]="17" /> <span>Users</span>
           </a>
-          <a routerLink="/admin/subscriptions" routerLinkActive="active" title="Plans">
-            <app-icon name="credit-card" [size]="17" /> <span>Plans</span>
+          <a routerLink="/admin/oauth-clients" routerLinkActive="active" title="OAuth Clients">
+            <app-icon name="key" [size]="17" /> <span>OAuth Clients</span>
+          </a>
+          <a routerLink="/admin/scopes" routerLinkActive="active" title="Scopes">
+            <app-icon name="grid" [size]="17" /> <span>Scopes</span>
+          </a>
+          <a routerLink="/admin/plans" routerLinkActive="active" title="Plans">
+            <app-icon name="dollar-sign" [size]="17" /> <span>Plans</span>
+          </a>
+          <a routerLink="/admin/extraction-tiers" routerLinkActive="active" title="Extraction Tiers">
+            <app-icon name="cpu" [size]="17" /> <span>Extraction Tiers</span>
+          </a>
+          <a routerLink="/admin/roles" routerLinkActive="active" title="Roles">
+            <app-icon name="shield" [size]="17" /> <span>Roles</span>
           </a>
         </nav>
 

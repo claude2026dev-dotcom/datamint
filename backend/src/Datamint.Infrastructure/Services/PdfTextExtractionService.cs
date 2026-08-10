@@ -1,37 +1,32 @@
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Tesseract;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.AcroForms;
 using UglyToad.PdfPig.AcroForms.Fields;
-using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Core;
 
 namespace Datamint.Infrastructure.Services;
 
 /// <summary>
-/// Reads a PDF's text layer with PdfPig; any page with no usable text is
-/// treated as scanned/image-only and is OCR'd with Tesseract instead. This is
-/// AI-provider-agnostic — it only produces plain page text, which is then handed
-/// to whichever IAiFieldExtractionService is configured (Claude, OpenAI, ...).
+/// Reads a PDF's text layer with PdfPig. A page with no usable text (a scan/image-only page)
+/// is left with empty text here - IPageImageRenderingService renders it to an image instead,
+/// and the AI reads it directly via vision (no OCR step; simpler and more accurate than OCR'ing
+/// first and handing the AI degraded text). This service is AI-provider-agnostic - it only
+/// produces plain page text, handed to whichever IAiFieldExtractionService is configured.
 /// </summary>
 public class PdfTextExtractionService : IPdfTextExtractionService
 {
-    private readonly IConfiguration _config;
     private readonly ILogger<PdfTextExtractionService> _logger;
 
-    public PdfTextExtractionService(IConfiguration config, ILogger<PdfTextExtractionService> logger)
+    public PdfTextExtractionService(ILogger<PdfTextExtractionService> logger)
     {
-        _config = config;
         _logger = logger;
     }
 
     public Task<PdfTextExtractionResultDto> ExtractTextAsync(string filePath, CancellationToken ct = default)
     {
         var pages = new List<PdfPageTextDto>();
-        bool anyOcrUsed = false;
 
         using var document = PdfDocument.Open(filePath);
         int pageNumber = 0;
@@ -43,10 +38,9 @@ public class PdfTextExtractionService : IPdfTextExtractionService
         // page.Text alone then only ever sees the blank template ("Date: ___________"), and the
         // AI has no way to know the real value was ever there. Reading both the document's
         // AcroForm (if any) and every page's annotations, and folding their content back into
-        // the text handed to the AI, is what actually recovers that data. This runs on every
-        // upload now (not just forms), so any single malformed/unusual PDF's form or annotation
-        // structure must never take down extraction that would otherwise have worked fine -
-        // each enrichment step is wrapped and just quietly contributes nothing on failure.
+        // the text handed to the AI, is what actually recovers that data. Each enrichment step
+        // is wrapped so a single malformed/unusual PDF's form or annotation structure never
+        // takes down extraction that would otherwise have worked fine.
         string? formFieldsText = null;
         try
         {
@@ -61,15 +55,6 @@ public class PdfTextExtractionService : IPdfTextExtractionService
         {
             pageNumber++;
             var text = page.Text;
-            var usedOcr = false;
-
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                // No text layer -> this page is a scan/image. Fall back to OCR.
-                text = RunOcrOnPage(filePath, pageNumber);
-                anyOcrUsed = true;
-                usedOcr = true;
-            }
 
             string? annotationsText = null;
             try
@@ -85,10 +70,10 @@ public class PdfTextExtractionService : IPdfTextExtractionService
             // once - the first page they're extracted alongside is as good as any.
             if (pageNumber == 1 && !string.IsNullOrEmpty(formFieldsText)) text = $"{text}\n\n{formFieldsText}";
 
-            pages.Add(new PdfPageTextDto(pageNumber, text, usedOcr));
+            pages.Add(new PdfPageTextDto(pageNumber, text));
         }
 
-        return Task.FromResult(new PdfTextExtractionResultDto(pageNumber, anyOcrUsed, pages));
+        return Task.FromResult(new PdfTextExtractionResultDto(pageNumber, pages));
     }
 
     /// <summary>Filled-in AcroForm field values, if this PDF actually uses real interactive
@@ -147,7 +132,7 @@ public class PdfTextExtractionService : IPdfTextExtractionService
                "above, matched here by their position on the page]:\n" + string.Join("\n", lines);
     }
 
-    private static string? FindNearestLabel(PdfRectangle target, List<Word> words)
+    private static string? FindNearestLabel(PdfRectangle target, List<UglyToad.PdfPig.Content.Word> words)
     {
         const double sameLineTolerance = 4.0; // points of vertical wiggle room to count as "the same line"
         const double maxSearchDistance = 150.0;
@@ -192,45 +177,5 @@ public class PdfTextExtractionService : IPdfTextExtractionService
             .OrderBy(w => w.BoundingBox.Left)
             .Select(w => w.Text);
         return string.Join(" ", aboveLine);
-    }
-
-    /// <summary>
-    /// Deliberately stays a stub here: this method only ever runs from the fast, text-only,
-    /// count-only ExtractTextAsync path that /peek and upload quota-gating depend on, both of
-    /// which run before page-selection is known - actually rasterizing here would mean paying to
-    /// render every page of every file a user merely browses. Real OCR now happens once, for real,
-    /// in DocumentProcessingService.ProcessDocumentAsync via IPageImageRenderingService, reusing
-    /// the same page image already rendered there for the AI-vision call - see that service for
-    /// the actual OCR implementation. This intentionally still returns empty text for a scanned
-    /// page at this stage; DocumentPage.RawText gets the real OCR'd text once ProcessDocumentAsync
-    /// runs (see the `with { Text = ... }` merge there).
-    /// </summary>
-    private string RunOcrOnPage(string filePath, int pageNumber)
-    {
-        try
-        {
-            var tessDataPath = _config["Ocr:TessDataPath"] ?? "./tessdata";
-            // NOTE: rendering the PDF page to a bitmap is handled via PdfiumViewer
-            // in the real implementation (kept out of this scaffold to avoid a
-            // native-library dependency at build time). Wire this up as:
-            //   1. Render page -> PNG bytes (PdfiumViewer / Pdfium)
-            //   2. Feed PNG bytes into Tesseract below
-            using var engine = new TesseractEngine(tessDataPath, "eng", EngineMode.Default);
-            // Placeholder: replace `imageBytes` with the actual rendered page image.
-            byte[] imageBytes = Array.Empty<byte>();
-            if (imageBytes.Length == 0)
-            {
-                _logger.LogWarning("OCR rendering step not wired up yet for page {Page} of {File}. See README > OCR setup.", pageNumber, filePath);
-                return string.Empty;
-            }
-            using var img = Pix.LoadFromMemory(imageBytes);
-            using var result = engine.Process(img);
-            return result.GetText();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "OCR failed for page {Page} of {File}", pageNumber, filePath);
-            return string.Empty;
-        }
     }
 }

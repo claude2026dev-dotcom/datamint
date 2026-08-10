@@ -1,90 +1,83 @@
 import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
-import { forkJoin } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
-import { SubscriptionService } from '../../core/services/subscription.service';
 import { DocumentService } from '../../core/services/document.service';
-import { SubscriptionStatus } from '../../core/models/models';
+import { SubscriptionService } from '../../core/services/subscription.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { DocumentRowComponent } from '../../shared/components/document-row/document-row.component';
 import { DocGroup, groupByUploadBatch } from '../../shared/utils/document-groups';
+import { SubscriptionStatus } from '../../core/models/models';
 import { usageLabel, usagePercent } from '../../shared/utils/plan-usage';
 
-/// The logged-in landing spot ("/") redirects here instead of showing the public
-/// marketing page a second time to someone who already has an account - a real
-/// dashboard (stat cards + recent activity), not just a greeting, matching how
-/// Stripe/Vercel/Linear-style apps treat the first screen after sign-in.
+/// The logged-in landing spot ("/") - a working dashboard rather than a bare greeting: quick
+/// actions into the two things a returning user does most (upload, browse past documents),
+/// an at-a-glance plan usage bar, and a peek at the most recent uploads.
 @Component({
   selector: 'app-home',
   standalone: true,
   imports: [CommonModule, RouterLink, IconComponent, DocumentRowComponent],
   template: `
     <div class="dm-container page">
-      <div class="dash-header">
-        <div>
-          <h1>{{ greeting() }}, {{ firstName() }} 👋</h1>
-          <p class="muted">Here's what's happening with your account.</p>
+      <h1>{{ greeting() }}, {{ firstName() }} 👋</h1>
+      <p class="muted">Here's what's happening with your documents.</p>
+
+      <div class="quick-actions">
+        <a routerLink="/upload" class="dm-card quick-card primary">
+          <div class="quick-icon"><app-icon name="upload-cloud" [size]="20" /></div>
+          <div>
+            <strong>Upload documents</strong>
+            <p class="muted small">Extract fields from a new PDF or scan</p>
+          </div>
+        </a>
+        <a routerLink="/documents" class="dm-card quick-card">
+          <div class="quick-icon"><app-icon name="inbox" [size]="20" /></div>
+          <div>
+            <strong>My documents</strong>
+            <p class="muted small">Browse and re-export past uploads</p>
+          </div>
+        </a>
+        <a routerLink="/field-templates" class="dm-card quick-card">
+          <div class="quick-icon"><app-icon name="file-text" [size]="20" /></div>
+          <div>
+            <strong>Field templates</strong>
+            <p class="muted small">Reuse a saved field list</p>
+          </div>
+        </a>
+      </div>
+
+      @if (planStatus?.hasActiveSubscription) {
+        <div class="dm-card plan-strip">
+          <div class="plan-strip-head">
+            <span class="plan-name">{{ planStatus?.planName }} plan</span>
+            <a routerLink="/profile/plan" class="manage-link">Manage →</a>
+          </div>
+          <div class="usage-bar" [attr.aria-label]="usageLabelText()">
+            <div class="usage-fill" [style.width.%]="usagePercentValue()"></div>
+          </div>
+          <p class="muted small">{{ usageLabelText() }}</p>
         </div>
-        <a routerLink="/upload" class="dm-btn dm-btn-primary"><app-icon name="upload-cloud" [size]="16" /> Upload new PDF</a>
+      }
+
+      <div class="recent-head">
+        <h2>Recent documents</h2>
+        @if (groups.length > 0) { <a routerLink="/documents" class="see-all-link">See all →</a> }
       </div>
 
       @if (loading) {
-        <div class="stats-grid">
-          @for (i of [1,2,3]; track i) { <div class="dm-card stat-card skeleton"></div> }
+        <div class="doc-list">
+          @for (i of [1,2]; track i) { <div class="dm-card skeleton"></div> }
+        </div>
+      } @else if (groups.length === 0) {
+        <div class="dm-card empty-state">
+          <div class="icon"><app-icon name="inbox" [size]="26" /></div>
+          <h3>No documents yet</h3>
+          <p class="muted">Upload your first PDF or scan to see it show up here.</p>
+          <a routerLink="/upload" class="dm-btn dm-btn-primary"><app-icon name="upload-cloud" [size]="16" /> Upload a document</a>
         </div>
       } @else {
-        <div class="stats-grid">
-          <div class="dm-card stat-card">
-            <span class="stat-label">Current plan</span>
-            @if (planStatus?.hasActiveSubscription) {
-              <span class="stat-value">{{ planStatus?.planName }}</span>
-              <a routerLink="/profile/plan" class="stat-link">Manage <app-icon name="arrow-right" [size]="12" /></a>
-            } @else {
-              <span class="stat-value">None yet</span>
-              <a routerLink="/plans" class="stat-link">Choose a plan <app-icon name="arrow-right" [size]="12" /></a>
-            }
-          </div>
-
-          <div class="dm-card stat-card">
-            <span class="stat-label">Pages used</span>
-            @if (planStatus?.hasActiveSubscription) {
-              <span class="stat-value">{{ planStatus?.pagesUsedThisCycle }}</span>
-              <div class="usage-bar" [attr.aria-label]="usageLabel(planStatus)">
-                <div class="usage-fill" [style.width.%]="usagePercent(planStatus)"></div>
-              </div>
-              <span class="stat-sub">{{ usageLabel(planStatus) }}</span>
-            } @else {
-              <span class="stat-value">—</span>
-            }
-          </div>
-
-          <div class="dm-card stat-card">
-            <span class="stat-label">Total documents</span>
-            <span class="stat-value">{{ totalDocuments }}</span>
-            <a routerLink="/documents" class="stat-link">View all <app-icon name="arrow-right" [size]="12" /></a>
-          </div>
-        </div>
-
-        <div class="recent-section">
-          <div class="recent-header">
-            <h2>Recent documents</h2>
-            @if (recentGroups.length > 0) { <a routerLink="/documents" class="view-all">View all</a> }
-          </div>
-
-          @if (recentGroups.length === 0) {
-            <div class="dm-card empty-state">
-              <div class="icon"><app-icon name="inbox" [size]="26" /></div>
-              <p class="muted">No documents yet — upload your first PDF to see it show up here.</p>
-              <a routerLink="/upload" class="dm-btn dm-btn-primary"><app-icon name="upload-cloud" [size]="16" /> Upload a PDF</a>
-            </div>
-          } @else {
-            <div class="doc-list">
-              @for (group of recentGroups; track group.batchId) {
-                <app-document-row [group]="group" />
-              }
-            </div>
-          }
+        <div class="doc-list">
+          @for (group of groups; track group.batchId) { <app-document-row [group]="group" /> }
         </div>
       }
     </div>
@@ -92,45 +85,43 @@ import { usageLabel, usagePercent } from '../../shared/utils/plan-usage';
   styles: [`
     .page { padding-top: 40px; padding-bottom: 80px; }
     h1 { font-size: 1.7rem; margin-bottom: 6px; }
-    h2 { font-size: 1.05rem; }
+    h2 { font-size: 1.05rem; margin: 0; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; margin: 0; }
-    .dash-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 28px; }
+    .small { font-size: 0.8rem; }
 
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
-    .stat-card { padding: 20px; display: flex; flex-direction: column; gap: 6px; }
-    .stat-card.skeleton { height: 108px; background: linear-gradient(90deg, var(--dm-surface) 25%, var(--dm-surface-hover) 50%, var(--dm-surface) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
-    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-    .stat-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); font-weight: 700; }
-    .stat-value { font-size: 1.4rem; font-weight: 800; }
-    .stat-sub { font-size: 0.76rem; color: var(--dm-text-muted); }
-    .stat-link { display: inline-flex; align-items: center; gap: 4px; font-size: 0.8rem; font-weight: 600; color: var(--dm-primary-light); text-decoration: none; margin-top: 4px; }
-    .stat-link:hover { text-decoration: underline; }
-    .usage-bar { height: 7px; border-radius: 999px; background: var(--dm-bg-elevated); border: 1px solid var(--dm-border); overflow: hidden; margin: 4px 0 2px; }
+    .quick-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 24px 0; }
+    .quick-card { display: flex; align-items: center; gap: 12px; padding: 18px; text-decoration: none; color: var(--dm-text); transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease; }
+    .quick-card:hover { transform: translateY(-2px); box-shadow: var(--dm-shadow); border-color: var(--dm-primary); }
+    .quick-card.primary { border-color: var(--dm-primary); background: rgba(99,102,241,0.06); }
+    .quick-icon { width: 38px; height: 38px; border-radius: 10px; background: var(--dm-gradient-primary); color: white; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .quick-card strong { font-size: 0.92rem; }
+
+    .plan-strip { padding: 18px 20px; margin-bottom: 28px; }
+    .plan-strip-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .plan-name { font-weight: 700; font-size: 0.95rem; }
+    .manage-link { font-size: 0.82rem; color: var(--dm-primary); text-decoration: none; }
+    .manage-link:hover { text-decoration: underline; }
+    .usage-bar { height: 7px; border-radius: 999px; background: var(--dm-bg-elevated); border: 1px solid var(--dm-border); overflow: hidden; margin-bottom: 6px; }
     .usage-fill { height: 100%; background: var(--dm-gradient-primary); transition: width 0.3s ease; }
 
-    .recent-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-    .view-all { font-size: 0.85rem; font-weight: 600; color: var(--dm-primary-light); text-decoration: none; }
-    .view-all:hover { text-decoration: underline; }
+    .recent-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+    .see-all-link { font-size: 0.85rem; color: var(--dm-primary); text-decoration: none; }
+    .see-all-link:hover { text-decoration: underline; }
+
     .doc-list { display: flex; flex-direction: column; gap: 10px; }
+    .skeleton { height: 68px; background: linear-gradient(90deg, var(--dm-surface) 25%, var(--dm-surface-hover) 50%, var(--dm-surface) 75%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-    .empty-state { padding: 34px 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
-    .empty-state .icon { color: var(--dm-text-muted); }
+    .empty-state { padding: 36px 28px; text-align: center; }
+    .empty-state .icon { color: var(--dm-text-muted); display: flex; justify-content: center; margin-bottom: 12px; }
+    .empty-state h3 { margin-bottom: 8px; }
+    .empty-state p { margin-bottom: 18px; }
+    .empty-state .dm-btn { display: inline-flex; align-items: center; gap: 6px; }
 
-    @media (max-width: 700px) {
-      .stats-grid { grid-template-columns: 1fr; }
-      .dash-header { flex-direction: column; }
-    }
+    @media (max-width: 760px) { .quick-actions { grid-template-columns: 1fr; } }
   `]
 })
 export class HomeComponent implements OnInit, OnDestroy {
-  usageLabel = usageLabel;
-  usagePercent = usagePercent;
-
-  planStatus: SubscriptionStatus | null = null;
-  recentGroups: DocGroup[] = [];
-  totalDocuments = 0;
-  loading = true;
-
   // Computed once at construction and otherwise never touched again, so leaving this
   // tab open across an hour boundary (say from 6pm through to 1am) kept showing
   // whatever greeting was true at page load - "Good evening" all night - since nothing
@@ -139,29 +130,28 @@ export class HomeComponent implements OnInit, OnDestroy {
   private greetingSignal = signal(this.computeGreeting());
   private greetingTimer?: ReturnType<typeof setInterval>;
 
+  groups: DocGroup[] = [];
+  loading = true;
+  planStatus: SubscriptionStatus | null = null;
+
   constructor(
     private auth: AuthService,
-    private subscriptionService: SubscriptionService,
-    private documentService: DocumentService
+    private documentService: DocumentService,
+    private subscriptionService: SubscriptionService
   ) {}
 
   ngOnInit() {
-    forkJoin({
-      status: this.subscriptionService.getStatus(),
-      documents: this.documentService.getMine()
-    }).subscribe({
-      next: ({ status, documents }) => {
-        this.planStatus = status.status;
-        this.totalDocuments = documents.documents.length;
-        this.recentGroups = groupByUploadBatch(documents.documents).slice(0, 5);
-        this.loading = false;
-      },
+    this.greetingTimer = setInterval(() => this.greetingSignal.set(this.computeGreeting()), 60_000);
+
+    this.documentService.getMine().subscribe({
+      next: res => { this.groups = groupByUploadBatch(res.documents).slice(0, 3); this.loading = false; },
       error: () => { this.loading = false; }
     });
 
-    // A greeting only needs to be right to the hour, not the second - checking once a
-    // minute is cheap and still catches every boundary well within a minute of it happening.
-    this.greetingTimer = setInterval(() => this.greetingSignal.set(this.computeGreeting()), 60_000);
+    this.subscriptionService.getStatus().subscribe({
+      next: res => { this.planStatus = res.status; },
+      error: () => {}
+    });
   }
 
   ngOnDestroy() {
@@ -176,6 +166,14 @@ export class HomeComponent implements OnInit, OnDestroy {
 
   greeting(): string {
     return this.greetingSignal();
+  }
+
+  usagePercentValue(): number {
+    return usagePercent(this.planStatus);
+  }
+
+  usageLabelText(): string {
+    return usageLabel(this.planStatus);
   }
 
   // new Date() always reads the machine's own local clock/timezone (there's no UTC

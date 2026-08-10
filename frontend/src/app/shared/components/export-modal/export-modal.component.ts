@@ -1,205 +1,118 @@
-import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { BatchExportMode, ExportFormat, ExportLayout, ExportOptions } from '../../../core/models/models';
+import { trigger, transition, style, animate } from '@angular/animations';
+import { ExportFormat } from '../../../core/models/models';
+import { IconComponent } from '../icon/icon.component';
 
-export interface ExportModalResult {
-  options: ExportOptions;
-  exportMode: BatchExportMode;
-  toAddress?: string;
+export interface EmailModalResult {
+  toAddress: string;
+  cc?: string;
+  format: ExportFormat;
 }
 
-export interface ExportModalDocument {
-  id: string;
-  fileName: string;
-}
-
-/// Shared "how should this be exported" dialog for both the single-document review page
-/// and the batch review page - format (Excel/JSON), layout (rows-per-field/columns-per-field,
-/// Excel only), export mode + a document checklist (batch only), and an optional recipient
-/// field when opened for "email" rather than "download". Field-level selection isn't re-picked
-/// here - it respects each field's own inline "include in export" toggle.
+/// Minimal "who should this go to" dialog for emailing an export - the layout (rows/columns,
+/// single-sheet/separate-sheets) is never re-asked here, it's whatever's already selected on
+/// the review page itself. The only genuinely new decision for an email (not already visible
+/// on screen) is the attachment format and the recipient. A real backdrop overlay (matching
+/// app-confirm-dialog's pattern), not an inline card sitting in the page flow - a page-flow card
+/// reads as just another section of the page rather than a deliberate, focused action.
 @Component({
   selector: 'app-export-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, IconComponent],
+  animations: [
+    trigger('fade', [
+      transition(':enter', [style({ opacity: 0 }), animate('140ms ease-out', style({ opacity: 1 }))]),
+      transition(':leave', [animate('120ms ease-in', style({ opacity: 0 }))])
+    ]),
+    trigger('pop', [
+      transition(':enter', [
+        style({ transform: 'scale(0.96) translateY(6px)', opacity: 0 }),
+        animate('160ms cubic-bezier(.2,.8,.2,1)', style({ transform: 'scale(1) translateY(0)', opacity: 1 }))
+      ])
+    ])
+  ],
   template: `
-    <div class="dm-card export-modal">
-      <h3>{{ action === 'email' ? 'Email export' : 'Export' }}{{ isBatch ? ' — ' + documents.length + ' file(s)' : '' }}</h3>
-
-      <div class="field-block">
-        <label>Format</label>
-        <div class="segmented">
-          <button type="button" class="seg-option" [class.active]="format === 'Excel'" (click)="format = 'Excel'">Excel (.xlsx)</button>
-          <button type="button" class="seg-option" [class.active]="format === 'Json'" (click)="format = 'Json'">JSON</button>
+    <div class="backdrop" [@fade] (click)="cancelled.emit()">
+      <div class="panel" [@pop] (click)="$event.stopPropagation()" role="dialog" aria-modal="true">
+        <div class="panel-head">
+          <div class="panel-icon"><app-icon name="inbox" [size]="18" /></div>
+          <div>
+            <h3>Email this export</h3>
+            <p class="muted">Sends whatever layout you're currently viewing on the review page.</p>
+          </div>
         </div>
-      </div>
 
-      @if (format === 'Excel') {
         <div class="field-block">
-          <label>Layout</label>
-          <div class="mode-options">
-            <label class="mode-option" [class.active]="layout === 'RowsPerField'">
-              <input type="radio" name="layout" value="RowsPerField" [(ngModel)]="layout" />
-              <div>
-                <strong>Fields as rows</strong>
-                <p class="muted small">One row per field{{ isBatch ? ', grouped in blocks per document' : '' }} — good for reading top to bottom.</p>
-              </div>
-            </label>
-            <label class="mode-option" [class.active]="layout === 'ColumnsPerField'">
-              <input type="radio" name="layout" value="ColumnsPerField" [(ngModel)]="layout" />
-              <div>
-                <strong>Fields as columns</strong>
-                <p class="muted small">One column per field{{ isBatch ? ', one row per document' : '' }} — good for comparing values side by side.</p>
-              </div>
-            </label>
+          <label>Attachment format</label>
+          <div class="segmented">
+            <button type="button" class="seg-option" [class.active]="format === 'Excel'" (click)="format = 'Excel'">
+              <app-icon name="file-text" [size]="14" /> Excel (.xlsx)
+            </button>
+            <button type="button" class="seg-option" [class.active]="format === 'Json'" (click)="format = 'Json'">
+              {{ '{ }' }} JSON
+            </button>
           </div>
         </div>
 
-        @if (isBatch) {
-          <div class="field-block">
-            <label>How should the files be combined?</label>
-            <div class="mode-options">
-              <label class="mode-option" [class.active]="exportMode === 'SingleSheet'">
-                <input type="radio" name="exportMode" value="SingleSheet" [(ngModel)]="exportMode" />
-                <div>
-                  <strong>One combined sheet</strong>
-                  <p class="muted small">A single sheet holding every selected document.</p>
-                </div>
-              </label>
-              <label class="mode-option" [class.active]="exportMode === 'MultipleSheets'">
-                <input type="radio" name="exportMode" value="MultipleSheets" [(ngModel)]="exportMode" />
-                <div>
-                  <strong>One workbook, separate sheets</strong>
-                  <p class="muted small">A single .xlsx file with one tab per document.</p>
-                </div>
-              </label>
-              <label class="mode-option" [class.active]="exportMode === 'SeparateFiles'">
-                <input type="radio" name="exportMode" value="SeparateFiles" [(ngModel)]="exportMode" />
-                <div>
-                  <strong>Separate files</strong>
-                  <p class="muted small">A .zip with one standalone spreadsheet per document.</p>
-                </div>
-              </label>
-            </div>
-          </div>
-        }
-      }
-
-      @if (isBatch) {
-        <div class="field-block">
-          <div class="doc-checklist-head">
-            <label>Include</label>
-            <button type="button" class="link-btn" (click)="selectAll()">Select all</button>
-            <button type="button" class="link-btn" (click)="selectNone()">Select none</button>
-          </div>
-          <div class="doc-checklist">
-            @for (doc of documents; track doc.id) {
-              <label class="doc-check">
-                <input type="checkbox" [checked]="selectedDocIds.has(doc.id)" (change)="toggleDoc(doc.id)" />
-                <span [title]="doc.fileName">{{ doc.fileName }}</span>
-              </label>
-            }
-          </div>
-        </div>
-      }
-
-      @if (action === 'email') {
         <div class="field-block">
           <label>Send to</label>
           <input class="dm-input" type="email" [(ngModel)]="toAddress" placeholder="recipient@company.com" />
         </div>
-      }
+        <div class="field-block">
+          <label>CC <span class="muted">(optional)</span></label>
+          <input class="dm-input" type="text" [(ngModel)]="cc" placeholder="cc1@company.com, cc2@company.com" />
+        </div>
 
-      <div class="chooser-actions">
-        <button class="dm-btn dm-btn-ghost" (click)="cancelled.emit()" [disabled]="busy">Cancel</button>
-        <button class="dm-btn dm-btn-primary" (click)="confirm()" [disabled]="busy || !canConfirm()">
-          {{ busy ? (action === 'email' ? 'Sending…' : 'Exporting…') : (action === 'email' ? 'Send' : 'Export') }}
-        </button>
+        <div class="actions">
+          <button class="dm-btn dm-btn-ghost" (click)="cancelled.emit()" [disabled]="busy">Cancel</button>
+          <button class="dm-btn dm-btn-primary" (click)="confirm()" [disabled]="busy || !toAddress">
+            <app-icon name="inbox" [size]="14" /> {{ busy ? 'Sending…' : 'Send' }}
+          </button>
+        </div>
       </div>
     </div>
   `,
   styles: [`
-    .export-modal { padding: 20px; margin-bottom: 22px; animation: dm-fade-in 0.18s ease-out; }
-    @keyframes dm-fade-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
-    .export-modal h3 { font-size: 0.98rem; margin-bottom: 16px; }
-    .muted { color: var(--dm-text-muted); }
-    .small { font-size: 0.8rem; }
-    .field-block { margin-bottom: 18px; }
+    .backdrop {
+      position: fixed; inset: 0; background: rgba(4, 6, 14, 0.6); backdrop-filter: blur(2px);
+      display: flex; align-items: center; justify-content: center; z-index: 10000; padding: 20px;
+    }
+    .panel {
+      background: var(--dm-surface); border: 1px solid var(--dm-border); border-radius: var(--dm-radius-md);
+      box-shadow: var(--dm-shadow); padding: 24px; width: 100%; max-width: 420px;
+      max-height: 100%; overflow-y: auto;
+    }
+    .panel-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 20px; }
+    .panel-icon { flex-shrink: 0; width: 36px; height: 36px; border-radius: 10px; background: var(--dm-gradient-primary); color: white; display: flex; align-items: center; justify-content: center; }
+    .panel-head h3 { margin: 0 0 4px; font-size: 1.05rem; }
+    .panel-head p { margin: 0; }
+    .muted { color: var(--dm-text-muted); font-size: 0.82rem; }
+
+    .field-block { margin-bottom: 16px; }
     .field-block > label { display: block; font-size: 0.82rem; font-weight: 600; color: var(--dm-text-muted); margin-bottom: 8px; }
 
     .segmented { display: flex; gap: 8px; }
-    .seg-option { flex: 1; padding: 10px 12px; border-radius: var(--dm-radius-sm); border: 1px solid var(--dm-border); background: var(--dm-surface); cursor: pointer; font-size: 0.88rem; font-weight: 600; color: var(--dm-text); }
+    .seg-option { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; padding: 9px 12px; border-radius: var(--dm-radius-sm); border: 1px solid var(--dm-border); background: var(--dm-bg, var(--dm-surface)); cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--dm-text); }
     .seg-option.active { border-color: var(--dm-primary); background: rgba(99,102,241,0.1); color: var(--dm-primary); }
 
-    .mode-options { display: flex; flex-direction: column; gap: 4px; }
-    .mode-option { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border-radius: var(--dm-radius-sm); cursor: pointer; border: 1px solid transparent; }
-    .mode-option:hover { background: var(--dm-surface-hover); }
-    .mode-option.active { border-color: var(--dm-primary); background: rgba(99,102,241,0.08); }
-    .mode-option input[type="radio"] { margin-top: 4px; accent-color: var(--dm-primary); flex-shrink: 0; }
-    .mode-option strong { font-size: 0.9rem; }
-
-    .doc-checklist-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-    .doc-checklist-head label { margin-bottom: 0 !important; }
-    .link-btn { background: none; border: none; padding: 0; color: var(--dm-primary); font-size: 0.78rem; cursor: pointer; }
-    .doc-checklist { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; border: 1px solid var(--dm-border); border-radius: var(--dm-radius-sm); padding: 6px; }
-    .doc-check { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--dm-radius-sm); font-size: 0.85rem; }
-    .doc-check:hover { background: var(--dm-surface-hover); }
-    .doc-check input { accent-color: var(--dm-primary); flex-shrink: 0; }
-    .doc-check span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-    .chooser-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--dm-border); }
+    .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--dm-border); }
+    .actions .dm-btn { display: inline-flex; align-items: center; gap: 6px; }
   `]
 })
-export class ExportModalComponent implements OnChanges {
-  @Input() action: 'download' | 'email' = 'download';
-  @Input() isBatch = false;
-  @Input() documents: ExportModalDocument[] = [];
+export class ExportModalComponent {
   @Input() busy = false;
 
-  @Output() confirmed = new EventEmitter<ExportModalResult>();
+  @Output() confirmed = new EventEmitter<EmailModalResult>();
   @Output() cancelled = new EventEmitter<void>();
 
   format: ExportFormat = 'Excel';
-  layout: ExportLayout = 'RowsPerField';
-  exportMode: BatchExportMode = 'SingleSheet';
-  selectedDocIds = new Set<string>();
   toAddress = '';
-
-  ngOnChanges(changes: SimpleChanges) {
-    if (changes['documents']) this.selectAll();
-  }
-
-  selectAll() {
-    this.selectedDocIds = new Set(this.documents.map(d => d.id));
-  }
-
-  selectNone() {
-    this.selectedDocIds = new Set();
-  }
-
-  toggleDoc(id: string) {
-    if (this.selectedDocIds.has(id)) this.selectedDocIds.delete(id);
-    else this.selectedDocIds.add(id);
-  }
-
-  canConfirm(): boolean {
-    if (this.isBatch && this.selectedDocIds.size === 0) return false;
-    if (this.action === 'email' && !this.toAddress) return false;
-    return true;
-  }
+  cc = '';
 
   confirm() {
-    if (!this.canConfirm()) return;
-    const options: ExportOptions = {
-      format: this.format,
-      layout: this.layout,
-      includedDocumentIds: this.isBatch ? Array.from(this.selectedDocIds) : undefined
-    };
-    this.confirmed.emit({
-      options,
-      exportMode: this.exportMode,
-      toAddress: this.action === 'email' ? this.toAddress : undefined
-    });
+    if (!this.toAddress) return;
+    this.confirmed.emit({ toAddress: this.toAddress, cc: this.cc.trim() || undefined, format: this.format });
   }
 }

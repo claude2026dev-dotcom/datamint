@@ -5,16 +5,14 @@ namespace Datamint.Application.DTOs;
 /// equivalent) populates it in <c>DocumentProcessingService.ProcessDocumentAsync</c>, on the
 /// already page-selection-filtered set of pages actually going to the AI. Never set by
 /// <c>IPdfTextExtractionService.ExtractTextAsync</c> itself - that stays the fast, text-only,
-/// count-only path <c>/peek</c> and quota-gating depend on.</param>
-public record PdfPageTextDto(int PageNumber, string Text, bool UsedOcr, byte[]? ImageBytes = null, string? ImageMediaType = null);
+/// count-only path `/peek` and quota-gating depend on.</param>
+public record PdfPageTextDto(int PageNumber, string Text, byte[]? ImageBytes = null, string? ImageMediaType = null);
 
-public record PdfTextExtractionResultDto(int PageCount, bool RequiredOcr, List<PdfPageTextDto> Pages);
+public record PdfTextExtractionResultDto(int PageCount, List<PdfPageTextDto> Pages);
 
 /// <param name="Priority">AI-assigned importance rank (lower = more important/shown first) -
-/// entirely the model's own judgment call per document, never a hardcoded rule, so a field/
-/// section central to one document type (e.g. a final total) can rank differently than the
-/// "same" label would in a document where it's incidental. Null (pre-priority rows, or a parse
-/// fallback) sorts last.</param>
+/// entirely the model's own judgment call per document, never a hardcoded rule. Null (pre-
+/// priority rows, or a parse fallback) sorts last.</param>
 public record ExtractedFieldDto(string Key, string? Value, int? PageNumber, string? SemanticType = null, string? SectionLabel = null, int? Priority = null);
 
 public record AiExtractionResultDto(List<ExtractedFieldDto> Fields, bool Success, string? ErrorMessage);
@@ -22,8 +20,8 @@ public record AiExtractionResultDto(List<ExtractedFieldDto> Fields, bool Success
 public record DocumentSummaryDto(
     Guid Id,
     string OriginalFileName,
+    string ContentType,
     int PageCount,
-    bool RequiresOcr,
     string Status,
     DateTime CreatedAtUtc,
     string? FailureReason = null,
@@ -31,27 +29,27 @@ public record DocumentSummaryDto(
     Guid UploadBatchId = default);
 
 public record ExtractedFieldEditDto(Guid Id, string FieldKey, string OriginalFieldKey, string? FieldValue, int? PageNumber, bool WasEditedByUser,
-    string SemanticType, string SectionLabel, bool IncludeInExport, int SortOrder);
+    string SemanticType, string SectionLabel, bool IncludeInExport, int SortOrder, string? OriginalAiValue = null, string? OriginalSemanticType = null,
+    string? OriginalSectionLabel = null);
 
 public record DocumentDetailDto(
     Guid Id,
     string OriginalFileName,
+    string ContentType,
     int PageCount,
-    bool RequiresOcr,
     string Status,
     List<ExtractedFieldEditDto> Fields);
 
-public record UpdateFieldRequestDto(Guid FieldId, string? NewValue, string? NewKey = null, bool? IncludeInExport = null);
+public record UpdateFieldRequestDto(Guid FieldId, string? NewValue, string? NewKey = null, bool? IncludeInExport = null, string? NewSemanticType = null);
 
-public record PeekFileResultDto(string FileName, int PageCount, bool RequiresOcr);
+public record PeekFileResultDto(string FileName, int PageCount);
 
 public record PeekResultDto(List<PeekFileResultDto> Files);
 
 /// <param name="FileIndex">Index into the same "files" form-array the upload request carries -
 /// matches a selection back to the file it applies to.</param>
 /// <param name="Pages">A spec string like "1-3,5" - a page-count-aware caller typically gets this
-/// from /peek first. Null/empty (or the entry being absent entirely) means "all pages", so the
-/// common no-selection path is unaffected.</param>
+/// from /peek first. Null/empty (or the entry being absent entirely) means "all pages".</param>
 public record PageSelectionDto(int FileIndex, string? Pages);
 
 /// <param name="Fields">Every field of the document, in the drop's resulting order - the whole
@@ -65,10 +63,11 @@ public record RenameSectionRequestDto(string OldLabel, string NewLabel);
 
 public enum ExportFormat { Excel, Json }
 
-// RowsPerField: one row per field (today's default single-document layout, and each
-// tab/file in MultipleSheets/SeparateFiles). ColumnsPerField: one column per field key,
-// one row per document (today's implicit "SingleSheet" batch layout) - orthogonal to
-// ExportMode below, which only controls how many sheets/files a batch produces.
+// RowsPerField: one row per field (single-document layout, and each tab/file in
+// MultipleSheets/SeparateFiles). ColumnsPerField: one column per field key, one row per
+// document (SingleSheet batch layout) - orthogonal to ExportMode below, which only controls
+// how many sheets/files a batch produces. The frontend review grid also drives its own
+// on-screen view off this same enum (not just export-time).
 public enum ExportLayout { RowsPerField, ColumnsPerField }
 
 /// <param name="IncludedFieldIds">Null = respect each field's own IncludeInExport flag (the
@@ -81,13 +80,13 @@ public record ExportOptionsDto(
     List<Guid>? IncludedFieldIds = null,
     List<Guid>? IncludedDocumentIds = null);
 
-public record SendEmailRequestDto(Guid DocumentId, string ToAddress, string? Message, ExportOptionsDto? Options = null);
+public record SendEmailRequestDto(Guid DocumentId, string ToAddress, string? Cc, string? Message, ExportOptionsDto? Options = null);
 
 // ExportMode: "SingleSheet" (default - one combined sheet, rows=documents), "MultipleSheets"
 // (one .xlsx, one tab per document), or "SeparateFiles" (a .zip with one .xlsx per document).
 // Ignored entirely when Options.Format is Json (JSON always returns one structured payload).
 public record BatchDocumentIdsRequestDto(List<Guid> DocumentIds, string ExportMode = "SingleSheet", ExportOptionsDto? Options = null);
 
-public record BatchSendEmailRequestDto(List<Guid> DocumentIds, string ToAddress, string ExportMode = "SingleSheet", ExportOptionsDto? Options = null);
+public record BatchSendEmailRequestDto(List<Guid> DocumentIds, string ToAddress, string? Cc, string ExportMode = "SingleSheet", ExportOptionsDto? Options = null);
 
 public record ExportResultDto(byte[] Data, string ContentType, string FileName);

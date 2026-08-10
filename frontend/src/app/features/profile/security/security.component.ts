@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../../core/services/auth.service';
@@ -6,18 +6,31 @@ import { ToastService } from '../../../core/services/toast.service';
 import { SettingsNavComponent } from '../../../shared/components/settings-nav/settings-nav.component';
 import { BackButtonComponent } from '../../../shared/components/back-button/back-button.component';
 import { IconComponent } from '../../../shared/components/icon/icon.component';
+import { LoadingHintComponent } from '../../../shared/components/loading-hint/loading-hint.component';
 
 @Component({
   selector: 'app-security',
   standalone: true,
-  imports: [CommonModule, FormsModule, SettingsNavComponent, BackButtonComponent, IconComponent],
+  imports: [CommonModule, FormsModule, SettingsNavComponent, BackButtonComponent, IconComponent, LoadingHintComponent],
   template: `
     <div class="dm-container page">
       <app-back-button />
       <h1>Security</h1>
       <app-settings-nav />
 
-      @if (hasPassword) {
+      @if (loading) {
+        <div class="dm-card section skeleton-block">
+          <div class="skeleton-line" style="width: 35%; height: 18px;"></div>
+          <div class="skeleton-line" style="width: 100%; height: 38px;"></div>
+          <div class="skeleton-line" style="width: 100%; height: 38px;"></div>
+        </div>
+        <app-loading-hint [loading]="loading" />
+      } @else if (error) {
+        <div class="dm-card error-banner">
+          <p>{{ error }}</p>
+          <button class="dm-btn dm-btn-ghost" (click)="load()">Retry</button>
+        </div>
+      } @else if (hasPassword) {
         <div class="dm-card section">
           <h3>Change password</h3>
           <p class="muted hint-block">Changing your password signs you out on every device.</p>
@@ -77,6 +90,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
         </div>
       }
 
+      @if (!loading && !error) {
       <div class="dm-card section danger-zone">
         <h3>Danger zone</h3>
 
@@ -87,17 +101,16 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           </p>
         } @else {
         <p class="muted hint-block">
-          Deactivate your account and cancel any paid subscription (your free trial, if you're on one, isn't affected).
-          Your documents are kept for {{ graceDays }} days in case you change your mind — just sign in again within that window
-          to reactivate, with your free trial and remaining pages exactly as you left them. After that, everything is permanently erased.
+          Deactivate your account. It's kept for {{ graceDays }} days in case you change your mind — just sign in again
+          within that window to reactivate exactly as you left it. After that, everything is permanently erased.
         </p>
 
         @if (showDeactivateConfirm) {
           <div class="delete-warning">
             <app-icon name="alert-triangle" [size]="16" />
             <span>
-              This signs you out everywhere and cancels any paid subscription right away (your free trial carries over untouched).
-              Your account and documents stay recoverable for {{ graceDays }} days by signing back in - after that they're permanently erased and can't be undone.
+              This signs you out everywhere right away. Your account stays recoverable for {{ graceDays }} days by
+              signing back in - after that it's permanently erased and can't be undone.
             </span>
           </div>
 
@@ -133,6 +146,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
         </div>
         }
       </div>
+      }
     </div>
   `,
   styles: [`
@@ -153,7 +167,18 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     .hint-block { margin: -6px 0 16px; font-size: 0.82rem; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
 
-    .error-banner { background: rgba(239,68,68,0.1); border: 1px solid var(--dm-danger); color: var(--dm-danger); font-size: 0.85rem; padding: 10px 14px; border-radius: var(--dm-radius-sm); margin-bottom: 14px; }
+    .error-banner {
+      background: rgba(239,68,68,0.1); border: 1px solid var(--dm-danger); color: var(--dm-danger); font-size: 0.85rem;
+      padding: 10px 14px; border-radius: var(--dm-radius-sm); margin-bottom: 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    }
+    .error-banner p { margin: 0; }
+    .skeleton-block { display: flex; flex-direction: column; gap: 14px; }
+    .skeleton-line {
+      background: linear-gradient(90deg, var(--dm-surface) 25%, var(--dm-surface-hover) 50%, var(--dm-surface) 75%);
+      background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; border-radius: 6px;
+    }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     .checklist { list-style: none; padding: 10px 12px; margin: -8px 0 16px; display: flex; flex-direction: column; gap: 4px; background: var(--dm-bg-elevated); border-radius: var(--dm-radius-sm); border: 1px solid var(--dm-border); }
     .checklist li { font-size: 0.78rem; color: var(--dm-text-muted); transition: color 0.15s; }
     .checklist li.met { color: var(--dm-success); }
@@ -180,7 +205,9 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     }
   `]
 })
-export class SecurityComponent {
+export class SecurityComponent implements OnInit {
+  loading = true;
+  error = '';
   hasPassword = true;
   isSuperAdmin = false;
   graceDays = 30;
@@ -204,10 +231,25 @@ export class SecurityComponent {
   constructor(
     private auth: AuthService,
     private toast: ToastService
-  ) {
-    this.auth.getProfile().subscribe(res => {
-      this.hasPassword = res.profile.hasPassword;
-      this.isSuperAdmin = res.profile.isSuperAdmin;
+  ) {}
+
+  ngOnInit() {
+    this.load();
+  }
+
+  load() {
+    this.loading = true;
+    this.error = '';
+    this.auth.getProfile().subscribe({
+      next: res => {
+        this.hasPassword = res.profile.hasPassword;
+        this.isSuperAdmin = res.profile.isSuperAdmin;
+        this.loading = false;
+      },
+      error: () => {
+        this.loading = false;
+        this.error = 'Could not load your security settings. Please try again.';
+      }
     });
   }
 

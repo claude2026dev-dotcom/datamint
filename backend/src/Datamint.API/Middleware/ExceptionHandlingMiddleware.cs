@@ -29,6 +29,11 @@ public class ExceptionHandlingMiddleware
         {
             await _next(context);
         }
+        catch (OAuthException oAuthEx)
+        {
+            _logger.LogWarning(oAuthEx, "Handled OAuth exception: {Error}", oAuthEx.Error);
+            await WriteOAuthResponse(context, oAuthEx);
+        }
         catch (ApiException apiEx)
         {
             _logger.LogWarning(apiEx, "Handled API exception: {Message}", apiEx.Message);
@@ -47,6 +52,19 @@ public class ExceptionHandlingMiddleware
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = statusCode;
         var payload = JsonSerializer.Serialize(new { success = false, message, errorCode });
+        await context.Response.WriteAsync(payload);
+    }
+
+    /// <summary>RFC 6749 §5.2 error shape - deliberately different from WriteResponse's
+    /// {success,message,errorCode} envelope, since /oauth/token's callers are OAuth2 clients
+    /// expecting the spec's shape, not this app's own frontend.</summary>
+    private static async Task WriteOAuthResponse(HttpContext context, OAuthException ex)
+    {
+        context.Response.ContentType = "application/json";
+        context.Response.StatusCode = ex.StatusCode;
+        if (ex.StatusCode == (int)HttpStatusCode.Unauthorized)
+            context.Response.Headers.WWWAuthenticate = "Bearer";
+        var payload = JsonSerializer.Serialize(new { error = ex.Error, error_description = ex.ErrorDescription });
         await context.Response.WriteAsync(payload);
     }
 }

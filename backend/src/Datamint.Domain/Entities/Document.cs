@@ -3,16 +3,14 @@ using Datamint.Domain.Enums;
 namespace Datamint.Domain.Entities;
 
 /// <summary>
-/// One uploaded PDF. A document can have many pages and, once processed,
-/// many extracted key/value fields (optionally scoped to a page).
+/// One uploaded file (PDF or image). A document can have many pages and, once processed,
+/// many extracted key/value fields (optionally scoped to a page). An image is always
+/// exactly one page.
 /// </summary>
 public class Document : BaseEntity
 {
-    // Nullable at the DB level only for rows created before uploads required sign-in;
-    // every document created going forward always has a real owner.
-    public Guid? UserId { get; set; }
-    public ApplicationUser? User { get; set; }
-    public string? UploaderIpAddress { get; set; }  // kept for reference/abuse investigation only
+    public Guid UserId { get; set; }
+    public ApplicationUser User { get; set; } = default!;
 
     // Every file in the same upload request shares this value (assigned once by
     // DocumentsController.Upload); a lone/single-file upload just gets a value nobody
@@ -22,9 +20,9 @@ public class Document : BaseEntity
 
     public string OriginalFileName { get; set; } = default!;
     public string StoredFilePath { get; set; } = default!;
+    public string ContentType { get; set; } = default!; // "application/pdf" or an image/* type
     public long FileSizeBytes { get; set; }
-    public int PageCount { get; set; }
-    public bool RequiresOcr { get; set; }            // true when the PDF has no extractable text layer
+    public int PageCount { get; set; } // always 1 for an image
     public DocumentStatus Status { get; set; } = DocumentStatus.Uploaded;
     public string? FailureReason { get; set; }
 
@@ -33,6 +31,12 @@ public class Document : BaseEntity
     // AI extracts only those, in that order, null for anything not found.
     public string ExtractionMode { get; set; } = "Dynamic";
     public string? RequestedFields { get; set; }
+
+    // The Extraction Tier (AI provider/model/prompt-customization) actually used for this
+    // document, resolved once at processing time from the user's active plan and frozen here -
+    // re-processing later should never silently pick up a since-changed tier for an old result.
+    public Guid? ExtractionTierId { get; set; }
+    public ExtractionTier? ExtractionTier { get; set; }
 
     public ICollection<DocumentPage> Pages { get; set; } = new List<DocumentPage>();
     public ICollection<ExtractedField> ExtractedFields { get; set; } = new List<ExtractedField>();

@@ -10,15 +10,26 @@ public class DatamintDbContext : DbContext
     public DbSet<ApplicationUser> Users => Set<ApplicationUser>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
+
+    public DbSet<OAuthClient> OAuthClients => Set<OAuthClient>();
+    public DbSet<OAuthScope> OAuthScopes => Set<OAuthScope>();
+    public DbSet<OAuthRedirectUri> OAuthRedirectUris => Set<OAuthRedirectUri>();
+    public DbSet<OAuthAuthorizationCode> OAuthAuthorizationCodes => Set<OAuthAuthorizationCode>();
+    public DbSet<OAuthRefreshToken> OAuthRefreshTokens => Set<OAuthRefreshToken>();
+
+    public DbSet<ExtractionTier> ExtractionTiers => Set<ExtractionTier>();
+    public DbSet<RoleExtractionTierOverride> RoleExtractionTierOverrides => Set<RoleExtractionTierOverride>();
+    public DbSet<UserExtractionTierOverride> UserExtractionTierOverrides => Set<UserExtractionTierOverride>();
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<DocumentPage> DocumentPages => Set<DocumentPage>();
     public DbSet<ExtractedField> ExtractedFields => Set<ExtractedField>();
+    public DbSet<FieldTemplate> FieldTemplates => Set<FieldTemplate>();
+
     public DbSet<Plan> Plans => Set<Plan>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
     public DbSet<PaymentTransaction> PaymentTransactions => Set<PaymentTransaction>();
-    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
-    public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
-    public DbSet<FieldTemplate> FieldTemplates => Set<FieldTemplate>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

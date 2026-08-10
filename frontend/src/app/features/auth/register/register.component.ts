@@ -15,7 +15,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     <div class="auth-wrap">
       <div class="dm-card auth-card">
         <h2>Create your account</h2>
-        <p class="muted">Get more uploads and access your document history.</p>
+        <p class="muted">Create your account to get started.</p>
 
         <app-google-signin-button (credential)="signUpWithGoogle($event)" />
         <div class="divider"><span>or</span></div>
@@ -27,7 +27,11 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           <input class="dm-input" type="text" name="name" [(ngModel)]="displayName" (ngModelChange)="errorMessage = ''" />
 
           <label>Email</label>
-          <input class="dm-input" type="email" name="email" [(ngModel)]="email" required (ngModelChange)="errorMessage = ''" />
+          <input class="dm-input" type="email" name="email" #emailField="ngModel" [(ngModel)]="email" required email
+                 (ngModelChange)="errorMessage = ''" (blur)="emailTouched = true" />
+          @if (emailTouched && emailField.invalid && email) {
+            <p class="field-error">Enter a valid email address.</p>
+          }
 
           <label>Password</label>
           <div class="password-field">
@@ -63,6 +67,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     .auth-card { width: 100%; max-width: 400px; padding: 32px; }
     .muted { color: var(--dm-text-muted); font-size: 0.9rem; }
     label { display: block; margin: 14px 0 6px; font-size: 0.85rem; color: var(--dm-text-muted); }
+    .field-error { color: var(--dm-danger); font-size: 0.78rem; margin: 6px 0 0; }
     .password-field { position: relative; display: flex; }
     .password-field .dm-input { padding-right: 42px; }
     .toggle-visibility {
@@ -86,6 +91,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
 export class RegisterComponent {
   displayName = '';
   email = '';
+  emailTouched = false;
   password = '';
   showPassword = false;
   loading = false;

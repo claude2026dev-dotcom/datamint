@@ -43,6 +43,12 @@ commit built a given running instance.
 2. Promote `develop` → `qa` → `master` as above.
 3. On `master`: `git tag vX.Y.Z && git push origin vX.Y.Z`
 4. `gh release create vX.Y.Z --title "vX.Y.Z" --notes "..."`
+5. Create a dedicated, protected `backup/vX.Y.Z` branch from the tag
+   (`git branch backup/vX.Y.Z vX.Y.Z && git push -u origin backup/vX.Y.Z`, then apply the
+   same branch protection as `master`/`qa`) - this is a permanent, easily-browsable snapshot
+   of that exact release on GitHub, separate from the tag itself and from whatever `master`
+   moves on to next. Also export a point-in-time zip if a local copy is wanted:
+   `git archive --format=zip -o datamint-vX.Y.Z-backup.zip vX.Y.Z`.
 
 ## Environment config
 

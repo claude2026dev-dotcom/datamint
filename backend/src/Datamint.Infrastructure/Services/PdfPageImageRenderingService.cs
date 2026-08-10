@@ -4,7 +4,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PDFtoImage;
 using SkiaSharp;
-using Tesseract;
 
 namespace Datamint.Infrastructure.Services;
 
@@ -29,8 +28,7 @@ public class PdfPageImageRenderingService : IPageImageRenderingService
         _logger = logger;
     }
 
-    public Task<List<PageImageDto>> RenderPagesAsync(string filePath, IReadOnlyList<int> pageNumbers,
-        IReadOnlySet<int> pagesNeedingOcr, CancellationToken ct = default)
+    public Task<List<PageImageDto>> RenderPagesAsync(string filePath, IReadOnlyList<int> pageNumbers, CancellationToken ct = default)
     {
         var maxDimension = int.TryParse(_config["Ai:PageImageMaxDimensionPx"], out var configuredMax) ? configuredMax : 1568;
         var results = new List<PageImageDto>();
@@ -55,9 +53,7 @@ public class PdfPageImageRenderingService : IPageImageRenderingService
                 using var encoded = bitmap.Encode(SKEncodedImageFormat.Png, 90);
                 var pngBytes = encoded.ToArray();
 
-                var ocrText = pagesNeedingOcr.Contains(pageNumber) ? RunOcr(pngBytes, pageNumber) : null;
-
-                results.Add(new PageImageDto(pageNumber, pngBytes, "image/png", ocrText));
+                results.Add(new PageImageDto(pageNumber, pngBytes, "image/png"));
             }
             catch (Exception ex)
             {
@@ -66,27 +62,5 @@ public class PdfPageImageRenderingService : IPageImageRenderingService
         }
 
         return Task.FromResult(results);
-    }
-
-    /// <summary>
-    /// Runs against the same rendered PNG bytes already produced for the AI-vision image, instead
-    /// of rasterizing the page a second time - this is what finally makes OCR real (previously a
-    /// dead stub in PdfTextExtractionService.RunOcrOnPage that always returned an empty string).
-    /// </summary>
-    private string? RunOcr(byte[] pngBytes, int pageNumber)
-    {
-        try
-        {
-            var tessDataPath = _config["Ocr:TessDataPath"] ?? "./tessdata";
-            using var engine = new TesseractEngine(tessDataPath, "eng", EngineMode.Default);
-            using var img = Pix.LoadFromMemory(pngBytes);
-            using var result = engine.Process(img);
-            return result.GetText();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "OCR failed for rendered page {Page}; continuing with empty text for this page.", pageNumber);
-            return null;
-        }
     }
 }

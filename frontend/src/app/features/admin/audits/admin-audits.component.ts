@@ -4,11 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { AdminService } from '../../../core/services/admin.service';
 import { formatIpAddress, describeDevice } from '../../../core/utils/request-context.util';
 import { IconComponent } from '../../../shared/components/icon/icon.component';
+import { LoadingHintComponent } from '../../../shared/components/loading-hint/loading-hint.component';
 
 @Component({
   selector: 'app-admin-audits',
   standalone: true,
-  imports: [CommonModule, FormsModule, IconComponent],
+  imports: [CommonModule, FormsModule, IconComponent, LoadingHintComponent],
   template: `
     <div class="page-head">
       <div>
@@ -121,6 +122,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           </tbody>
         </table>
       </div>
+      <app-loading-hint [loading]="loading" />
 
       @if (!loading && visibleLogs.length > 0) {
         <div class="pagination">
@@ -160,7 +162,7 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
     .chip:hover { color: var(--dm-text); }
     .chip.active { background: var(--dm-primary); color: #fff; border-color: var(--dm-primary); }
 
-    .table-wrap { overflow-x: auto; padding: 4px; }
+    .table-wrap { overflow-x: auto; overflow-y: visible; padding: 4px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td { text-align: left; padding: 11px 13px; border-bottom: 1px solid var(--dm-border); white-space: nowrap; }
     th { color: var(--dm-text-muted); font-weight: 600; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -244,15 +246,11 @@ export class AdminAuditsComponent implements OnInit, OnDestroy {
 
   categories = [
     { key: 'Auth', label: 'Auth' },
-    { key: 'Document', label: 'Documents' },
-    { key: 'Subscription', label: 'Subscriptions' },
     { key: 'Admin', label: 'Admin' },
   ];
 
   private categoryColors: Record<string, { bg: string; fg: string }> = {
     Auth: { bg: 'rgba(34,211,238,0.15)', fg: '#22d3ee' },
-    Document: { bg: 'rgba(52,211,153,0.15)', fg: '#34d399' },
-    Subscription: { bg: 'rgba(251,191,36,0.15)', fg: '#fbbf24' },
     Admin: { bg: 'rgba(167,139,250,0.15)', fg: '#a78bfa' },
   };
 

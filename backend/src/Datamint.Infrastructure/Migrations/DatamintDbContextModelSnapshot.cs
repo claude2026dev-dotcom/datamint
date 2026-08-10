@@ -147,12 +147,21 @@ namespace Datamint.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("ExtractionMode")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid?>("ExtractionTierId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("FailureReason")
                         .HasColumnType("nvarchar(max)");
@@ -172,10 +181,8 @@ namespace Datamint.Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.Property<string>("RequestedFields")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("RequiresOcr")
-                        .HasColumnType("bit");
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -191,13 +198,14 @@ namespace Datamint.Infrastructure.Migrations
                     b.Property<Guid>("UploadBatchId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("UploaderIpAddress")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid?>("UserId")
+                    b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ExtractionTierId");
+
+                    b.HasIndex("UploadBatchId");
 
                     b.HasIndex("UserId");
 
@@ -219,6 +227,9 @@ namespace Datamint.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSelectedForExtraction")
+                        .HasColumnType("bit");
+
                     b.Property<int>("PageNumber")
                         .HasColumnType("int");
 
@@ -228,12 +239,10 @@ namespace Datamint.Infrastructure.Migrations
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<bool>("UsedOcr")
-                        .HasColumnType("bit");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("DocumentId");
+                    b.HasIndex("DocumentId", "PageNumber")
+                        .IsUnique();
 
                     b.ToTable("DocumentPages");
                 });
@@ -292,10 +301,12 @@ namespace Datamint.Infrastructure.Migrations
 
                     b.Property<string>("FieldKey")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<string>("FieldValue")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<bool>("IncludeInExport")
                         .HasColumnType("bit");
@@ -304,20 +315,30 @@ namespace Datamint.Infrastructure.Migrations
                         .HasColumnType("bit");
 
                     b.Property<string>("OriginalAiValue")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<string>("OriginalFieldKey")
                         .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("OriginalSectionLabel")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("OriginalSemanticType")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("PageNumber")
                         .HasColumnType("int");
 
                     b.Property<string>("SectionLabel")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
 
                     b.Property<string>("SemanticType")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
@@ -333,6 +354,53 @@ namespace Datamint.Infrastructure.Migrations
                     b.HasIndex("DocumentId");
 
                     b.ToTable("ExtractedFields");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.ExtractionTier", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AiProvider")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CustomInstructions")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("CustomOutputFormatExample")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ModelName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ExtractionTiers");
                 });
 
             modelBuilder.Entity("Datamint.Domain.Entities.FieldTemplate", b =>
@@ -368,6 +436,236 @@ namespace Datamint.Infrastructure.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("FieldTemplates");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.OAuthAuthorizationCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CodeChallenge")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CodeChallengeMethod")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("OAuthClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RedirectUri")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("Used")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("UsedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CodeHash")
+                        .IsUnique();
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("OAuthClientId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("OAuthAuthorizationCodes");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.OAuthClient", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AccessTokenLifetimeMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ClientSecretHash")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("GrantTypes")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsConfidential")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LogoUrl")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("RefreshTokenLifetimeDays")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("RequireConsent")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientId")
+                        .IsUnique();
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.ToTable("OAuthClients");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.OAuthRedirectUri", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("OAuthClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Uri")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OAuthClientId");
+
+                    b.ToTable("OAuthRedirectUris");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.OAuthRefreshToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AuthorizationCodeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("OAuthClientId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Revoked")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OAuthClientId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("OAuthRefreshTokens");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.OAuthScope", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("OAuthScopes");
                 });
 
             modelBuilder.Entity("Datamint.Domain.Entities.PasswordResetToken", b =>
@@ -411,11 +709,8 @@ namespace Datamint.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateTime?>("AbandonedCheckoutEmailSentAtUtc")
-                        .HasColumnType("datetime2");
-
                     b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(10,2)");
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
@@ -433,25 +728,28 @@ namespace Datamint.Infrastructure.Migrations
 
                     b.Property<string>("Provider")
                         .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("ProviderOrderId")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("ProviderPaymentId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("ProviderRefundId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("ProviderSignature")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<decimal?>("RefundAmount")
-                        .HasColumnType("decimal(10,2)");
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("RefundReason")
                         .HasColumnType("nvarchar(max)");
@@ -461,8 +759,8 @@ namespace Datamint.Infrastructure.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<Guid?>("SubscriptionId")
                         .HasColumnType("uniqueidentifier");
@@ -474,6 +772,9 @@ namespace Datamint.Infrastructure.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ProviderOrderId")
+                        .IsUnique();
 
                     b.HasIndex("UserId");
 
@@ -494,12 +795,20 @@ namespace Datamint.Infrastructure.Migrations
 
                     b.Property<string>("Currency")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
 
                     b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid?>("ExtractionTierId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsContactOnly")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsDeleted")
@@ -520,15 +829,18 @@ namespace Datamint.Infrastructure.Migrations
                         .HasColumnType("nvarchar(100)");
 
                     b.Property<decimal>("Price")
-                        .HasColumnType("decimal(10,2)");
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("ProviderPlanId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ExtractionTierId");
 
                     b.ToTable("Plans");
                 });
@@ -568,6 +880,39 @@ namespace Datamint.Infrastructure.Migrations
                     b.ToTable("RefreshTokens");
                 });
 
+            modelBuilder.Entity("Datamint.Domain.Entities.RoleExtractionTierOverride", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ExtractionTierId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExtractionTierId");
+
+                    b.HasIndex("Role")
+                        .IsUnique();
+
+                    b.ToTable("RoleExtractionTierOverrides");
+                });
+
             modelBuilder.Entity("Datamint.Domain.Entities.Subscription", b =>
                 {
                     b.Property<Guid>("Id")
@@ -593,10 +938,12 @@ namespace Datamint.Infrastructure.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ProviderCustomerId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("ProviderSubscriptionId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<DateTime>("StartAtUtc")
                         .HasColumnType("datetime2");
@@ -619,6 +966,52 @@ namespace Datamint.Infrastructure.Migrations
                     b.ToTable("Subscriptions");
                 });
 
+            modelBuilder.Entity("Datamint.Domain.Entities.UserExtractionTierOverride", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("ExtractionTierId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExtractionTierId");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("UserExtractionTierOverrides");
+                });
+
+            modelBuilder.Entity("OAuthClientOAuthScope", b =>
+                {
+                    b.Property<Guid>("ClientsId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ScopesId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("ClientsId", "ScopesId");
+
+                    b.HasIndex("ScopesId");
+
+                    b.ToTable("OAuthClientScopes", (string)null);
+                });
+
             modelBuilder.Entity("Datamint.Domain.Entities.AuditLog", b =>
                 {
                     b.HasOne("Datamint.Domain.Entities.ApplicationUser", "User")
@@ -630,9 +1023,18 @@ namespace Datamint.Infrastructure.Migrations
 
             modelBuilder.Entity("Datamint.Domain.Entities.Document", b =>
                 {
+                    b.HasOne("Datamint.Domain.Entities.ExtractionTier", "ExtractionTier")
+                        .WithMany("Documents")
+                        .HasForeignKey("ExtractionTierId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Datamint.Domain.Entities.ApplicationUser", "User")
                         .WithMany("Documents")
-                        .HasForeignKey("UserId");
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ExtractionTier");
 
                     b.Navigation("User");
                 });
@@ -662,10 +1064,69 @@ namespace Datamint.Infrastructure.Migrations
             modelBuilder.Entity("Datamint.Domain.Entities.FieldTemplate", b =>
                 {
                     b.HasOne("Datamint.Domain.Entities.ApplicationUser", "User")
+                        .WithMany("FieldTemplates")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.OAuthAuthorizationCode", b =>
+                {
+                    b.HasOne("Datamint.Domain.Entities.OAuthClient", "OAuthClient")
+                        .WithMany()
+                        .HasForeignKey("OAuthClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Datamint.Domain.Entities.ApplicationUser", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("OAuthClient");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.OAuthClient", b =>
+                {
+                    b.HasOne("Datamint.Domain.Entities.ApplicationUser", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("CreatedByUser");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.OAuthRedirectUri", b =>
+                {
+                    b.HasOne("Datamint.Domain.Entities.OAuthClient", "OAuthClient")
+                        .WithMany("RedirectUris")
+                        .HasForeignKey("OAuthClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OAuthClient");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.OAuthRefreshToken", b =>
+                {
+                    b.HasOne("Datamint.Domain.Entities.OAuthClient", "OAuthClient")
+                        .WithMany()
+                        .HasForeignKey("OAuthClientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Datamint.Domain.Entities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("OAuthClient");
 
                     b.Navigation("User");
                 });
@@ -684,12 +1145,22 @@ namespace Datamint.Infrastructure.Migrations
             modelBuilder.Entity("Datamint.Domain.Entities.PaymentTransaction", b =>
                 {
                     b.HasOne("Datamint.Domain.Entities.ApplicationUser", "User")
-                        .WithMany()
+                        .WithMany("PaymentTransactions")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.Plan", b =>
+                {
+                    b.HasOne("Datamint.Domain.Entities.ExtractionTier", "ExtractionTier")
+                        .WithMany()
+                        .HasForeignKey("ExtractionTierId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ExtractionTier");
                 });
 
             modelBuilder.Entity("Datamint.Domain.Entities.RefreshToken", b =>
@@ -703,6 +1174,16 @@ namespace Datamint.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Datamint.Domain.Entities.RoleExtractionTierOverride", b =>
+                {
+                    b.HasOne("Datamint.Domain.Entities.ExtractionTier", "ExtractionTier")
+                        .WithMany()
+                        .HasForeignKey("ExtractionTierId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ExtractionTier");
+                });
+
             modelBuilder.Entity("Datamint.Domain.Entities.Subscription", b =>
                 {
                     b.HasOne("Datamint.Domain.Entities.Plan", "Plan")
@@ -714,7 +1195,7 @@ namespace Datamint.Infrastructure.Migrations
                     b.HasOne("Datamint.Domain.Entities.ApplicationUser", "User")
                         .WithMany("Subscriptions")
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Plan");
@@ -722,11 +1203,49 @@ namespace Datamint.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Datamint.Domain.Entities.UserExtractionTierOverride", b =>
+                {
+                    b.HasOne("Datamint.Domain.Entities.ExtractionTier", "ExtractionTier")
+                        .WithMany()
+                        .HasForeignKey("ExtractionTierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Datamint.Domain.Entities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ExtractionTier");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("OAuthClientOAuthScope", b =>
+                {
+                    b.HasOne("Datamint.Domain.Entities.OAuthClient", null)
+                        .WithMany()
+                        .HasForeignKey("ClientsId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Datamint.Domain.Entities.OAuthScope", null)
+                        .WithMany()
+                        .HasForeignKey("ScopesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Datamint.Domain.Entities.ApplicationUser", b =>
                 {
                     b.Navigation("AuditLogs");
 
                     b.Navigation("Documents");
+
+                    b.Navigation("FieldTemplates");
+
+                    b.Navigation("PaymentTransactions");
 
                     b.Navigation("RefreshTokens");
 
@@ -738,6 +1257,16 @@ namespace Datamint.Infrastructure.Migrations
                     b.Navigation("ExtractedFields");
 
                     b.Navigation("Pages");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.ExtractionTier", b =>
+                {
+                    b.Navigation("Documents");
+                });
+
+            modelBuilder.Entity("Datamint.Domain.Entities.OAuthClient", b =>
+                {
+                    b.Navigation("RedirectUris");
                 });
 
             modelBuilder.Entity("Datamint.Domain.Entities.Plan", b =>

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": { "value": "${AZURE_ENV_NAME}" },
+    "location": { "value": "${AZURE_LOCATION}" },
+    "swaLocation": { "value": "${AZURE_SWA_LOCATION=eastasia}" },
+    "principalId": { "value": "${AZURE_PRINCIPAL_ID}" },
+    "principalName": { "value": "${AZURE_PRINCIPAL_NAME}" },
+    "jwtSecret": { "value": "${JWT_SECRET}" },
+    "emailPassword": { "value": "${EMAIL_PASSWORD}" },
+    "claudeApiKey": { "value": "${CLAUDE_API_KEY}" },
+    "openAiApiKey": { "value": "${OPENAI_API_KEY}" }
+  }
+}

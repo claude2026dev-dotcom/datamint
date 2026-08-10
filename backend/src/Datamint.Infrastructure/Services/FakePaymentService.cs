@@ -5,15 +5,13 @@ namespace Datamint.Infrastructure.Services;
 
 /// <summary>
 /// Simulates the full order-create -> pay -> verify -> refund round trip locally, with no
-/// external calls and no real gateway credentials, so the whole subscription flow can be
-/// tested end-to-end before a real payment provider is chosen. This is the default
-/// ("Payment:Provider": "Fake" in appsettings) so the app works out of the box on a fresh
-/// clone; switch it to a real provider name once real gateway credentials exist - nothing
-/// else in the app needs to change, same pattern as AiProvider:Provider.
+/// external calls and no real gateway credentials, so the whole subscription flow can be tested
+/// end-to-end before a real payment provider is chosen. This is the default
+/// ("Payment:Provider": "Fake" in appsettings) so the app works out of the box on a fresh clone.
 ///
-/// There is no real money and no external actor involved, so "signature verification" here
-/// is just a deterministic check that the payment id came from THIS service's own
-/// checkout.component.ts simulate-payment flow (which is itself gated behind the caller's own
+/// There is no real money and no external actor involved, so "signature verification" here is
+/// just a deterministic check that the payment id came from THIS service's own
+/// checkout.component.ts simulate-payment flow (itself gated behind the caller's own
 /// JWT-authenticated order), not a cryptographic guarantee like a real gateway's HMAC.
 /// </summary>
 public class FakePaymentService : IPaymentService

@@ -6,8 +6,7 @@ namespace Datamint.Application.Interfaces;
 /// Abstraction over whichever payment gateway is configured, so controllers/services never
 /// call a specific SDK directly. The concrete implementation is a config switch -
 /// "Payment:Provider" = "Fake" (default, for local end-to-end testing with no real gateway
-/// credentials) or a real gateway name - picked once at DI registration in Program.cs,
-/// mirroring the existing "AiProvider:Provider" Claude/OpenAI switch.
+/// credentials) or a real gateway name - mirroring the AiProvider Claude/OpenAI switch pattern.
 /// </summary>
 public interface IPaymentService
 {
