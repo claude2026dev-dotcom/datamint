@@ -27,6 +27,7 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
     protected readonly IConfiguration Config;
     protected readonly ILogger Logger;
     private readonly int _maxEmptyResultRetries;
+    private readonly int _maxPagesPerExtractionChunk;
 
     protected AiFieldExtractionServiceBase(HttpClient http, IConfiguration config, ILogger logger)
     {
@@ -34,6 +35,13 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         Config = config;
         Logger = logger;
         _maxEmptyResultRetries = int.TryParse(config["Ai:MaxEmptyResultRetries"], out var retries) ? retries : 1;
+        // A dense multi-page batch (many line items per page - bulk invoices/bills) can push
+        // Dynamic mode's single all-pages-in-one-call JSON response past the model's
+        // output-token cap. 3 pages of real-world dense line-item content comfortably fits
+        // with room to spare (confirmed against an actual truncation case), so pages beyond
+        // this are split into separate calls and merged rather than risking truncation.
+        _maxPagesPerExtractionChunk = int.TryParse(config["Ai:MaxPagesPerExtractionChunk"], out var chunkSize) && chunkSize > 0
+            ? chunkSize : 3;
     }
 
     /// <summary>The provider's own API key config value (e.g. Config["Claude:ApiKey"]) - always
@@ -66,6 +74,38 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         // doesn't have that problem, so it keeps the simpler flat shape.
         var isDynamicMode = requestedFields is not { Count: > 0 };
 
+        // Only Dynamic mode's response size scales with page count - Formatted mode's output is
+        // always bounded by the caller's fixed field list regardless of how many pages it spans,
+        // so it's never at risk of the truncation this chunking exists to avoid.
+        if (isDynamicMode && pageList.Count > _maxPagesPerExtractionChunk)
+        {
+            var allFields = new List<ExtractedFieldDto>();
+            foreach (var chunk in Chunk(pageList, _maxPagesPerExtractionChunk))
+            {
+                var chunkResult = await ExtractChunkAsync(chunk, tier, requestedFields, isDynamicMode, apiKey, ct);
+                // Fail the whole document rather than silently return a partial result if any
+                // chunk fails outright - the caller has no way to tell "partial" from "complete"
+                // otherwise, and a silently incomplete extraction is worse than a clear failure.
+                if (!chunkResult.Success)
+                    return chunkResult;
+                allFields.AddRange(chunkResult.Fields);
+            }
+            return new AiExtractionResultDto(allFields, true, null);
+        }
+
+        return await ExtractChunkAsync(pageList, tier, requestedFields, isDynamicMode, apiKey, ct);
+    }
+
+    private static IEnumerable<List<PdfPageTextDto>> Chunk(List<PdfPageTextDto> pages, int size)
+    {
+        for (var i = 0; i < pages.Count; i += size)
+            yield return pages.GetRange(i, Math.Min(size, pages.Count - i));
+    }
+
+    private async Task<AiExtractionResultDto> ExtractChunkAsync(
+        List<PdfPageTextDto> pageList, ExtractionTier tier, IReadOnlyList<string>? requestedFields,
+        bool isDynamicMode, string apiKey, CancellationToken ct)
+    {
         // Images accompany only the first-pass call (and empty-result retries below) - the
         // verification pass's job is character-by-character digit checking, which the real
         // PdfPig/OCR text already serves at least as well as a downscaled image of a dense
