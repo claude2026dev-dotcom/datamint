@@ -1,13 +1,13 @@
-# Grant Azure SQL data-plane access to the App Service / Container App managed identity.
+# Grant Azure SQL data-plane access to the API's managed identity.
 #
-# USAGE: Copy this file to scripts/grant-sql-access.ps1 in your project root and add
-#        a postprovision hook in azure.yaml:
+# Runs scripts/SqlGrant (a tiny dotnet console tool using Microsoft.Data.SqlClient with
+# Authentication=Active Directory Default - the same auth path the deployed app itself uses).
+# `az sql db query` does not exist, and the `rdbms-connect` CLI extension only supports
+# MySQL/PostgreSQL flexible servers, not Azure SQL Database - there is no `az` one-liner for this.
 #
+# Called as a postprovision hook from azure.yaml:
 #   hooks:
 #     postprovision:
-#       posix:
-#         shell: sh
-#         run: ./scripts/grant-sql-access.sh
 #       windows:
 #         shell: pwsh
 #         run: ./scripts/grant-sql-access.ps1
@@ -15,12 +15,16 @@
 # ENVIRONMENT VARIABLES (sourced from azd env):
 #   SQL_SERVER           - SQL server name (without .database.windows.net)
 #   SQL_DATABASE         - Database name
-#   AZURE_RESOURCE_GROUP - Resource group name
-#   SERVICE_WEB_NAME     - App Service name (used when set, takes priority)
-#   SERVICE_API_NAME     - API service name (fallback when SERVICE_WEB_NAME is not set)
+#   SERVICE_API_NAME     - The API App Service name - this is the identity that actually needs
+#                           SQL access (SERVICE_WEB_NAME is a Static Web App with no managed
+#                           identity and no database access in this project, deliberately NOT
+#                           used here even though it's the generic reference pattern's default).
 #   SQL_GRANT_DDLADMIN   - Set to "true" to also grant db_ddladmin (needed for EF migrations)
 
-$ErrorActionPreference = 'Stop'
+# Deliberately NOT $ErrorActionPreference = 'Stop': in Windows PowerShell 5.1, a native exe's
+# stderr output (even non-fatal warnings) becomes a terminating error under -Stop regardless of
+# output redirection. Native commands below are checked explicitly via $LASTEXITCODE instead.
+$ErrorActionPreference = 'Continue'
 
 # Load azd environment variables
 azd env get-values | ForEach-Object {
@@ -28,67 +32,17 @@ azd env get-values | ForEach-Object {
     Set-Item "env:$name" $value.Trim('"')
 }
 
-# Determine app identity name (App Service uses SERVICE_WEB_NAME, APIs use SERVICE_API_NAME)
-$AppName = if ($env:SERVICE_WEB_NAME) { $env:SERVICE_WEB_NAME } else { $env:SERVICE_API_NAME }
-
-if (-not $AppName) {
-    throw "ERROR: Neither SERVICE_WEB_NAME nor SERVICE_API_NAME is set in azd environment."
+if (-not $env:SERVICE_API_NAME) {
+    Write-Error "ERROR: SERVICE_API_NAME is not set in azd environment."
+    exit 1
 }
 
-Write-Host "Granting SQL data-plane access to managed identity: $AppName"
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$grantDdlAdmin = if ($env:SQL_GRANT_DDLADMIN -eq 'true') { 'true' } else { 'false' }
 
-# Build idempotent SQL grant queries (reader + writer, required for all apps)
-$SqlQuery = @"
-IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '$AppName')
-  CREATE USER [$AppName] FROM EXTERNAL PROVIDER;
+dotnet run --project "$scriptDir\SqlGrant" -- $env:SQL_SERVER $env:SQL_DATABASE $env:SERVICE_API_NAME $grantDdlAdmin
 
-IF NOT EXISTS (
-  SELECT 1 FROM sys.database_role_members drm
-  JOIN sys.database_principals r ON drm.role_principal_id = r.principal_id
-  JOIN sys.database_principals m ON drm.member_principal_id = m.principal_id
-  WHERE r.name = 'db_datareader' AND m.name = '$AppName'
-)
-  ALTER ROLE db_datareader ADD MEMBER [$AppName];
-
-IF NOT EXISTS (
-  SELECT 1 FROM sys.database_role_members drm
-  JOIN sys.database_principals r ON drm.role_principal_id = r.principal_id
-  JOIN sys.database_principals m ON drm.member_principal_id = m.principal_id
-  WHERE r.name = 'db_datawriter' AND m.name = '$AppName'
-)
-  ALTER ROLE db_datawriter ADD MEMBER [$AppName];
-"@
-
-# Optionally grant db_ddladmin (needed when EF Core migrations run at startup or via hook)
-$GrantDdlAdmin = $env:SQL_GRANT_DDLADMIN -eq 'true'
-if ($GrantDdlAdmin) {
-    $SqlQuery += @"
-
-IF NOT EXISTS (
-  SELECT 1 FROM sys.database_role_members drm
-  JOIN sys.database_principals r ON drm.role_principal_id = r.principal_id
-  JOIN sys.database_principals m ON drm.member_principal_id = m.principal_id
-  WHERE r.name = 'db_ddladmin' AND m.name = '$AppName'
-)
-  ALTER ROLE db_ddladmin ADD MEMBER [$AppName];
-"@
-}
-
-# Ensure the rdbms-connect extension is installed (provides 'az sql db query')
-az extension show --name rdbms-connect *> $null
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Azure CLI extension 'rdbms-connect' is not installed. Installing..."
-    az extension add --name rdbms-connect --yes
-    if ($LASTEXITCODE -ne 0) {
-        throw "ERROR: Failed to install Azure CLI extension 'rdbms-connect'. Cannot continue because 'az sql db query' requires it."
-    }
+    Write-Error "ERROR: SqlGrant tool failed with exit code $LASTEXITCODE."
+    exit 1
 }
-
-az sql db query `
-  --server $env:SQL_SERVER `
-  --database $env:SQL_DATABASE `
-  --resource-group $env:AZURE_RESOURCE_GROUP `
-  --auth-mode ActiveDirectoryDefault `
-  --queries $SqlQuery
-
-Write-Host "SQL access granted successfully."
