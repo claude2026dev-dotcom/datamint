@@ -44,11 +44,27 @@ export class AuthService {
     return raw ? JSON.parse(raw) : null;
   }
 
+  /// The backend always returns avatarUrl as a path relative to the API's own origin
+  /// (e.g. "/api/auth/avatar/xyz.jpg"), never a full URL. In production the frontend
+  /// (Static Web Apps) and API (App Service) live on entirely different domains, so
+  /// binding that path straight into an <img src> 404s against the frontend's own
+  /// origin instead of the API's. Every avatarUrl this service stores goes through
+  /// here first so every consumer (navbar, profile page) can just use it directly.
+  /// Leading-slash paths resolve against the base URL's origin regardless of the
+  /// base's own path segment (e.g. the trailing "/api" in apiBaseUrl), per the WHATWG
+  /// URL spec - so this can't accidentally produce a doubled "/api/api/...".
+  resolveAvatarUrl(url: string | null | undefined): string | undefined {
+    if (!url) return undefined;
+    if (/^https?:\/\//i.test(url)) return url;
+    return new URL(url, environment.apiBaseUrl).href;
+  }
+
   private persistSession(res: AuthResponse) {
+    const user = { ...res.user, avatarUrl: this.resolveAvatarUrl(res.user.avatarUrl) };
     localStorage.setItem(ACCESS_TOKEN_KEY, res.accessToken);
     localStorage.setItem(REFRESH_TOKEN_KEY, res.refreshToken);
-    localStorage.setItem(USER_KEY, JSON.stringify(res.user));
-    this.userSignal.set(res.user);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    this.userSignal.set(user);
     this.sessionExpiryHandled = false;
   }
 
@@ -130,7 +146,7 @@ export class AuthService {
   private syncAvatar(avatarUrl: string | null | undefined) {
     const current = this.userSignal();
     if (!current) return;
-    const updated = { ...current, avatarUrl: avatarUrl ?? undefined };
+    const updated = { ...current, avatarUrl: this.resolveAvatarUrl(avatarUrl) };
     localStorage.setItem(USER_KEY, JSON.stringify(updated));
     this.userSignal.set(updated);
   }
@@ -148,7 +164,7 @@ export class AuthService {
       next: res => {
         const current = this.userSignal();
         if (!current) return;
-        const updated = { ...current, displayName: res.profile.displayName, avatarUrl: res.profile.avatarUrl ?? undefined };
+        const updated = { ...current, displayName: res.profile.displayName, avatarUrl: this.resolveAvatarUrl(res.profile.avatarUrl) };
         localStorage.setItem(USER_KEY, JSON.stringify(updated));
         this.userSignal.set(updated);
       },
