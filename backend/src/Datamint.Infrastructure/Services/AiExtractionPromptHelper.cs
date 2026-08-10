@@ -264,7 +264,7 @@ internal static class AiExtractionPromptHelper
     public static List<ExtractedFieldDto> ParseFieldsJson(string rawModelText)
     {
         var cleaned = CleanJsonText(rawModelText);
-        var parsed = JsonSerializer.Deserialize<List<FlatFieldJson>>(cleaned, JsonOptions)
+        var parsed = DeserializeWithTruncationRepair<List<FlatFieldJson>>(cleaned)
                      ?? new List<FlatFieldJson>();
 
         return parsed.Select(f => new ExtractedFieldDto(f.Key, f.Value, f.Page, f.Type, f.Section, f.Priority)).ToList();
@@ -274,7 +274,7 @@ internal static class AiExtractionPromptHelper
     public static List<ExtractedFieldDto> ParsePageGroupedFieldsJson(string rawModelText)
     {
         var cleaned = CleanJsonText(rawModelText);
-        var parsed = JsonSerializer.Deserialize<List<PageGroupJson>>(cleaned, JsonOptions)
+        var parsed = DeserializeWithTruncationRepair<List<PageGroupJson>>(cleaned)
                      ?? new List<PageGroupJson>();
 
         var result = new List<ExtractedFieldDto>();
@@ -290,6 +290,66 @@ internal static class AiExtractionPromptHelper
     private static string CleanJsonText(string rawModelText) =>
         rawModelText.Trim().TrimStart('`').TrimEnd('`')
             .Replace("json", "", StringComparison.OrdinalIgnoreCase).Trim();
+
+    /// <summary>
+    /// A large batch (many pages/documents in one call) can make the model's JSON response long
+    /// enough to hit the provider's output-token cap mid-generation, leaving an unterminated
+    /// string/object at the end. A plain Deserialize throws on that. Rather than losing every
+    /// field in the batch to one truncated tail, this retries against the longest prefix of the
+    /// response that ends on a complete top-level array element - recovering every page/field
+    /// that DID finish generating and dropping only the one partial element at the very end.
+    /// </summary>
+    private static T? DeserializeWithTruncationRepair<T>(string json) where T : class
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<T>(json, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            var repaired = RepairTruncatedJsonArray(json);
+            if (ReferenceEquals(repaired, json)) throw; // no complete element found to salvage
+            return JsonSerializer.Deserialize<T>(repaired, JsonOptions);
+        }
+    }
+
+    /// <summary>
+    /// Scans a (possibly truncated) top-level JSON array, tracking bracket depth while respecting
+    /// quoted strings/escapes, and remembers the position right after the last time depth returned
+    /// to 1 - i.e. the end of the last fully-formed element directly inside the outer array. Cuts
+    /// there and closes the array. Returns the input unchanged (same reference) if no such point
+    /// exists, so callers can detect "nothing salvageable" via reference equality.
+    /// </summary>
+    private static string RepairTruncatedJsonArray(string json)
+    {
+        var depth = 0;
+        var inString = false;
+        var escaped = false;
+        var lastSafeCut = -1;
+
+        foreach (var (c, i) in json.Select((c, i) => (c, i)))
+        {
+            if (inString)
+            {
+                if (escaped) escaped = false;
+                else if (c == '\\') escaped = true;
+                else if (c == '"') inString = false;
+                continue;
+            }
+
+            switch (c)
+            {
+                case '"': inString = true; break;
+                case '[' or '{': depth++; break;
+                case ']' or '}':
+                    depth--;
+                    if (depth == 1) lastSafeCut = i + 1;
+                    break;
+            }
+        }
+
+        return lastSafeCut <= 0 ? json : json[..lastSafeCut] + "]";
+    }
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
