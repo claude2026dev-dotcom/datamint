@@ -193,10 +193,11 @@ public class DocumentsController : ControllerBase
 
         if (subscription is not null)
         {
-            // Charged in actual extracted pages - a failed extraction (PageCount still reported
-            // since text extraction succeeded even if the AI call failed) still counts, since
-            // the quota gate above already confirmed the whole batch fits.
-            subscription.PagesUsedThisCycle += results.Sum(d => d.PageCount);
+            // Only successfully-extracted documents count against quota - a document that ended
+            // up Failed (AI call error, unparseable response, or any other processing failure)
+            // gave the user nothing usable, so it shouldn't consume their plan's page allowance.
+            var chargeablePages = results.Where(d => d.Status != nameof(DocumentStatus.Failed)).Sum(d => d.PageCount);
+            subscription.PagesUsedThisCycle += chargeablePages;
             await _db.SaveChangesAsync(ct);
         }
 
