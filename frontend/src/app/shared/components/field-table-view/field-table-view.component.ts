@@ -1,6 +1,7 @@
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ExtractedFieldEdit, FieldEditorDocument } from '../../../core/models/models';
+import { IconComponent } from '../icon/icon.component';
 
 interface RepeatingTable {
   columns: string[];
@@ -42,7 +43,7 @@ interface SectionGroup {
 @Component({
   selector: 'app-field-table-view',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, IconComponent],
   template: `
     @if (viewMode === 'rows') {
       @for (doc of tableDocuments; track doc.id) {
@@ -91,6 +92,17 @@ interface SectionGroup {
         </div>
       }
     } @else {
+      @if (documents.length > 1) {
+        <!-- Only shown on a narrow screen (see the media query below) - the desktop grid makes
+             the row-per-document comparison shape obvious on its own, but once it reshapes into
+             stacked per-document cards for mobile, nothing else on screen explains that these
+             cards are still the same side-by-side comparison table underneath, just one column's
+             values stacked as label/value pairs per card instead of true side-by-side columns. -->
+        <p class="mobile-columns-hint">
+          <app-icon name="sparkles" [size]="13" />
+          Each card below is one document - same comparison table as your Excel/JSON export, reshaped to fit this screen.
+        </p>
+      }
       <div class="dm-card table-card">
         <div class="table-scroll">
           <table class="plain-table cols-table">
@@ -115,10 +127,10 @@ interface SectionGroup {
             </thead>
             <tbody>
               @for (doc of documents; track doc.id) {
-                <tr>
+                <tr class="doc-row">
                   <td class="doc-col" [title]="doc.fileName">{{ doc.fileName }}</td>
                   @for (col of columns; track col.key) {
-                    <td>{{ findValue(doc, col.key) }}</td>
+                    <td [attr.data-label]="col.key">{{ findValue(doc, col.key) }}</td>
                   }
                 </tr>
               }
@@ -142,7 +154,7 @@ interface SectionGroup {
        many columns still scrolls horizontally inside .table-scroll instead of being squeezed. */
     .table-card { padding: 0; margin: 0 0 20px; overflow: hidden; width: 100%; }
     .table-card .plain-table { width: 100%; }
-    .doc-head { padding: 13px 16px; font-weight: 700; font-size: 0.94rem; border-bottom: 1px solid var(--dm-border); background: var(--dm-surface); }
+    .doc-head { padding: 13px 16px; font-weight: 700; font-size: 0.94rem; border-bottom: 1px solid var(--dm-border); background: color-mix(in srgb, var(--dm-primary) 7%, var(--dm-surface)); }
     /* Thin, theme-matched scrollbar instead of the browser's default chunky one - transparent
        track so it only shows visual weight where the thumb actually is. */
     /* scrollbar-gutter:stable reserves the scrollbar's width whether or not a vertical scrollbar
@@ -150,11 +162,11 @@ interface SectionGroup {
        wider than a taller stacked document that DOES need one, shifting the Field/Value/Type
        column boundaries out of alignment between cards even though both use the same fixed
        column widths. */
-    .table-scroll { max-height: 72vh; overflow: auto; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--dm-border) transparent; }
+    .table-scroll { max-height: 72vh; overflow: auto; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--dm-scrollbar-thumb) transparent; }
     .table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
     .table-scroll::-webkit-scrollbar-track { background: transparent; }
-    .table-scroll::-webkit-scrollbar-thumb { background: var(--dm-border); border-radius: 4px; }
-    .table-scroll::-webkit-scrollbar-thumb:hover { background: var(--dm-text-muted); }
+    .table-scroll::-webkit-scrollbar-thumb { background: var(--dm-scrollbar-thumb); border-radius: 4px; }
+    .table-scroll::-webkit-scrollbar-thumb:hover { background: var(--dm-scrollbar-thumb-hover); }
     /* border-collapse:collapse + position:sticky cells is a well-documented Chromium/WebKit
        rendering bug: adjacent cell borders and backgrounds can repaint incorrectly during
        scroll, leaving ghosted/overlapping text right at the sticky boundary - exactly the
@@ -162,9 +174,12 @@ interface SectionGroup {
        per-cell bottom/right borders (instead of all four sides) draws the same clean grid
        without tripping that bug, since collapsed cells never need to be reconciled. */
     .plain-table { border-collapse: separate; border-spacing: 0; table-layout: auto; width: auto; }
-    .plain-table th, .plain-table td { border-bottom: 1px solid var(--grid-line); border-right: 1px solid var(--grid-line); padding: 14px 18px; text-align: left; vertical-align: top; font-size: 0.96rem; line-height: 1.45; background: var(--dm-bg, var(--dm-surface)); overflow-wrap: break-word; }
+    .plain-table th, .plain-table td { border-bottom: 1px solid var(--grid-line); border-right: 1px solid var(--grid-line); padding: 14px 18px; text-align: left; vertical-align: top; font-size: 1rem; line-height: 1.45; background: var(--dm-bg, var(--dm-surface)); overflow-wrap: break-word; }
     .plain-table th:first-child, .plain-table td:first-child { border-left: 1px solid var(--grid-line); }
-    .plain-table thead th { position: sticky; top: 0; z-index: 3; background: var(--dm-bg-elevated); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); font-weight: 700; border-top: 1px solid var(--grid-line); will-change: transform; }
+    /* Plain --dm-bg-elevated (near-white on top of a near-white body in light mode) barely read
+       as a "header" at all - a soft primary-tinted wash makes the column-name row clearly its
+       own band at a glance, in both themes, without going as loud as a solid accent color. */
+    .plain-table thead th { position: sticky; top: 0; z-index: 3; background: color-mix(in srgb, var(--dm-primary) 8%, var(--dm-bg-elevated)); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dm-text-muted); font-weight: 700; border-top: 1px solid var(--grid-line); will-change: transform; }
     /* table-layout:auto sizes each <table> to ITS OWN content, independently of any sibling
        table - fine for a single document, but in bulk Rows view every document gets its own
        <table> stacked one after another, and each one would end up with a different Field/Type
@@ -173,14 +188,21 @@ interface SectionGroup {
        explicit width on Field/Type (col-val left unset, so it fills whatever's left) forces every
        .rows-table to use the exact same column boundaries, since they all now share the same
        full-bleed table width from .table-card - the alignment is then guaranteed by construction,
-       not by coincidence of similar content. */
-    .rows-table { table-layout: fixed; }
+       not by coincidence of similar content.
+       min-width matters just as much as the fixed widths themselves: without it, a narrow mobile
+       viewport (e.g. 375px) is well under Field(260)+Type(190)=450px alone, so the unset Value
+       column's "remainder" share of the table's width goes negative - the browser still renders
+       it, but at a sliver of a width, wrapping every single character of the value onto its own
+       line. min-width keeps the table itself wider than the viewport instead, so .table-scroll's
+       existing horizontal scroll kicks in (the same swipe-to-see-more pattern the Columns view
+       already relies on) rather than ever collapsing a column to unreadable vertical text. */
+    .rows-table { table-layout: fixed; min-width: 640px; }
     .rows-table .col-key { width: 260px; }
-    .rows-table .col-type { width: 148px; }
+    .rows-table .col-type { width: 190px; }
     .col-key { font-weight: 600; }
     .col-type { white-space: nowrap; }
-    .type-pill { display: inline-block; font-size: 0.74rem; font-weight: 600; padding: 4px 11px; border-radius: 999px; background: rgba(99,102,241,0.1); color: var(--dm-primary); white-space: nowrap; }
-    .section-row td { background: var(--dm-surface); font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--dm-primary); border-left: 3px solid var(--dm-primary); }
+    .type-pill { display: inline-block; font-size: 0.76rem; font-weight: 600; padding: 4px 12px; border-radius: 999px; background: rgba(99,102,241,0.1); color: var(--dm-primary); white-space: nowrap; }
+    .section-row td { background: color-mix(in srgb, var(--dm-primary) 7%, var(--dm-surface)); font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--dm-primary); border-left: 3px solid var(--dm-primary); }
     tbody tr.odd td { background: var(--dm-surface); }
 
     /* Repeating line items (AI-extracted duplicate field keys, e.g. multiple "Item Description"
@@ -222,7 +244,7 @@ interface SectionGroup {
        the next section's own label (now within the visible/sticky range) takes over. */
     /* .plain-table th's own padding rule has higher specificity (class+type vs. class alone) so
        overriding it here needs a matching-or-higher selector, not just ".section-head" alone. */
-    .plain-table th.section-head { padding: 0; text-align: left; background: var(--dm-surface); box-shadow: inset 0 -1px 0 var(--dm-border); }
+    .plain-table th.section-head { padding: 0; text-align: left; background: color-mix(in srgb, var(--dm-primary) 7%, var(--dm-surface)); box-shadow: inset 0 -1px 0 var(--dm-border); }
     .section-head-label {
       position: sticky; left: 220px; z-index: 4; display: inline-block;
       padding: 9px 15px; color: var(--dm-primary); font-weight: 700;
@@ -247,6 +269,61 @@ interface SectionGroup {
 
     @media (max-width: 640px) {
       .plain-table th, .plain-table td { padding: 10px 13px; font-size: 0.88rem; }
+    }
+
+    /* Columns view is a real spreadsheet grid - great on a wide screen, but on a phone it can
+       easily have more field columns than the screen can ever show at once, forcing a sideways
+       scroll where a column's header/value trails off the edge mid-word (unreadable, and easy to
+       mistake for a bug in the data itself). Rather than fight that with the grid intact, the
+       standard responsive-table answer applies here: below this width, stop rendering it as a
+       table at all and let each document become its own stacked "Field: Value" card instead -
+       exactly what a phone screen is actually good at scrolling (vertically), with nothing ever
+       cut off sideways. thead is hidden entirely (its column names move onto each value via
+       data-label, see below); each <tr> becomes a bordered card and each <td> a flex row with its
+       field name as a label. .doc-col becomes the card's own heading instead of a frozen sticky
+       column, so it needs its sticky/frozen styling turned off here too. */
+    .mobile-columns-hint { display: none; }
+    @media (max-width: 700px) {
+      .mobile-columns-hint {
+        display: flex; align-items: center; gap: 7px; margin: 0 0 12px; padding: 10px 14px;
+        border-radius: var(--dm-radius-sm); background: color-mix(in srgb, var(--dm-primary) 6%, var(--dm-surface));
+        color: var(--dm-text-muted); font-size: 0.82rem; line-height: 1.4;
+      }
+      .mobile-columns-hint app-icon { color: var(--dm-primary); flex-shrink: 0; }
+      .cols-table { display: block; width: 100%; min-width: 0; table-layout: auto; }
+      .cols-table thead { display: none; }
+      .cols-table tbody { display: block; }
+      /* A stronger card boundary (thicker border, real shadow, more breathing room between
+         cards) than the desktop grid needs - on a phone, this card IS the whole visual unit that
+         says "everything below belongs to this one document", so it has to read clearly as its
+         own block at a glance, not just another table row. */
+      .cols-table .doc-row {
+        display: block; margin-bottom: 20px; border: 1px solid var(--dm-border);
+        border-radius: var(--dm-radius-md); overflow: hidden; background: var(--dm-bg-elevated);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      }
+      .cols-table .doc-row:last-child { margin-bottom: 0; }
+      /* Label above value (not side-by-side) - a side-by-side row forces the field name and its
+         value to compete for the same line, and looks broken the moment a longer field name wraps
+         to two lines while its value stays pinned to the right on one line, with the two no longer
+         reading as a clear pair. Stacking them stays readable regardless of either one's length,
+         and matches the label-above-value shape already used everywhere else in the app's edit
+         view instead of inventing a new side-by-side pattern just for this one case. */
+      .cols-table .doc-row td { display: block; padding: 12px 16px; border: none; border-bottom: 1px solid var(--grid-line); text-align: left; }
+      .cols-table .doc-row td:last-child { border-bottom: none; }
+      /* content:attr() reads the column name straight from the data-label attribute set on each
+         <td> in the template - no separate label markup needed, and it can never drift out of
+         sync with the real column list the way a manually-duplicated label element could. */
+      .cols-table .doc-row td:not(.doc-col)::before {
+        content: attr(data-label); display: block; font-weight: 700; font-size: 0.7rem;
+        text-transform: uppercase; letter-spacing: 0.03em; color: var(--dm-text-muted); margin-bottom: 4px;
+      }
+      .cols-table .doc-col, .cols-table td.doc-col {
+        position: static; display: flex; align-items: center; gap: 8px; width: auto; min-width: 0; max-width: none;
+        padding: 13px 16px; background: color-mix(in srgb, var(--dm-primary) 9%, var(--dm-surface));
+        border-bottom: 1px solid var(--dm-border); font-weight: 700; font-size: 0.96rem;
+        box-shadow: none; white-space: normal; overflow-wrap: break-word;
+      }
     }
   `]
 })
