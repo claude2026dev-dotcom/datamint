@@ -157,7 +157,7 @@ export class ProfileComponent implements OnInit {
       next: res => {
         this.email = res.profile.email;
         this.displayName = res.profile.displayName ?? '';
-        this.avatarUrl = res.profile.avatarUrl ?? null;
+        this.avatarUrl = this.auth.resolveAvatarUrl(res.profile.avatarUrl) ?? null;
         this.loading = false;
       },
       error: () => {
@@ -202,7 +202,7 @@ export class ProfileComponent implements OnInit {
     this.auth.uploadAvatar(file).subscribe({
       next: res => {
         this.uploading = false;
-        this.avatarUrl = res.profile.avatarUrl ?? null;
+        this.avatarUrl = this.auth.resolveAvatarUrl(res.profile.avatarUrl) ?? null;
         this.avatarError = false;
         this.toast.success('Profile picture updated.');
       },
