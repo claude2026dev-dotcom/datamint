@@ -14,11 +14,17 @@ services:
     host: staticwebapp
     dist: dist/datamint/browser
     hooks:
-      predeploy:
-        shell: sh
-        run: node ../scripts/patch-frontend-env.js
-        interactive: false
-        continueOnError: false
+      # prepackage, not predeploy: `npm run build` (ng build) runs during PACKAGING, which
+      # happens before the predeploy stage - patching environment.prod.ts in a predeploy hook
+      # patches the source file too late, after the stale placeholder was already compiled into
+      # dist/. prepackage runs before the build, so the patched value actually gets bundled in.
+      prepackage:
+        posix:
+          shell: sh
+          run: node ../scripts/patch-frontend-env.js
+        windows:
+          shell: pwsh
+          run: node ../scripts/patch-frontend-env.js
 
 hooks:
   postprovision:

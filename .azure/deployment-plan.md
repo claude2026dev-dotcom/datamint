@@ -1,6 +1,18 @@
 # Azure Deployment Plan
 
-> **Status:** Planning — awaiting user approval
+> **Status:** Deployed
+
+Live and verified end-to-end:
+- API: https://datamint-api-4gszcm.azurewebsites.net/ (`/health` → 200, `/api/version` → `2.0.0`, `/api/subscription/plans` → real DB-backed response)
+- Frontend: https://proud-tree-0fd6f0f00.7.azurestaticapps.net/ (loads, correctly calls the live API)
+- Database: `datamint-sql-4gszcm` / `DatamintDb`, Entra-only auth, EF Core migrations applied, queryable via the app's managed identity
+
+**Real issues hit and fixed during deployment (documented for future reference, not just for this run):**
+1. `az sql db query` is not a real Azure CLI command, and the `rdbms-connect` extension only supports MySQL/PostgreSQL flexible servers, not Azure SQL Database - replaced with `scripts/SqlGrant`, a tiny dotnet console tool using `Microsoft.Data.SqlClient` + `Authentication=Active Directory Default` (the same auth path the deployed app itself uses).
+2. The postprovision script's identity-priority logic (copied from a generic reference pattern) defaulted to `SERVICE_WEB_NAME` - wrong for this project, since `web` is a Static Web App with no managed identity/database access. Fixed to always target `SERVICE_API_NAME`.
+3. Windows PowerShell 5.1 promotes a native command's stderr to a terminating error under `$ErrorActionPreference = 'Stop'` even when redirected - broke the `rdbms-connect` extension-install check. Fixed by using `'Continue'` + explicit `$LASTEXITCODE` checks throughout.
+4. The web service's `predeploy` hook patched `environment.prod.ts` too late - `azd` runs packaging (`npm run build`) *before* `predeploy`, so the stale placeholder API URL was already compiled into the bundle. Moved the patch to a `prepackage` hook instead.
+5. `shell: sh` doesn't exist on Windows - needed the same `posix`/`windows` split already used for the `postprovision` hook.
 
 Generated: 2026-08-10
 
@@ -121,27 +133,61 @@ Not secret (plain App Settings, not Key Vault): `GoogleAuth:ClientId` (public by
 ### Phase 1: Planning
 - [x] Analyze workspace
 - [x] Gather requirements
-- [ ] Confirm subscription and location with user ⚠️ **awaiting confirmation on the two-region split (centralindia + eastasia)**
+- [x] Confirm subscription and location with user — confirmed: centralindia (API/SQL/KeyVault) + eastasia (SWA)
 - [x] Prepare resource inventory
 - [x] Fetch quotas and validate capacity
 - [x] Scan codebase
 - [x] Select recipe
 - [x] Plan architecture
-- [ ] **User approved this plan**
+- [x] **User approved this plan**
 
 ### Phase 2: Execution
-- [ ] Research components (load references, invoke skills)
-- [ ] Generate infrastructure files (`infra/*.bicep`, Entra-only SQL, managed identity wiring)
-- [ ] Generate `azure.yaml`
-- [ ] Generate application configuration changes (Key Vault references, connection string → Entra auth, `/home`-based upload path)
-- [ ] Update plan status to "Ready for Validation"
+- [x] Research components (App Service/SQL/Key Vault Bicep patterns, azd recipe, SQL grant-access hook)
+- [x] Generate infrastructure files (`infra/main.bicep`, `infra/modules/resources.bicep`, Entra-only SQL, managed identity wiring)
+- [x] Generate `azure.yaml` (api on appservice, web on staticwebapp with predeploy hook)
+- [x] Generate application configuration changes (Key Vault references via App Settings, Entra connection string, `/home/uploads` path, `/health` endpoint)
+- [x] Update plan status to "Ready for Validation"
 
 ### Phase 3: Validation
-- [ ] Invoke azure-validate skill
+- [x] Invoke azure-validate skill
+  - [x] AZD Installation — `azd version 1.30.0`
+  - [x] Schema Validation — `azd show` parses both services correctly
+  - [x] Environment Setup — `datamint-prod-hrel` created
+  - [x] Authentication Check — `azd auth login` (device code), confirmed via `--check-status`
+  - [x] Subscription/Location Check — set via `azd env set`
+  - [x] Provision Preview — `azd provision --preview --no-prompt` succeeded
+  - [x] Build Verification — `dotnet build` + `ng build` clean on develop/qa/master
+  - [x] Package Validation — `azd package --no-prompt` succeeded for both services
+  - [x] Azure Policy Validation — only policy is a West Europe region block; unaffected (using centralindia/eastasia)
+- [x] All validation checks pass
+- [x] Update plan status to "Validated"
+- [x] Record validation proof below
 
 ### Phase 4: Deployment
 - [ ] Invoke azure-deploy skill
 - [ ] Report deployed endpoint URLs
+
+---
+
+## 7b. Validation Proof
+
+| Check | Command Run | Result | Timestamp |
+|-------|-------------|--------|-----------|
+| AZD installed | `azd version` | ✅ 1.30.0 | 2026-08-10 |
+| azd/az authenticated | `az login` + `azd auth login` (both device-code), `azd auth login --check-status` | ✅ claude2026dev@gmail.com | 2026-08-10 |
+| azd environment | `azd env new datamint-prod-hrel` | ✅ created, set as default | 2026-08-10 |
+| Subscription/location | `azd env set AZURE_SUBSCRIPTION_ID/AZURE_LOCATION/AZURE_SWA_LOCATION`, `azd env get-values` | ✅ centralindia / eastasia | 2026-08-10 |
+| SQL Entra admin principal | `az ad signed-in-user show`, `azd env set AZURE_PRINCIPAL_ID/NAME` | ✅ "DataMint Project" | 2026-08-10 |
+| Secrets seeded | `node scripts/seed-azd-secrets.js` | ✅ JWT/Email/Claude keys set (not printed); OpenAI left as placeholder (not configured locally) | 2026-08-10 |
+| azure.yaml schema | `azd show` | ✅ both services (api, web) parsed correctly | 2026-08-10 |
+| Bicep provision preview | `azd provision --preview --no-prompt` | ✅ 6 resources planned (RG, Key Vault, SQL Server, App Service plan, Web App, Static Web App), no errors | 2026-08-10 |
+| Backend build | `dotnet build` (develop/qa/master) | ✅ 0 errors | 2026-08-10 |
+| Frontend build | `ng build --configuration production` / `qa` (develop/qa/master) | ✅ 0 errors | 2026-08-10 |
+| Package validation | `azd package --no-prompt` | ✅ both services packaged | 2026-08-10 |
+| Azure Policy check | `mcp_azure_mcp_policy policy_assignment_list` | ✅ only a West Europe region-block policy exists; unaffected (using centralindia/eastasia) | 2026-08-10 |
+
+**Validated by:** azure-validate skill
+**Validation timestamp:** 2026-08-10
 
 ---
 
@@ -150,16 +196,15 @@ Not secret (plain App Settings, not Key Vault): `GoogleAuth:ClientId` (public by
 | File | Purpose | Status |
 |------|---------|--------|
 | `.azure/deployment-plan.md` | This plan | ✅ |
-| `azure.yaml` | AZD configuration | ⏳ |
-| `infra/main.bicep` + modules | App Service, SQL (Entra-only), Key Vault, managed identity role assignments | ⏳ |
-| `frontend/staticwebapp.config.json` | SWA routing config (API proxy, SPA fallback) | ⏳ |
+| `azure.yaml` | AZD configuration | ✅ |
+| `infra/main.bicep` + modules | App Service, SQL (Entra-only), Key Vault, managed identity role assignments | ✅ |
+| `frontend/staticwebapp.config.json` | SWA routing config (SPA fallback) | ✅ |
 
 ---
 
 ## 9. Next Steps
 
-> Current: Phase 1 complete, plan presented for approval
+> Current: Validated — proceeding to azure-deploy
 
-1. Get your confirmation on the region split (or your preferred alternative).
-2. On approval, generate Bicep + `azure.yaml`, wire Entra-only SQL auth and Key Vault into the .NET app config.
-3. Hand off to azure-validate, then azure-deploy.
+1. Invoke azure-deploy skill to run the real provision + deploy.
+2. Report deployed endpoint URLs back to the user.
