@@ -84,9 +84,23 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
             if (firstPassError is not null)
                 return new AiExtractionResultDto(new List<ExtractedFieldDto>(), false, firstPassError);
 
-            fields = isDynamicMode
-                ? AiExtractionPromptHelper.ParsePageGroupedFieldsJson(firstPassText!)
-                : ReconcileFormattedFields(AiExtractionPromptHelper.ParseFieldsJson(firstPassText!), requestedFields!);
+            try
+            {
+                fields = isDynamicMode
+                    ? AiExtractionPromptHelper.ParsePageGroupedFieldsJson(firstPassText!)
+                    : ReconcileFormattedFields(AiExtractionPromptHelper.ParseFieldsJson(firstPassText!), requestedFields!);
+            }
+            catch (Exception ex)
+            {
+                // A large batch can push the model's JSON response past its output-token cap,
+                // truncating it mid-generation - ParsePageGroupedFieldsJson/ParseFieldsJson
+                // already try to salvage every complete element before giving up, so getting
+                // here means even that failed. Fail this document gracefully (same sanitized
+                // message as every other extraction-failure path) instead of letting the
+                // exception bubble up as an unhandled crash.
+                Logger.LogError(ex, "First-pass extraction returned unparseable JSON");
+                return new AiExtractionResultDto(new List<ExtractedFieldDto>(), false, GenericExtractionFailureMessage);
+            }
 
             var verifyPrompt = AiExtractionPromptHelper.BuildVerificationPrompt(pageList, fields, isDynamicMode);
             var (verifyText, verifyError) = await CallModelAsync(apiKey, tier.ModelName, verifyPrompt, Array.Empty<PageImageDto>(), ct);
