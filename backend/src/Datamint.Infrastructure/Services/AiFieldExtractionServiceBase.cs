@@ -28,6 +28,9 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
     protected readonly ILogger Logger;
     private readonly int _maxEmptyResultRetries;
     private readonly int _maxPagesPerExtractionChunk;
+    private readonly List<AiCallUsage> _callUsages = new();
+
+    public IReadOnlyList<AiCallUsage> CallUsages => _callUsages;
 
     protected AiFieldExtractionServiceBase(HttpClient http, IConfiguration config, ILogger logger)
     {
@@ -57,8 +60,18 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
     /// the given model name and returns its raw text reply. Each provider builds its own
     /// request/content shape here.
     /// </summary>
-    protected abstract Task<(string? text, string? error)> CallModelAsync(
+    protected abstract Task<(string? text, string? error, int inputTokens, int outputTokens)> CallModelAsync(
         string apiKey, string modelName, string prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct);
+
+    /// <summary>Every call site goes through here (never CallModelAsync directly) so CallUsages
+    /// stays a complete record of every real request this instance made.</summary>
+    private async Task<(string? text, string? error)> CallAndRecordAsync(
+        string purpose, string apiKey, string modelName, string prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct)
+    {
+        var (text, error, inputTokens, outputTokens) = await CallModelAsync(apiKey, modelName, prompt, images, ct);
+        _callUsages.Add(new AiCallUsage(purpose, inputTokens, outputTokens));
+        return (text, error);
+    }
 
     public async Task<AiExtractionResultDto> ExtractStructuredDataAsync(
         IEnumerable<PdfPageTextDto> pages, ExtractionTier tier, IReadOnlyList<string>? requestedFields = null, CancellationToken ct = default)
@@ -120,7 +133,7 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         while (true)
         {
             var firstPassPrompt = AiExtractionPromptHelper.BuildPrompt(pageList, tier, requestedFields, isRetryAfterEmptyResult: attempt > 0);
-            var (firstPassText, firstPassError) = await CallModelAsync(apiKey, tier.ModelName, firstPassPrompt, images, ct);
+            var (firstPassText, firstPassError) = await CallAndRecordAsync("FirstPass", apiKey, tier.ModelName, firstPassPrompt, images, ct);
             if (firstPassError is not null)
                 return new AiExtractionResultDto(new List<ExtractedFieldDto>(), false, firstPassError);
 
@@ -143,7 +156,7 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
             }
 
             var verifyPrompt = AiExtractionPromptHelper.BuildVerificationPrompt(pageList, fields, isDynamicMode);
-            var (verifyText, verifyError) = await CallModelAsync(apiKey, tier.ModelName, verifyPrompt, Array.Empty<PageImageDto>(), ct);
+            var (verifyText, verifyError) = await CallAndRecordAsync("Verify", apiKey, tier.ModelName, verifyPrompt, Array.Empty<PageImageDto>(), ct);
             if (verifyError is null && verifyText is not null)
             {
                 try
@@ -216,7 +229,7 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         if (string.IsNullOrWhiteSpace(apiKey)) return new Dictionary<string, string>();
 
         var prompt = AiExtractionPromptHelper.BuildHarmonizationPrompt(distinctKeys);
-        var (text, error) = await CallModelAsync(apiKey, tier.ModelName, prompt, Array.Empty<PageImageDto>(), ct);
+        var (text, error) = await CallAndRecordAsync("Harmonization", apiKey, tier.ModelName, prompt, Array.Empty<PageImageDto>(), ct);
         if (error is not null || text is null) return new Dictionary<string, string>();
 
         try

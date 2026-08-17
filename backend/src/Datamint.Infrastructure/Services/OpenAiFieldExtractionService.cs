@@ -27,11 +27,11 @@ public class OpenAiFieldExtractionService : AiFieldExtractionServiceBase
     protected override string? ApiKey => Config["OpenAI:ApiKey"];
     protected override string MissingApiKeyMessage => GenericExtractionFailureMessage;
 
-    protected override Task<(string? text, string? error)> CallModelAsync(
+    protected override Task<(string? text, string? error, int inputTokens, int outputTokens)> CallModelAsync(
         string apiKey, string modelName, string prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct) =>
         CallOpenAiAsync(apiKey, modelName, prompt, images, includeTemperature: true, ct);
 
-    private async Task<(string? text, string? error)> CallOpenAiAsync(
+    private async Task<(string? text, string? error, int inputTokens, int outputTokens)> CallOpenAiAsync(
         string apiKey, string modelName, string prompt, IReadOnlyList<PageImageDto> images, bool includeTemperature, CancellationToken ct)
     {
         // OpenAI's vision cost is tile/detail-based rather than a single dimension knob like
@@ -80,17 +80,20 @@ public class OpenAiFieldExtractionService : AiFieldExtractionServiceBase
                 }
 
                 Logger.LogError("OpenAI API error {Status}: {Body}", response.StatusCode, raw);
-                return (null, GenericExtractionFailureMessage);
+                return (null, GenericExtractionFailureMessage, 0, 0);
             }
 
             using var doc = JsonDocument.Parse(raw);
             var text = doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "[]";
-            return (text, null);
+            var usage = doc.RootElement.GetProperty("usage");
+            var inputTokens = usage.GetProperty("prompt_tokens").GetInt32();
+            var outputTokens = usage.GetProperty("completion_tokens").GetInt32();
+            return (text, null, inputTokens, outputTokens);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Unexpected error calling OpenAI API");
-            return (null, GenericExtractionFailureMessage);
+            return (null, GenericExtractionFailureMessage, 0, 0);
         }
     }
 

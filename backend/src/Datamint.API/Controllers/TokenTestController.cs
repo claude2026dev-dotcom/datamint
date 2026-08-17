@@ -6,9 +6,13 @@ using Microsoft.AspNetCore.Mvc;
 namespace Datamint.API.Controllers;
 
 /// <summary>
-/// Backs the standalone token-usage sample app - the same JWT auth as the rest of the API, but a
-/// single, un-persisted Claude call bypassing Document/Plan/quota entirely, so it can be exercised
-/// by any logged-in user purely to observe real input/output token counts for a real extraction.
+/// Backs the standalone token-usage sample app - the same JWT auth, same ExtractionTier
+/// resolution, and same IAiFieldExtractionService.ExtractStructuredDataAsync call the real
+/// upload pipeline uses (see DocumentProcessingService.ProcessDocumentAsync), so the token counts
+/// shown here are exactly what a real upload by this user would cost - first-pass call (with page
+/// images, same as a real PDF/image upload), verify call, and any empty-result retry of that pair.
+/// Deliberately bypasses Document/DocumentPage persistence and Plan/quota charging - this exists
+/// to observe cost, not to produce a real document record.
 /// </summary>
 [ApiController]
 [Route("api/token-test")]
@@ -19,12 +23,20 @@ public class TokenTestController : ControllerBase
         { ".pdf", ".jpg", ".jpeg", ".png", ".webp" };
 
     private readonly IPdfTextExtractionService _textExtraction;
-    private readonly ITokenUsageExtractionService _tokenService;
+    private readonly IPageImageRenderingService _pageImages;
+    private readonly IExtractionTierResolver _tierResolver;
+    private readonly IAiFieldExtractionServiceFactory _aiFactory;
+    private readonly ICurrentUserService _currentUser;
 
-    public TokenTestController(IPdfTextExtractionService textExtraction, ITokenUsageExtractionService tokenService)
+    public TokenTestController(
+        IPdfTextExtractionService textExtraction, IPageImageRenderingService pageImages,
+        IExtractionTierResolver tierResolver, IAiFieldExtractionServiceFactory aiFactory, ICurrentUserService currentUser)
     {
         _textExtraction = textExtraction;
-        _tokenService = tokenService;
+        _pageImages = pageImages;
+        _tierResolver = tierResolver;
+        _aiFactory = aiFactory;
+        _currentUser = currentUser;
     }
 
     [HttpPost("extract")]
@@ -44,8 +56,8 @@ public class TokenTestController : ControllerBase
             await using (var stream = new FileStream(tempPath, FileMode.Create))
                 await file.CopyToAsync(stream, ct);
 
-            List<PdfPageTextDto> pages;
             var isImage = !ext.Equals(".pdf", StringComparison.OrdinalIgnoreCase);
+            List<PdfPageTextDto> pages;
             if (isImage)
             {
                 var bytes = await System.IO.File.ReadAllBytesAsync(tempPath, ct);
@@ -60,21 +72,37 @@ public class TokenTestController : ControllerBase
             }
             else
             {
+                // Mirrors DocumentProcessingService.AttachPageImagesAsync: a real PDF upload
+                // sends both the extracted text AND a rendered image of each page to the
+                // first-pass call, not text alone - skipping this would understate real token
+                // usage for the (by far more common) PDF-upload case.
                 var extracted = await _textExtraction.ExtractTextAsync(tempPath, ct);
-                pages = extracted.Pages;
+                var pageNumbers = extracted.Pages.Select(p => p.PageNumber).ToList();
+                var images = await _pageImages.RenderPagesAsync(tempPath, pageNumbers, ct);
+                pages = extracted.Pages.Select(page =>
+                {
+                    var image = images.FirstOrDefault(i => i.PageNumber == page.PageNumber);
+                    return image is null ? page : page with { ImageBytes = image.ImageBytes, ImageMediaType = image.MediaType };
+                }).ToList();
             }
 
-            var result = await _tokenService.ExtractWithUsageAsync(pages, ct);
+            var tier = await _tierResolver.ResolveForUserAsync(_currentUser.UserId!.Value, ct);
+            var aiService = _aiFactory.GetService(tier.AiProvider);
+            var result = await aiService.ExtractStructuredDataAsync(pages, tier, requestedFields: null, ct);
+
             if (!result.Success)
                 return StatusCode(502, new { success = false, message = result.ErrorMessage ?? "Extraction failed." });
 
+            var calls = aiService.CallUsages;
             return Ok(new
             {
                 success = true,
-                resultJson = result.ResultJson,
-                inputTokens = result.InputTokens,
-                outputTokens = result.OutputTokens,
-                model = result.Model
+                fields = result.Fields,
+                provider = tier.AiProvider.ToString(),
+                model = tier.ModelName,
+                calls = calls.Select(c => new { purpose = c.Purpose, inputTokens = c.InputTokens, outputTokens = c.OutputTokens }),
+                totalInputTokens = calls.Sum(c => c.InputTokens),
+                totalOutputTokens = calls.Sum(c => c.OutputTokens)
             });
         }
         finally

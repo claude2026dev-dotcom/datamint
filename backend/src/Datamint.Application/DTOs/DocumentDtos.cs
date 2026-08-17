@@ -17,6 +17,11 @@ public record ExtractedFieldDto(string Key, string? Value, int? PageNumber, stri
 
 public record AiExtractionResultDto(List<ExtractedFieldDto> Fields, bool Success, string? ErrorMessage);
 
+/// <summary>Token usage Claude/OpenAI reported for one real call made during extraction -
+/// "FirstPass", "Verify", or "Harmonization" (see AiFieldExtractionServiceBase). Exists purely
+/// for the token-usage sample app; nothing in the real product surfaces this.</summary>
+public record AiCallUsage(string Purpose, int InputTokens, int OutputTokens);
+
 public record DocumentSummaryDto(
     Guid Id,
     string OriginalFileName,
