@@ -51,7 +51,7 @@
     "ContactEmail": "claude2026dev@gmail.com"
   },
 
-  "// 7": "----- AI EXTRACTION: API keys for both providers are always needed (which one a given document actually uses is decided per-Plan via admin-configured Extraction Tiers, not this file - see Admin > Extraction Tiers). MaxEmptyResultRetries bounds the empty-result retry loop; PageImageMaxDimensionPx caps the rendered page image sent for vision-based extraction -----",
+  "// 7": "----- AI EXTRACTION: API keys for both providers are always needed (which one a given document actually uses is decided per-Plan via admin-configured Extraction Tiers, not this file - see Admin > Extraction Tiers). MaxEmptyResultRetries bounds the empty-result retry loop; PageImageMaxDimensionPx caps the rendered page image sent for vision-based extraction. SkipImagesForCleanTextPages/MinPageTextLengthForSkippingImage are a cost optimization (dev-only while being validated, see CLAUDE.md) - a page whose PdfPig text already looks reliable doesn't also get a rendered image sent, since images are the most expensive input token type -----",
   "Claude": {
     "ApiKey": "YOUR_CLAUDE_API_KEY"
   },
@@ -61,7 +61,9 @@
   },
   "Ai": {
     "MaxEmptyResultRetries": "1",
-    "PageImageMaxDimensionPx": "1568"
+    "PageImageMaxDimensionPx": "1568",
+    "SkipImagesForCleanTextPages": "true",
+    "MinPageTextLengthForSkippingImage": "40"
   },
 
   "// 8": "----- PAYMENT: local dev always uses the Fake provider (simulates the whole order/pay/refund flow, no credentials needed) - see Payment:Provider in Program.cs -----",

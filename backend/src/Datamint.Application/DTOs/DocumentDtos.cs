@@ -19,8 +19,11 @@ public record AiExtractionResultDto(List<ExtractedFieldDto> Fields, bool Success
 
 /// <summary>Token usage Claude/OpenAI reported for one real call made during extraction -
 /// "FirstPass", "Verify", or "Harmonization" (see AiFieldExtractionServiceBase). Exists purely
-/// for the token-usage sample app; nothing in the real product surfaces this.</summary>
-public record AiCallUsage(string Purpose, int InputTokens, int OutputTokens);
+/// for the token-usage sample app; nothing in the real product surfaces this.
+/// CacheCreationInputTokens/CacheReadInputTokens are Claude-only (prompt caching) - always 0 for
+/// a provider that doesn't report them, which just means "no caching data available", not
+/// "caching failed".</summary>
+public record AiCallUsage(string Purpose, int InputTokens, int OutputTokens, int CacheCreationInputTokens = 0, int CacheReadInputTokens = 0);
 
 public record DocumentSummaryDto(
     Guid Id,

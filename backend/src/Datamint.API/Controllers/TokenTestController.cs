@@ -3,6 +3,7 @@ using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 
 namespace Datamint.API.Controllers;
 
@@ -28,17 +29,29 @@ public class TokenTestController : ControllerBase
     private readonly IExtractionTierResolver _tierResolver;
     private readonly IAiFieldExtractionServiceFactory _aiFactory;
     private readonly ICurrentUserService _currentUser;
+    private readonly bool _skipImagesForCleanTextPages;
+    private readonly int _minReliableTextLength;
 
     public TokenTestController(
         IPdfTextExtractionService textExtraction, IPageImageRenderingService pageImages,
-        IExtractionTierResolver tierResolver, IAiFieldExtractionServiceFactory aiFactory, ICurrentUserService currentUser)
+        IExtractionTierResolver tierResolver, IAiFieldExtractionServiceFactory aiFactory, ICurrentUserService currentUser,
+        IConfiguration config)
     {
         _textExtraction = textExtraction;
         _pageImages = pageImages;
         _tierResolver = tierResolver;
         _aiFactory = aiFactory;
         _currentUser = currentUser;
+        // Same config keys and default as DocumentProcessingService.AttachPageImagesAsync (the
+        // real pipeline's source of truth for this) - duplicated here rather than shared because
+        // this controller intentionally has no dependency on the Application-layer document
+        // pipeline at all. Keep both in sync if the gating logic changes.
+        _skipImagesForCleanTextPages = !bool.TryParse(config["Ai:SkipImagesForCleanTextPages"], out var skip) || skip;
+        _minReliableTextLength = int.TryParse(config["Ai:MinPageTextLengthForSkippingImage"], out var minLength) ? minLength : 40;
     }
+
+    private bool NeedsVisionFallback(PdfPageTextDto page) =>
+        string.IsNullOrWhiteSpace(page.Text) || page.Text.Trim().Length < _minReliableTextLength;
 
     [HttpPost("extract")]
     [RequestSizeLimit(20_000_000)]
@@ -74,12 +87,17 @@ public class TokenTestController : ControllerBase
             else
             {
                 // Mirrors DocumentProcessingService.AttachPageImagesAsync: a real PDF upload
-                // sends both the extracted text AND a rendered image of each page to the
-                // first-pass call, not text alone - skipping this would understate real token
-                // usage for the (by far more common) PDF-upload case.
+                // renders and sends an image only for pages whose text layer doesn't already
+                // look reliable - always attaching one would overstate real token usage now
+                // that the real pipeline gates this.
                 var extracted = await _textExtraction.ExtractTextAsync(tempPath, ct);
-                var pageNumbers = extracted.Pages.Select(p => p.PageNumber).ToList();
-                var images = await _pageImages.RenderPagesAsync(tempPath, pageNumbers, ct);
+                var pageNumbers = extracted.Pages
+                    .Where(p => !_skipImagesForCleanTextPages || NeedsVisionFallback(p))
+                    .Select(p => p.PageNumber)
+                    .ToList();
+                var images = pageNumbers.Count == 0
+                    ? new List<PageImageDto>()
+                    : await _pageImages.RenderPagesAsync(tempPath, pageNumbers, ct);
                 pages = extracted.Pages.Select(page =>
                 {
                     var image = images.FirstOrDefault(i => i.PageNumber == page.PageNumber);
@@ -108,10 +126,13 @@ public class TokenTestController : ControllerBase
                     purpose = c.Purpose,
                     inputTokens = c.InputTokens,
                     outputTokens = c.OutputTokens,
+                    cacheCreationInputTokens = c.CacheCreationInputTokens,
+                    cacheReadInputTokens = c.CacheReadInputTokens,
                     costUsd = AiModelPricing.CalculateCostUsd(tier.ModelName, c.InputTokens, c.OutputTokens)
                 }),
                 totalInputTokens,
                 totalOutputTokens,
+                totalCacheReadInputTokens = calls.Sum(c => c.CacheReadInputTokens),
                 totalCostUsd = AiModelPricing.CalculateCostUsd(tier.ModelName, totalInputTokens, totalOutputTokens),
                 pricingKnown = AiModelPricing.GetRates(tier.ModelName) is not null
             });

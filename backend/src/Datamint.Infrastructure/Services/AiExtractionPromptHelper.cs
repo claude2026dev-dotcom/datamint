@@ -13,8 +13,22 @@ namespace Datamint.Infrastructure.Services;
 /// CustomOutputFormatExample can be layered on top of the built-in rules, invisibly to the end
 /// user, without touching the base rules themselves.
 /// </summary>
-internal static class AiExtractionPromptHelper
+public static class AiExtractionPromptHelper
 {
+    /// <summary>
+    /// A prompt split into three pieces along cache-friendliness lines, not just readability:
+    /// <see cref="SystemRules"/> is byte-identical across every call of the same (mode, pass,
+    /// tier) - it belongs in the provider's cacheable "system" slot. <see cref="DocumentText"/>
+    /// is byte-identical between a chunk's first-pass and verify call (same pages, same order) -
+    /// it belongs in its own cacheable message block, placed before anything that varies.
+    /// <see cref="TaskInstructions"/> is the part that's genuinely different every call (the
+    /// retry note, the requested-field list, the prior extraction being verified) and is never
+    /// cached. A provider that doesn't support explicit caching (see OpenAiFieldExtractionService)
+    /// can simply concatenate all three back into one string - the split changes nothing about
+    /// what the model reads, only how a caching-aware provider is billed for re-sending it.
+    /// </summary>
+    public record PromptParts(string SystemRules, string DocumentText, string TaskInstructions);
+
     /// <summary>
     /// Shared by every prompt that asks the model to classify fields - kept generic/domain-agnostic
     /// on purpose so the same taxonomy organizes invoices, shipping/logistics manifests, contracts,
@@ -79,12 +93,17 @@ internal static class AiExtractionPromptHelper
         return parts.Count == 0 ? "" : "\n" + string.Join("\n\n", parts) + "\n";
     }
 
-    public static string BuildPrompt(IEnumerable<PdfPageTextDto> pages, ExtractionTier tier, IReadOnlyList<string>? requestedFields = null, bool isRetryAfterEmptyResult = false)
+    private static string BuildDocumentText(IEnumerable<PdfPageTextDto> pages)
     {
         var combinedText = new StringBuilder();
         foreach (var page in pages)
             combinedText.AppendLine($"--- Page {page.PageNumber} ---\n{page.Text}\n");
+        return combinedText.ToString();
+    }
 
+    public static PromptParts BuildPrompt(IEnumerable<PdfPageTextDto> pages, ExtractionTier tier, IReadOnlyList<string>? requestedFields = null, bool isRetryAfterEmptyResult = false)
+    {
+        var documentText = BuildDocumentText(pages);
         var retryNote = isRetryAfterEmptyResult
             ? "NOTE: a previous attempt at this exact extraction returned no usable fields. Re-examine the document text and any page images carefully before answering again - if this is a real document with visible content, there should be extractable data.\n\n"
             : "";
@@ -93,8 +112,9 @@ internal static class AiExtractionPromptHelper
         if (requestedFields is { Count: > 0 })
         {
             var fieldList = string.Join("\n", requestedFields.Select(f => $"- \"{f}\""));
-            return $$"""
-                {{retryNote}}Extract ONLY the following fields from the document text below - nothing else:
+            var systemRules = $"{FuzzyFieldMatchInstructions}\n{TypeAndSectionInstructions}\n{SignalVsNoiseInstructions}\n{customization}";
+            var taskInstructions = $$"""
+                {{retryNote}}Extract ONLY the following fields from the document text above - nothing else:
                 {{fieldList}}
 
                 Rules:
@@ -102,20 +122,16 @@ internal static class AiExtractionPromptHelper
                 - If a requested field is not present anywhere in the document, still include it in your response with "value": null. Do not omit it.
                 - Do not add any field that isn't in the list above - this holds even if you can also see an image of this document: an image is provided only to help you read/locate the requested fields more accurately, never a reason to also report other information you happen to see in it.
                 - If a field appears on a specific page, set "page" to that page number; otherwise omit "page" or set it to null.
-                {{FuzzyFieldMatchInstructions}}
-                {{TypeAndSectionInstructions}}
-                {{SignalVsNoiseInstructions}}
-                {{customization}}
-                - Respond with ONLY a JSON array, no prose, no markdown fences, in this exact shape:
-                [{"key": "Invoice No.", "value": "INV-2024-001", "page": 1, "type": "Reference", "section": "Billing Info", "priority": 1}, ...]
 
-                DOCUMENT TEXT:
-                {{combinedText}}
+                Respond with ONLY a JSON array, no prose, no markdown fences, in this exact shape:
+                [{"key": "Invoice No.", "value": "INV-2024-001", "page": 1, "type": "Reference", "section": "Billing Info", "priority": 1}, ...]
                 """;
+            return new PromptParts(systemRules, documentText, taskInstructions);
         }
 
-        return $$"""
-            {{retryNote}}Extract every meaningful key/value field from the document text below - this may be
+        var dynamicSystemRules = $"{TypeAndSectionInstructions}\n{CompletenessInstructions}\n{SignalVsNoiseInstructions}\n{customization}";
+        var dynamicTaskInstructions = $$"""
+            {{retryNote}}Extract every meaningful key/value field from the document text above - this may be
             an invoice, a logistics/shipping manifest, a contract, a financial statement or
             accounting document, or any other kind of document; adapt to whatever is actually in
             front of you rather than assuming any one document type. Process each page
@@ -128,28 +144,23 @@ internal static class AiExtractionPromptHelper
             - Do not paraphrase, translate, or invent a different name for a field that already has a label in the document.
             - The SAME field label can legitimately appear on more than one page, meaning something different each time. Report every page's occurrence under that page's own entry below - never merge, average, or drop one occurrence in favor of another just because the label repeats.
             - If a field spans the whole document rather than belonging to one page, put it under the first page it appears on.
-            {{TypeAndSectionInstructions}}
-            {{CompletenessInstructions}}
-            {{SignalVsNoiseInstructions}}
-            {{customization}}
-            - Respond with ONLY a JSON array, no prose, no markdown fences, with exactly ONE object per page (matching the "--- Page N ---" markers below), in this exact shape:
-            [{"page": 1, "fields": [{"key": "Invoice No.", "value": "INV-2024-001", "type": "Reference", "section": "Billing Info", "priority": 1}, {"key": "Tax Category", "value": "...", "type": "Generic", "section": "General", "priority": 5}]}, {"page": 2, "fields": [{"key": "Tax Category", "value": "...", "type": "Generic", "section": "General", "priority": 5}]}]
 
-            DOCUMENT TEXT:
-            {{combinedText}}
+            Respond with ONLY a JSON array, no prose, no markdown fences, with exactly ONE object per page (matching the "--- Page N ---" markers above), in this exact shape:
+            [{"page": 1, "fields": [{"key": "Invoice No.", "value": "INV-2024-001", "type": "Reference", "section": "Billing Info", "priority": 1}, {"key": "Tax Category", "value": "...", "type": "Generic", "section": "General", "priority": 5}]}, {"page": 2, "fields": [{"key": "Tax Category", "value": "...", "type": "Generic", "section": "General", "priority": 5}]}]
             """;
+        return new PromptParts(dynamicSystemRules, documentText, dynamicTaskInstructions);
     }
 
     /// <summary>
     /// Second pass: hands the model its own first-pass answer alongside the source text again
     /// and asks it to double-check every value character by character. This "extract, then
-    /// verify" pattern catches the single-pass mistakes users see most often.
+    /// verify" pattern catches the single-pass mistakes users see most often. DocumentText here
+    /// is built from the exact same `pages` the first pass used for this chunk, so a
+    /// caching-aware provider recognizes it as the identical block already cached moments ago.
     /// </summary>
-    public static string BuildVerificationPrompt(IEnumerable<PdfPageTextDto> pages, List<ExtractedFieldDto> initialFields, bool groupByPage)
+    public static PromptParts BuildVerificationPrompt(IEnumerable<PdfPageTextDto> pages, List<ExtractedFieldDto> initialFields, bool groupByPage)
     {
-        var combinedText = new StringBuilder();
-        foreach (var page in pages)
-            combinedText.AppendLine($"--- Page {page.PageNumber} ---\n{page.Text}\n");
+        var documentText = BuildDocumentText(pages);
 
         if (groupByPage)
         {
@@ -157,10 +168,11 @@ internal static class AiExtractionPromptHelper
                 .GroupBy(f => f.PageNumber ?? 0)
                 .Select(g => new { page = g.Key, fields = g.Select(f => new { key = f.Key, value = f.Value, type = f.SemanticType, section = f.SectionLabel, priority = f.Priority }).ToList() });
             var fieldsJson = JsonSerializer.Serialize(grouped);
+            var systemRules = $"{TypeAndSectionInstructions}\n{CompletenessInstructions}\n{SignalVsNoiseInstructions}\n{DeduplicationInstructions}";
 
-            return $$"""
+            var taskInstructions = $$"""
                 You previously extracted the fields below, grouped by page, from the document
-                text that follows. Re-check every single value against the document text,
+                text above. Re-check every single value against the document text,
                 character by character where it matters (invoice/reference numbers, dates,
                 amounts, IDs, codes). Also check for anything genuinely missing altogether: if
                 this document has dense tabular data and the first pass only captured some rows,
@@ -174,26 +186,21 @@ internal static class AiExtractionPromptHelper
                 - If an entire row/field present in the document text was missed by the first pass, add it now, on the correct page.
                 - Keep the same pages and the same keys within each page - do not rename any existing entry, and do not remove one EXCEPT for a confirmed same-page duplicate per the rule below.
                 - "type", "section", and "priority" may be corrected if clearly wrong - otherwise keep them as given.
-                {{TypeAndSectionInstructions}}
-                {{CompletenessInstructions}}
-                {{SignalVsNoiseInstructions}}
-                {{DeduplicationInstructions}}
 
                 YOUR FIRST-PASS EXTRACTION (grouped by page):
                 {{fieldsJson}}
 
-                DOCUMENT TEXT:
-                {{combinedText}}
-
                 Respond with ONLY the corrected JSON array, no prose, no markdown fences, same shape:
                 [{"page": 1, "fields": [{"key": "Invoice No.", "value": "INV-2024-001", "type": "Reference", "section": "Billing Info", "priority": 1}]}, ...]
                 """;
+            return new PromptParts(systemRules, documentText, taskInstructions);
         }
 
         var flatFieldsJson = JsonSerializer.Serialize(initialFields.Select(f => new { key = f.Key, value = f.Value, page = f.PageNumber, type = f.SemanticType, section = f.SectionLabel, priority = f.Priority }));
+        var flatSystemRules = $"{FuzzyFieldMatchInstructions}\n{TypeAndSectionInstructions}\n{SignalVsNoiseInstructions}";
 
-        return $$"""
-            You previously extracted the fields below from the document text that follows - this
+        var flatTaskInstructions = $$"""
+            You previously extracted the fields below from the document text above - this
             is a fixed, caller-specified list of fields, not an open-ended extraction. Re-check
             every single value against the document text, character by character where it matters.
 
@@ -204,25 +211,21 @@ internal static class AiExtractionPromptHelper
             - If a field genuinely isn't in the document, leave its value null.
             - Keep the exact same set of keys, in the exact same order - do not add, remove, or rename any.
             - "type", "section", and "priority" may be corrected if clearly wrong - otherwise keep them as given.
-            {{FuzzyFieldMatchInstructions}}
-            {{TypeAndSectionInstructions}}
-            {{SignalVsNoiseInstructions}}
 
             YOUR FIRST-PASS EXTRACTION:
             {{flatFieldsJson}}
 
-            DOCUMENT TEXT:
-            {{combinedText}}
-
             Respond with ONLY the corrected JSON array, no prose, no markdown fences, same shape:
             [{"key": "Invoice No.", "value": "INV-2024-001", "page": 1, "type": "Reference", "section": "Billing Info", "priority": 1}, ...]
             """;
+        return new PromptParts(flatSystemRules, documentText, flatTaskInstructions);
     }
 
     /// <summary>
     /// Reconciles field labels across an entire batch of independently-extracted documents.
     /// Deliberately conservative - a wrong merge that conflates two genuinely different fields
-    /// into one column is worse than leaving two near-duplicate labels unmerged.
+    /// into one column is worse than leaving two near-duplicate labels unmerged. Not split into
+    /// PromptParts: every call's label list is different, so there's nothing cacheable here.
     /// </summary>
     public static string BuildHarmonizationPrompt(IReadOnlyList<string> distinctKeys)
     {

@@ -58,18 +58,24 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
     /// <summary>
     /// Sends one prompt (+ optional page images, for vision-capable calls) to the provider using
     /// the given model name and returns its raw text reply. Each provider builds its own
-    /// request/content shape here.
+    /// request/content shape here. <see cref="AiExtractionPromptHelper.PromptParts"/> keeps the
+    /// cache-friendly (SystemRules, DocumentText) pieces separate from the never-cached
+    /// TaskInstructions - a provider without explicit cache support can just concatenate all
+    /// three; a caching-aware one (Claude) combines SystemRules+DocumentText into one cacheable
+    /// block (see ClaudeFieldExtractionService for why they're combined rather than cached
+    /// separately - Claude's real-world minimum cacheable length is higher than either piece
+    /// alone tends to be for a typical document).
     /// </summary>
-    protected abstract Task<(string? text, string? error, int inputTokens, int outputTokens)> CallModelAsync(
-        string apiKey, string modelName, string prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct);
+    protected abstract Task<(string? text, string? error, int inputTokens, int outputTokens, int cacheCreationInputTokens, int cacheReadInputTokens)> CallModelAsync(
+        string apiKey, string modelName, AiExtractionPromptHelper.PromptParts prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct);
 
     /// <summary>Every call site goes through here (never CallModelAsync directly) so CallUsages
     /// stays a complete record of every real request this instance made.</summary>
     private async Task<(string? text, string? error)> CallAndRecordAsync(
-        string purpose, string apiKey, string modelName, string prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct)
+        string purpose, string apiKey, string modelName, AiExtractionPromptHelper.PromptParts prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct)
     {
-        var (text, error, inputTokens, outputTokens) = await CallModelAsync(apiKey, modelName, prompt, images, ct);
-        _callUsages.Add(new AiCallUsage(purpose, inputTokens, outputTokens));
+        var (text, error, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens) = await CallModelAsync(apiKey, modelName, prompt, images, ct);
+        _callUsages.Add(new AiCallUsage(purpose, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens));
         return (text, error);
     }
 
@@ -228,7 +234,9 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         var apiKey = ApiKey;
         if (string.IsNullOrWhiteSpace(apiKey)) return new Dictionary<string, string>();
 
-        var prompt = AiExtractionPromptHelper.BuildHarmonizationPrompt(distinctKeys);
+        // No SystemRules/DocumentText split here - every batch's label list is different, so
+        // there's nothing cacheable to separate out.
+        var prompt = new AiExtractionPromptHelper.PromptParts("", "", AiExtractionPromptHelper.BuildHarmonizationPrompt(distinctKeys));
         var (text, error) = await CallAndRecordAsync("Harmonization", apiKey, tier.ModelName, prompt, Array.Empty<PageImageDto>(), ct);
         if (error is not null || text is null) return new Dictionary<string, string>();
 
