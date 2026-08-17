@@ -178,14 +178,14 @@ export class AuthService {
     this.router.navigateByUrl(redirectTo);
   }
 
-  logout() {
+  logout(redirectTo = '/') {
     const refreshToken = this.getRefreshToken();
     const clearAndRedirect = () => {
       localStorage.removeItem(ACCESS_TOKEN_KEY);
       localStorage.removeItem(REFRESH_TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
       this.userSignal.set(null);
-      this.router.navigateByUrl('/');
+      this.router.navigateByUrl(redirectTo);
     };
 
     if (refreshToken) {
