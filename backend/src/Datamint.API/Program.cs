@@ -66,6 +66,9 @@ builder.Services.AddScoped<IAiFieldExtractionServiceFactory, AiFieldExtractionSe
 // upload path - the default 100s HttpClient timeout isn't generous enough headroom for that.
 builder.Services.AddHttpClient<ClaudeFieldExtractionService>(c => c.Timeout = TimeSpan.FromSeconds(240));
 builder.Services.AddHttpClient<OpenAiFieldExtractionService>(c => c.Timeout = TimeSpan.FromSeconds(240));
+// Backs the standalone token-usage sample app only - a single un-chunked Claude call, so it gets
+// a shorter timeout than the main pipeline's multi-call retry/verify flow.
+builder.Services.AddHttpClient<ITokenUsageExtractionService, ClaudeTokenUsageExtractionService>(c => c.Timeout = TimeSpan.FromSeconds(120));
 builder.Services.AddScoped<Datamint.Application.Services.DocumentProcessingService>();
 builder.Services.AddScoped<IContactNotificationService, ContactNotificationService>();
 builder.Services.AddScoped<IBillingNotificationService, BillingNotificationService>();

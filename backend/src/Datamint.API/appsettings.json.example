@@ -39,7 +39,7 @@
   },
 
   "Cors": {
-    "AllowedOrigins": [ "https://localhost:4200" ]
+    "AllowedOrigins": [ "https://localhost:4200", "http://localhost:8080" ]
   },
 
   "// 6": "----- APP: Name is the single source of truth for product branding in emails - change it here if the project is ever renamed, nothing else needs editing. LogoUrl is null until a real logo exists - every email falls back to a plain letter mark until then; set it to a publicly-reachable image URL to switch every email over automatically. FrontendBaseUrl is a fallback only used when a request has no Origin/Referer (e.g. a background job) - normal requests build the link from the browser's own Origin/Referer header, so this never goes stale behind a tunnel or a real domain. ApiBaseUrl is this API's own externally-reachable origin - used only to build the built-in Swagger OAuth client's redirect_uri (DbSeeder), so Swagger's Authorize button keeps working after the app moves host/port. ContactEmail is where the public contact-us form's messages are sent -----",
