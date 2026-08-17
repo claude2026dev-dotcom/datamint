@@ -23,19 +23,21 @@ public class DocumentsController : ControllerBase
     private readonly ICurrentUserService _currentUser;
     private readonly IConfiguration _config;
     private readonly DatamintDbContext _db;
+    private readonly IBackgroundJobQueue _jobQueue;
 
     private static readonly HashSet<string> AllowedUploadExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".pdf", ".jpg", ".jpeg", ".png", ".webp", ".bmp" };
 
     public DocumentsController(
         DocumentProcessingService service, IDocumentRepository documents,
-        ICurrentUserService currentUser, IConfiguration config, DatamintDbContext db)
+        ICurrentUserService currentUser, IConfiguration config, DatamintDbContext db, IBackgroundJobQueue jobQueue)
     {
         _service = service;
         _documents = documents;
         _currentUser = currentUser;
         _config = config;
         _db = db;
+        _jobQueue = jobQueue;
     }
 
     private static string ContentTypeFor(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() switch
@@ -162,6 +164,14 @@ public class DocumentsController : ControllerBase
             });
         }
 
+        // Documents are created here (Status=Uploaded) and immediately queued for a background
+        // worker to actually extract - the request returns as soon as every file is saved and
+        // recorded, not once every page has been through the AI. A large/dense multi-page batch's
+        // total extraction time can otherwise exceed the platform's own request timeout, and an
+        // aborted inline request leaves the document orphaned with no way to ever learn what
+        // happened - see IBackgroundJobQueue's own doc comment. Quota charging and batch field-key
+        // harmonization move to the worker too, since only it can observe "the whole batch
+        // finished" now. The frontend polls GET /api/documents/{id}/status for real progress.
         var results = new List<DocumentSummaryDto>();
         for (var i = 0; i < saved.Count; i++)
         {
@@ -172,33 +182,9 @@ public class DocumentsController : ControllerBase
             if (!result.Succeeded)
                 return BadRequest(new { success = false, message = result.Error });
 
-            // NOTE: for a smooth "animated processing" UX on the frontend, kick this off via a
-            // background job/queue (e.g. Hangfire or a hosted service) and let the frontend poll
-            // GET /api/documents/{id} for status. Calling it inline here for scaffold simplicity.
-            // Deliberately CancellationToken.None, not `ct`: this AI call can legitimately take
-            // many seconds, and a dropped client connection (page reload, network blip, tab
-            // close) must not abort processing that's already underway.
-            var processed = await _service.ProcessDocumentAsync(result.Data!.Id, selectedPagesPerFile[i], textResults[i], CancellationToken.None);
-            // Add the POST-processing summary (Status reflects whether extraction actually
-            // succeeded), not the pre-processing one.
-            results.Add(processed.Succeeded ? processed.Data! : result.Data!);
-        }
-
-        // Only meaningful for an actual multi-file Dynamic-mode batch - reconciles field labels
-        // across documents so the combined batch view/export puts matching fields in the same
-        // column. Skipped in Formatted mode: every document was extracted against the exact
-        // same caller-supplied field list, so keys are already guaranteed identical.
-        if (results.Count > 1 && !isFormatted)
-            await _service.HarmonizeBatchFieldKeysAsync(results.Select(d => d.Id).ToList(), CancellationToken.None);
-
-        if (subscription is not null)
-        {
-            // Only successfully-extracted documents count against quota - a document that ended
-            // up Failed (AI call error, unparseable response, or any other processing failure)
-            // gave the user nothing usable, so it shouldn't consume their plan's page allowance.
-            var chargeablePages = results.Where(d => d.Status != nameof(DocumentStatus.Failed)).Sum(d => d.PageCount);
-            subscription.PagesUsedThisCycle += chargeablePages;
-            await _db.SaveChangesAsync(ct);
+            results.Add(result.Data!);
+            _jobQueue.QueueDocumentProcessing(new DocumentProcessingWorkItem(
+                result.Data!.Id, selectedPagesPerFile[i], textResults[i], uploadBatchId, isFormatted));
         }
 
         return Ok(new { success = true, documents = results });
@@ -252,6 +238,20 @@ public class DocumentsController : ControllerBase
         }
 
         return Ok(new PeekResultDto(results));
+    }
+
+    /// <summary>
+    /// Lightweight poll target for a document queued by /upload - just the status, not the full
+    /// field graph GetDetail returns, since the frontend calls this repeatedly (every couple of
+    /// seconds) while a document is still Uploaded/Processing.
+    /// </summary>
+    [HttpGet("{id:guid}/status")]
+    public async Task<IActionResult> GetStatus(Guid id, CancellationToken ct)
+    {
+        var (document, error) = await GetOwnedDocumentAsync(id, ct);
+        if (error is not null) return error;
+
+        return Ok(new { success = true, id = document!.Id, status = document.Status.ToString(), pageCount = document.PageCount, failureReason = document.FailureReason });
     }
 
     /// <summary>

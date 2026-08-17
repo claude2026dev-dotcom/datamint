@@ -29,6 +29,14 @@ export class DocumentService {
       `${environment.apiBaseUrl}/documents/peek`, form);
   }
 
+  /// Lightweight poll target for a document queued by upload() - just the status, not the full
+  /// field graph getDetail() returns, since this is called repeatedly (every couple of seconds)
+  /// while a document is still Uploaded/Processing on the background worker.
+  getStatus(id: string) {
+    return this.http.get<{ success: boolean; id: string; status: string; pageCount: number; failureReason: string | null }>(
+      `${environment.apiBaseUrl}/documents/${id}/status`);
+  }
+
   getDetail(id: string) {
     return this.http.get<{
       success: boolean; id: string; originalFileName: string; contentType: string; pageCount: number;
