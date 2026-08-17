@@ -85,6 +85,14 @@ else
 // Sweeps deactivated accounts past their DeactivationGraceDays window and erases them.
 builder.Services.AddHostedService<Datamint.Infrastructure.Services.AccountPurgeService>();
 
+// Singleton: the queue itself must be the same instance shared between DocumentsController
+// (producer) and DocumentProcessingBackgroundService (consumer) for the app's whole lifetime.
+builder.Services.AddSingleton<IBackgroundJobQueue, InMemoryBackgroundJobQueue>();
+// Runs document extraction off the upload request thread - see IBackgroundJobQueue's own doc
+// comment for why (a large/dense multi-page batch's total extraction time can otherwise exceed
+// the platform's own request timeout, orphaning the document with no way to ever recover).
+builder.Services.AddHostedService<Datamint.Infrastructure.Services.DocumentProcessingBackgroundService>();
+
 // ---------- Current user (claims wrapper) ----------
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
