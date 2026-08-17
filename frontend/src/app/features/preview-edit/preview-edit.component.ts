@@ -152,7 +152,13 @@ import { FieldJsonViewComponent } from '../../shared/components/field-json-view/
     .not-found-card .icon { color: var(--dm-text-muted); display: flex; justify-content: center; margin-bottom: 14px; }
     .not-found-card h2 { margin-bottom: 10px; }
     .not-found-card p { margin-bottom: 20px; }
-    @media (max-width: 700px) { .header { flex-direction: column; } .toolbar { flex-direction: column; align-items: stretch; } }
+    @media (max-width: 700px) {
+      .header { flex-direction: column; }
+      .header-title { flex: 1 1 auto; }
+      .toolbar { flex-direction: column; align-items: stretch; }
+      .mode-toggle { flex-direction: column; flex-wrap: nowrap; width: 100%; }
+      .mode-option { width: 100%; }
+    }
   `]
 })
 export class PreviewEditComponent implements OnInit {
