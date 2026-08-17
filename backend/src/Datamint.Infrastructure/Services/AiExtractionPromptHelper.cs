@@ -35,9 +35,9 @@ public static class AiExtractionPromptHelper
     /// financial statements, medical forms, or any other document type equally well.
     /// </summary>
     private const string TypeAndSectionInstructions = """
-        - Classify each field with a "type" from this fixed list, matching real spreadsheet cell data types so the exported file can store/format each value correctly: "Text", "Number", "Currency", "Date", "Percentage", "Boolean". Use "Text" for anything that isn't genuinely one of the others - names, addresses, phone numbers, emails, URLs, and identifying codes/reference numbers (invoice numbers, GSTIN, CIN, UDIN, PAN, account numbers) are all "Text", since coercing them to a number would corrupt leading zeros or non-numeric characters. "Currency" is money/an amount with a currency meaning. "Number" is a plain count/measurement with no currency meaning. "Percentage" is a value expressed with a % sign or the word "percent". "Boolean" is strictly a yes/no or true/false answer. Never invent a new type name.
-        - Assign each field a short "section" label that groups it with other fields that logically belong together (e.g. "Shipping Details", "Billing Info", "Line Items", "Party Information", or - for financial/accounting documents such as balance sheets, profit & loss statements, cash flow statements, trial balances, ledgers, GST returns, TDS certificates, ITR forms, or audit reports - section names like "Assets", "Liabilities", "Equity", "Revenue", "Expenses", "Tax Summary", "Auditor Details"). These are examples only, not a fixed list - name each section after what the document itself actually contains. Reuse the exact same section label, character for character, across every field that belongs to that group, even across pages. If a field doesn't obviously belong to a named group, use "General".
-        - Assign each field a "priority" integer (1 = most important). Judge importance yourself, fresh for this document: what would a reader look for first - key totals, final balances, primary reference/identifying numbers, the main parties involved - gets low numbers; supporting detail, boilerplate, and incidental line items get higher numbers. Fields in the same section should usually share the same or a close priority value. Never derive priority from a fixed rule or field name alone - decide it from what this specific document is actually about.
+        - "type": Text, Number, Currency, Date, Percentage, or Boolean (spreadsheet cell types) - never invent another. Default to Text for names, addresses, phone/email/URLs, and ID codes (invoice #, GSTIN, CIN, UDIN, PAN, account #) - coercing these to Number corrupts leading zeros/non-digits. Currency = a money amount; Number = a plain count/measurement with no currency meaning; Percentage = has a % sign or the word "percent"; Boolean = strictly yes/no or true/false.
+        - "section": a short label grouping related fields (e.g. "Shipping Details", "Billing Info", "Line Items", "Party Information"; for financial docs: "Assets", "Liabilities", "Equity", "Revenue", "Expenses", "Tax Summary", "Auditor Details" - examples only, name each section after what THIS document actually contains). Reuse the exact same label, character for character, across every field in that group, even across pages. Use "General" if nothing fits.
+        - "priority": integer, 1 = most important. Judge freshly per document - key totals/balances, primary IDs, main parties get low numbers; supporting/boilerplate/incidental detail gets higher numbers. Same-section fields usually share similar priority. Never derive it from a fixed rule alone - judge from what this document is actually about.
         """;
 
     /// <summary>
@@ -46,9 +46,9 @@ public static class AiExtractionPromptHelper
     /// row - the single biggest cause of "missing data" complaints on this kind of document.
     /// </summary>
     private const string CompletenessInstructions = """
-        - Never skip, summarize, truncate, or silently drop any labeled data point, no matter how many there are on a page - completeness matters more than brevity.
-        - If a page contains a table (e.g. a schedule of line items, a ledger, a list of assets/liabilities, transaction rows), extract EVERY row as its own field, not just a subtotal or the first few rows. Build each row's key from its row label/description (e.g. "Salary Expense", "Accounts Payable - Vendor X"); if the same row label repeats within one table, distinguish each occurrence (e.g. append a distinguishing detail, a date, or a running index) so no two distinct rows collapse into one key.
-        - Numeric values (amounts, quantities, percentages) must be copied exactly as printed, including currency symbols, thousands separators, decimals, and parentheses/minus signs used for negative amounts - do not normalize, round, or reformat them.
+        - Never skip, summarize, or truncate any labeled data point, no matter how many are on a page - completeness matters more than brevity.
+        - Tables (schedules, ledgers, transaction rows, asset/liability lists): extract EVERY row as its own field, not just a subtotal or the first few. Build each row's key from its label/description (e.g. "Salary Expense", "Accounts Payable - Vendor X"); if a label repeats within one table, distinguish each occurrence (a date, detail, or index) so rows never collapse into one key.
+        - Copy numeric values (amounts, quantities, percentages) exactly as printed - symbols, separators, decimals, parentheses/minus for negatives - never normalize or reformat.
         """;
 
     /// <summary>
@@ -58,11 +58,11 @@ public static class AiExtractionPromptHelper
     /// appended after each page's text.
     /// </summary>
     private const string SignalVsNoiseInstructions = """
-        - Only report a value that is actually printed, typed, or filled in somewhere on the document - never guess, infer, calculate, autocomplete, or fabricate a value that isn't genuinely present, even if it seems like an obvious or expected answer. When genuinely unsure whether something counts as a real value, leave it out rather than invent one.
-        - A run of underscores, dashes, dots, or blank space after a label (e.g. "Date: ___________") is a blank fill-in line, not a value - it means nothing was printed there. Never report the underscores/dashes/dots themselves as the "value". If nothing else on the page supplies a real answer for that label (see the next two rules), treat the field as having no value: use null in Formatted mode, or simply don't emit that field at all in Dynamic mode.
-        - Some PDFs have a person's actual answer stored separately from the printed template - as a fillable form field, or as a small text overlay/annotation positioned on top of a blank line - rather than printed inline with the label. When the document text below includes a section headed "[Values entered into this PDF's fillable form fields...]" or "[Filled-in values found on this page as separate annotations/overlays...]", those are the real answers: match each one (by field name, or by the "near <label>" hint) to the blank/underscored field it belongs to, and use it as that field's value instead of leaving it blank or copying the underscores.
-        - Do not extract a large block of standard printed legal/administrative boilerplate (terms and conditions, warranty disclaimers, liability clauses, standard signature-block captions, page footers) as a field value - this is fixed print repeated on every such document, not a data point specific to this one. It's fine to note that a "Terms and Conditions" section exists (e.g. as a short section heading with no value, or omitted entirely) but never dump paragraphs of that boilerplate text into a field's value.
-        - Blank templates (invoice/form templates a person hasn't filled in yet) often print generic placeholder text as an example of what belongs in a field, instead of leaving it truly blank - e.g. a "Bill To" block might literally print "Client Company Name" instead of a real client's name. This is exactly like an unfilled blank/underscored line: not a real answer, don't report it as the field's value. A good signal for this: nearby fields in the same block are also genuinely empty - if a whole block looks unfilled, treat every field in it as unfilled.
+        - Only report a value that is actually printed, typed, or filled in - never guess, infer, calculate, or fabricate. When genuinely unsure, leave it out rather than invent one.
+        - Underscores, dashes, dots, or blank space after a label (e.g. "Date: ___________") is a blank fill-in line, not a value - never report the underscores/dashes/dots as the "value". If nothing else supplies a real answer (see the next two rules), treat the field as having no value: null in Formatted mode, or don't emit it in Dynamic mode.
+        - Some PDFs store the real answer separately - a fillable form field, or a text overlay/annotation on top of a blank line - rather than printed inline. When the document text includes "[Values entered into this PDF's fillable form fields...]" or "[Filled-in values found on this page as separate annotations/overlays...]", those are the real answers: match each one (by field name or the "near <label>" hint) to its blank/underscored field and use it instead of leaving the field blank.
+        - Do not extract a block of standard legal/administrative boilerplate (T&Cs, warranty disclaimers, liability clauses, signature captions, page footers) as a field value - it's fixed print, not data specific to this document. A "Terms and Conditions" heading with no value (or omitted) is fine; never dump paragraphs of it into a value.
+        - Blank templates often print generic placeholder text instead of leaving a field truly empty (e.g. a "Bill To" block literally printing "Client Company Name"). Treat this like an unfilled line, not a real answer - a good signal: nearby fields in the same block are also genuinely empty, meaning the whole block is unfilled.
         """;
 
     /// <summary>
@@ -70,7 +70,7 @@ public static class AiExtractionPromptHelper
     /// the caller's literal wording. Used only in Formatted mode.
     /// </summary>
     private const string FuzzyFieldMatchInstructions = """
-        - The document's own label for a requested field is often worded differently than the request itself - an abbreviation, a synonym, a different word order, or a different language (e.g. a request for "Invoice Number" should match a printed "Inv #", "INV No.", "Invoice No", "Bill Number", or "Reference No." when it clearly identifies the same real-world document). Match by MEANING, not exact text. This only changes how you search the document; the "key" in your response must still be the caller's exact requested string, never the document's own wording.
+        - The document's own label for a requested field is often worded differently (abbreviation, synonym, different order/language - e.g. "Invoice Number" should match "Inv #", "INV No.", "Invoice No", or "Reference No." when it clearly means the same document). Match by MEANING, not exact text - but the "key" in your response must still be the caller's exact requested string, never the document's own wording.
         """;
 
     /// <summary>
@@ -78,7 +78,7 @@ public static class AiExtractionPromptHelper
     /// left in place.
     /// </summary>
     private const string DeduplicationInstructions = """
-        - Within the SAME page's fields only, if two or more fields clearly capture the exact same real-world data point twice under different keys (the same identity/meaning, from their labels and context, AND the same value), keep the clearer/more standard-sounding one and remove the redundant duplicate entirely. Never merge solely because two fields' values happen to coincide. Be conservative: if you are not confident two fields are true duplicates, keep both. This never applies across different pages.
+        - Within the SAME page only: if two fields clearly capture the exact same real-world data point (same meaning AND same value), keep the clearer one and drop the duplicate. Never merge just because values coincide. Be conservative - keep both if unsure. Never applies across pages.
         """;
 
     /// <summary>Layers an admin-configured tier's optional prompt customization on top of the
@@ -105,7 +105,7 @@ public static class AiExtractionPromptHelper
     {
         var documentText = BuildDocumentText(pages);
         var retryNote = isRetryAfterEmptyResult
-            ? "NOTE: a previous attempt at this exact extraction returned no usable fields. Re-examine the document text and any page images carefully before answering again - if this is a real document with visible content, there should be extractable data.\n\n"
+            ? "NOTE: the previous attempt returned no usable fields. Re-examine the document text/images carefully - if there's real visible content, there should be extractable data.\n\n"
             : "";
         var customization = BuildTierCustomizationBlock(tier);
 
@@ -114,16 +114,16 @@ public static class AiExtractionPromptHelper
             var fieldList = string.Join("\n", requestedFields.Select(f => $"- \"{f}\""));
             var systemRules = $"{FuzzyFieldMatchInstructions}\n{TypeAndSectionInstructions}\n{SignalVsNoiseInstructions}\n{customization}";
             var taskInstructions = $$"""
-                {{retryNote}}Extract ONLY the following fields from the document text above - nothing else:
+                {{retryNote}}Extract ONLY these fields from the document text above:
                 {{fieldList}}
 
                 Rules:
-                - Use these exact field names as the "key" in your response, character for character - do not rename, translate, or reword them.
-                - If a requested field is not present anywhere in the document, still include it in your response with "value": null. Do not omit it.
-                - Do not add any field that isn't in the list above - this holds even if you can also see an image of this document: an image is provided only to help you read/locate the requested fields more accurately, never a reason to also report other information you happen to see in it.
-                - If a field appears on a specific page, set "page" to that page number; otherwise omit "page" or set it to null.
+                - "key" = the exact requested name, character for character - never rename/translate.
+                - Not present anywhere? Include it with "value": null - never omit it.
+                - Add no other fields, even if an image is shown - it's only for locating these fields, not for reporting extra content.
+                - Set "page" to the page it appears on, else omit/null.
 
-                Respond with ONLY a JSON array, no prose, no markdown fences, in this exact shape:
+                Respond with ONLY a JSON array, no prose, no markdown fences:
                 [{"key": "Invoice No.", "value": "INV-2024-001", "page": 1, "type": "Reference", "section": "Billing Info", "priority": 1}, ...]
                 """;
             return new PromptParts(systemRules, documentText, taskInstructions);
@@ -131,21 +131,18 @@ public static class AiExtractionPromptHelper
 
         var dynamicSystemRules = $"{TypeAndSectionInstructions}\n{CompletenessInstructions}\n{SignalVsNoiseInstructions}\n{customization}";
         var dynamicTaskInstructions = $$"""
-            {{retryNote}}Extract every meaningful key/value field from the document text above - this may be
-            an invoice, a logistics/shipping manifest, a contract, a financial statement or
-            accounting document, or any other kind of document; adapt to whatever is actually in
-            front of you rather than assuming any one document type. Process each page
-            independently and be exhaustive: a field or table row that is visibly present on a
-            page must always be extracted from that page, every time, never skipped, summarized,
-            or truncated for brevity.
+            {{retryNote}}Extract every meaningful key/value field from the document text above - invoice,
+            shipping manifest, contract, financial statement, or any other document type; adapt
+            to what's actually there. Process each page independently and be exhaustive: any
+            field/table row visibly present on a page must always be extracted, never skipped or
+            summarized.
 
             Rules:
-            - Use the field's own label from the document as the "key", exactly as written.
-            - Do not paraphrase, translate, or invent a different name for a field that already has a label in the document.
-            - The SAME field label can legitimately appear on more than one page, meaning something different each time. Report every page's occurrence under that page's own entry below - never merge, average, or drop one occurrence in favor of another just because the label repeats.
-            - If a field spans the whole document rather than belonging to one page, put it under the first page it appears on.
+            - "key" = the field's own label from the document, exactly as written - never paraphrase, translate, or rename.
+            - The SAME label can appear on multiple pages meaning different things each time - report every page's occurrence separately, never merge or drop one for repeating.
+            - A field spanning the whole document goes under the first page it appears on.
 
-            Respond with ONLY a JSON array, no prose, no markdown fences, with exactly ONE object per page (matching the "--- Page N ---" markers above), in this exact shape:
+            Respond with ONLY a JSON array, no prose, no markdown fences, exactly ONE object per page (matching the "--- Page N ---" markers above):
             [{"page": 1, "fields": [{"key": "Invoice No.", "value": "INV-2024-001", "type": "Reference", "section": "Billing Info", "priority": 1}, {"key": "Tax Category", "value": "...", "type": "Generic", "section": "General", "priority": 5}]}, {"page": 2, "fields": [{"key": "Tax Category", "value": "...", "type": "Generic", "section": "General", "priority": 5}]}]
             """;
         return new PromptParts(dynamicSystemRules, documentText, dynamicTaskInstructions);
@@ -171,21 +168,17 @@ public static class AiExtractionPromptHelper
             var systemRules = $"{TypeAndSectionInstructions}\n{CompletenessInstructions}\n{SignalVsNoiseInstructions}\n{DeduplicationInstructions}";
 
             var taskInstructions = $$"""
-                You previously extracted the fields below, grouped by page, from the document
-                text above. Re-check every single value against the document text,
-                character by character where it matters (invoice/reference numbers, dates,
-                amounts, IDs, codes). Also check for anything genuinely missing altogether: if
-                this document has dense tabular data and the first pass only captured some rows,
-                add every missing row now.
+                You previously extracted the fields below, grouped by page, from the document text
+                above. Re-check every value character by character where it matters (reference
+                numbers, dates, amounts, IDs, codes). If dense tabular data means rows were
+                missed, add them now.
 
                 Rules:
-                - If a value is already correct, keep it exactly as-is.
-                - If a value is wrong, or belongs on a different page than where you put it, correct it using the document text.
-                - If a value is missing (null) but the field is actually present on that page, fill it in.
-                - If a field genuinely isn't on that page, leave its value null.
-                - If an entire row/field present in the document text was missed by the first pass, add it now, on the correct page.
-                - Keep the same pages and the same keys within each page - do not rename any existing entry, and do not remove one EXCEPT for a confirmed same-page duplicate per the rule below.
-                - "type", "section", and "priority" may be corrected if clearly wrong - otherwise keep them as given.
+                - Keep already-correct values as-is; fix wrong values or wrong pages using the document text.
+                - Fill in a null value if the field is actually present on that page; leave it null if it genuinely isn't there.
+                - Add any row/field the first pass missed, on the correct page.
+                - Keep the same pages/keys - never rename an entry; remove only a confirmed same-page duplicate (see below).
+                - Correct "type"/"section"/"priority" only if clearly wrong.
 
                 YOUR FIRST-PASS EXTRACTION (grouped by page):
                 {{fieldsJson}}
@@ -200,17 +193,15 @@ public static class AiExtractionPromptHelper
         var flatSystemRules = $"{FuzzyFieldMatchInstructions}\n{TypeAndSectionInstructions}\n{SignalVsNoiseInstructions}";
 
         var flatTaskInstructions = $$"""
-            You previously extracted the fields below from the document text above - this
-            is a fixed, caller-specified list of fields, not an open-ended extraction. Re-check
-            every single value against the document text, character by character where it matters.
+            You previously extracted the fields below from the document text above - a fixed,
+            caller-specified list, not open-ended. Re-check every value character by character
+            where it matters.
 
             Rules:
-            - If a value is already correct, keep it exactly as-is.
-            - If a value is wrong or was picked up from the wrong place, correct it using the document text.
-            - If a value is missing (null) but the field is actually present in the text, fill it in.
-            - If a field genuinely isn't in the document, leave its value null.
-            - Keep the exact same set of keys, in the exact same order - do not add, remove, or rename any.
-            - "type", "section", and "priority" may be corrected if clearly wrong - otherwise keep them as given.
+            - Keep already-correct values as-is; fix wrong or misplaced values using the document text.
+            - Fill in a null value if the field is actually present; leave it null if it genuinely isn't.
+            - Keep the exact same keys, same order - never add, remove, or rename any.
+            - Correct "type"/"section"/"priority" only if clearly wrong.
 
             YOUR FIRST-PASS EXTRACTION:
             {{flatFieldsJson}}
