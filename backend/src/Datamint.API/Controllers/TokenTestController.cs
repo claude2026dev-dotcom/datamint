@@ -1,3 +1,4 @@
+using Datamint.API.Pricing;
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -94,15 +95,25 @@ public class TokenTestController : ControllerBase
                 return StatusCode(502, new { success = false, message = result.ErrorMessage ?? "Extraction failed." });
 
             var calls = aiService.CallUsages;
+            var totalInputTokens = calls.Sum(c => c.InputTokens);
+            var totalOutputTokens = calls.Sum(c => c.OutputTokens);
             return Ok(new
             {
                 success = true,
                 fields = result.Fields,
                 provider = tier.AiProvider.ToString(),
                 model = tier.ModelName,
-                calls = calls.Select(c => new { purpose = c.Purpose, inputTokens = c.InputTokens, outputTokens = c.OutputTokens }),
-                totalInputTokens = calls.Sum(c => c.InputTokens),
-                totalOutputTokens = calls.Sum(c => c.OutputTokens)
+                calls = calls.Select(c => new
+                {
+                    purpose = c.Purpose,
+                    inputTokens = c.InputTokens,
+                    outputTokens = c.OutputTokens,
+                    costUsd = AiModelPricing.CalculateCostUsd(tier.ModelName, c.InputTokens, c.OutputTokens)
+                }),
+                totalInputTokens,
+                totalOutputTokens,
+                totalCostUsd = AiModelPricing.CalculateCostUsd(tier.ModelName, totalInputTokens, totalOutputTokens),
+                pricingKnown = AiModelPricing.GetRates(tier.ModelName) is not null
             });
         }
         finally
