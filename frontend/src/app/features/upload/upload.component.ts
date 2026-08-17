@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { trigger, transition, style, animate } from '@angular/animations';
+import { forkJoin } from 'rxjs';
 import { DocumentService } from '../../core/services/document.service';
 import { ToastService } from '../../core/services/toast.service';
 import { FieldTemplateService } from '../../core/services/field-template.service';
@@ -491,17 +492,13 @@ export class UploadComponent implements OnInit, AfterViewChecked {
     this.progress = 15;
     this.bulkFileStatuses = this.selectedFiles.map(f => ({ name: f.file.name, status: 'pending' }));
 
-    // Simulated staged progress for a smooth perceived-performance animation while the real
-    // request is in flight (the backend processes inline on the request thread today - see
-    // CLAUDE.md's "Processing is synchronous" note - so there's no real progress feed yet).
-    // Cleared as soon as the real response arrives below - otherwise a fast response (e.g. an
-    // immediate validation failure) can have these fire afterward and clobber the real
-    // 'failed'/'done' stage back to 'extracting'.
-    const stagingTimeouts = [
-      setTimeout(() => { this.stage = 'reading'; this.progress = 40; }, 500),
-      setTimeout(() => { this.stage = 'extracting'; this.progress = 75; }, 1300)
-    ];
-    const clearStaging = () => stagingTimeouts.forEach(clearTimeout);
+    // Brief simulated tick purely for perceived responsiveness while the upload request itself
+    // (saving files + the pre-extraction quota check) is in flight - cleared the moment the real
+    // response arrives. Everything after that reflects genuinely polled backend state, not a
+    // timer: extraction now runs on a background worker (see DocumentProcessingService.
+    // ProcessDocumentAsync's doc comment for why), so the upload response only confirms the
+    // documents were accepted and queued, not that extraction finished.
+    const stagingTimeout = setTimeout(() => { this.stage = 'reading'; this.progress = 35; }, 500);
 
     const pageSelections = this.selectedFiles
       .map((f, fileIndex) => ({ fileIndex, pages: this.pageSpecFor(f) }))
@@ -511,53 +508,82 @@ export class UploadComponent implements OnInit, AfterViewChecked {
       this.selectedFiles.map(f => f.file), this.extractionMode, this.requestedFieldNames.join(','), pageSelections
     ).subscribe({
       next: res => {
-        clearStaging();
-        this.progress = 100;
-        // The HTTP call succeeding only means the upload was accepted - each
-        // document's own status reflects whether AI extraction actually worked,
-        // so a 200 response can still carry failures that need surfacing here.
-        const failed = res.documents.filter(d => d.status === 'Failed');
-        const succeeded = res.documents.filter(d => d.status !== 'Failed');
-        this.processedDocIds = succeeded.map(d => d.id);
-
-        const finish = () => {
-          if (succeeded.length === 0) {
-            this.stage = 'failed';
-            this.errorMessage = failed[0]?.failureReason || undefined;
-            return;
-          }
-          this.stage = 'done';
-          if (failed.length > 0) {
-            this.toast.error(`${failed.length} of ${res.documents.length} file(s) couldn't be processed. The rest are ready to review.`);
-          }
-          // Straight into the review flow - no extra click needed. A short pause lets the
-          // "done" animation actually register before the page changes underneath it.
-          setTimeout(() => this.goToReview(), 700);
-        };
-
-        if (this.selectedFiles.length > 1) {
-          // Every result is already known (the backend processes the whole batch in one
-          // request) - this only paces how they're *revealed*, one tick at a time, instead
-          // of flipping every row to its final state simultaneously.
-          res.documents.forEach((doc, i) => {
-            setTimeout(() => {
-              if (!this.bulkFileStatuses[i]) return;
-              this.bulkFileStatuses[i] = doc.status === 'Failed'
-                ? { name: this.bulkFileStatuses[i].name, status: 'failed' }
-                : { name: this.bulkFileStatuses[i].name, status: 'done' };
-            }, i * 350);
-          });
-          setTimeout(finish, res.documents.length * 350);
-        } else {
-          finish();
-        }
+        clearTimeout(stagingTimeout);
+        this.stage = 'extracting';
+        this.progress = 55;
+        this.bulkFileStatuses = res.documents.map(d => ({ name: d.originalFileName, status: 'pending' }));
+        this.pollUntilDone(res.documents.map(d => d.id));
       },
       error: err => {
-        clearStaging();
+        clearTimeout(stagingTimeout);
         this.stage = 'failed';
         this.errorMessage = err?.error?.message;
       }
     });
+  }
+
+  /// Polls each queued document's real status until every one reaches a terminal state, so the
+  /// progress UI reflects actual backend state instead of a simulated timer - extraction now
+  /// runs on a background worker (see DocumentProcessingService.ProcessDocumentAsync's doc
+  /// comment), decoupled from the upload request that queued it.
+  private pollUntilDone(ids: string[]) {
+    const POLL_INTERVAL_MS = 2000;
+    const terminal = new Set(['Extracted', 'Reviewed', 'Exported', 'Failed']);
+    const latest = new Map<string, { status: string; failureReason: string | null }>();
+
+    const tick = () => {
+      if (!this.processing) return; // abandoned (e.g. user reset the form mid-poll)
+
+      const pending = ids.filter(id => !terminal.has(latest.get(id)?.status ?? ''));
+      if (pending.length === 0) { this.finishPolling(ids, latest); return; }
+
+      forkJoin(pending.map(id => this.documentService.getStatus(id))).subscribe({
+        next: results => {
+          if (!this.processing) return;
+          results.forEach(r => latest.set(r.id, { status: r.status, failureReason: r.failureReason }));
+
+          ids.forEach((id, i) => {
+            if (!this.bulkFileStatuses[i]) return;
+            const status = latest.get(id)?.status;
+            this.bulkFileStatuses[i] = {
+              name: this.bulkFileStatuses[i].name,
+              status: status === 'Failed' ? 'failed' : terminal.has(status ?? '') ? 'done' : 'pending'
+            };
+          });
+
+          const doneCount = ids.filter(id => terminal.has(latest.get(id)?.status ?? '')).length;
+          this.progress = Math.min(95, 55 + Math.round((doneCount / ids.length) * 40));
+
+          if (doneCount === ids.length) this.finishPolling(ids, latest);
+          else setTimeout(tick, POLL_INTERVAL_MS);
+        },
+        // A transient poll failure (network blip) shouldn't abandon the wait - just retry.
+        error: () => setTimeout(tick, POLL_INTERVAL_MS)
+      });
+    };
+
+    tick();
+  }
+
+  private finishPolling(ids: string[], statusById: Map<string, { status: string; failureReason: string | null }>) {
+    const failedIds = ids.filter(id => statusById.get(id)?.status === 'Failed');
+    const succeededIds = ids.filter(id => statusById.get(id)?.status !== 'Failed');
+    this.processedDocIds = succeededIds;
+
+    if (succeededIds.length === 0) {
+      this.stage = 'failed';
+      this.errorMessage = failedIds.length > 0 ? (statusById.get(failedIds[0])?.failureReason ?? undefined) : undefined;
+      return;
+    }
+
+    this.progress = 100;
+    this.stage = 'done';
+    if (failedIds.length > 0) {
+      this.toast.error(`${failedIds.length} of ${ids.length} file(s) couldn't be processed. The rest are ready to review.`);
+    }
+    // Straight into the review flow - no extra click needed. A short pause lets the
+    // "done" animation actually register before the page changes underneath it.
+    setTimeout(() => this.goToReview(), 700);
   }
 
   goToReview() {
