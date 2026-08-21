@@ -151,65 +151,128 @@ public static class AiExtractionPromptHelper
     /// <summary>
     /// Second pass: hands the model its own first-pass answer alongside the source text again
     /// and asks it to double-check every value character by character. This "extract, then
-    /// verify" pattern catches the single-pass mistakes users see most often. DocumentText here
-    /// is built from the exact same `pages` the first pass used for this chunk, so a
-    /// caching-aware provider recognizes it as the identical block already cached moments ago.
+    /// verify" pattern catches the single-pass mistakes users see most often.
+    ///
+    /// Two cost levers, both zero-risk to accuracy because neither changes what the model reads
+    /// or how thoroughly it checks - only how much it has to write back and how it's billed:
+    /// 1. SPARSE PATCH RESPONSE: the model used to re-emit the ENTIRE field list every verify
+    ///    call, correct or not - for a typical document where most fields are already right,
+    ///    that's mostly wasted output tokens (billed ~5x input price on Claude). It now returns
+    ///    only the corrections/additions/removals - each field carries a stable "i" index (its
+    ///    position in `initialFields`) so C# can splice the patch back in deterministically.
+    /// 2. CACHE-ALIGNED SYSTEM RULES: SystemRules here is built EXACTLY like BuildPrompt's for
+    ///    the same (mode, tier) - same blocks, same order, same customization - so combined with
+    ///    the identical DocumentText, the cacheable block this call sends is byte-for-byte the
+    ///    one the first pass just sent moments ago. When that combined block clears the
+    ///    provider's real caching threshold, this call reads it back at a fraction of normal
+    ///    input price instead of paying full price to re-send it. (Previously this block
+    ///    silently differed by tier customization and an extra rule block, which meant it could
+    ///    never actually match the first pass's cached entry - this fixes that mismatch.)
     /// </summary>
-    public static PromptParts BuildVerificationPrompt(IEnumerable<PdfPageTextDto> pages, List<ExtractedFieldDto> initialFields, bool groupByPage)
+    public static PromptParts BuildVerificationPrompt(IEnumerable<PdfPageTextDto> pages, List<ExtractedFieldDto> initialFields, ExtractionTier tier, bool groupByPage)
     {
         var documentText = BuildDocumentText(pages);
+        var customization = BuildTierCustomizationBlock(tier);
 
         if (groupByPage)
         {
             var grouped = initialFields
-                .GroupBy(f => f.PageNumber ?? 0)
-                .Select(g => new { page = g.Key, fields = g.Select(f => new { key = f.Key, value = f.Value, type = f.SemanticType, section = f.SectionLabel, priority = f.Priority }).ToList() });
+                .Select((f, i) => new { f, i })
+                .GroupBy(x => x.f.PageNumber ?? 0)
+                .Select(g => new { page = g.Key, fields = g.Select(x => new { i = x.i, key = x.f.Key, value = x.f.Value, type = x.f.SemanticType, section = x.f.SectionLabel, priority = x.f.Priority }).ToList() });
             var fieldsJson = JsonSerializer.Serialize(grouped);
-            var systemRules = $"{TypeAndSectionInstructions}\n{CompletenessInstructions}\n{SignalVsNoiseInstructions}\n{DeduplicationInstructions}";
+            // Identical composition/order to BuildPrompt's dynamic-mode SystemRules - required for cache alignment (see above).
+            var systemRules = $"{TypeAndSectionInstructions}\n{CompletenessInstructions}\n{SignalVsNoiseInstructions}\n{customization}";
 
             var taskInstructions = $$"""
-                You previously extracted the fields below, grouped by page, from the document text
-                above. Re-check every value character by character where it matters (reference
-                numbers, dates, amounts, IDs, codes). If dense tabular data means rows were
-                missed, add them now.
+                You previously extracted the fields below, grouped by page, with each field's index "i". Re-check every
+                value character by character where it matters (reference numbers, dates, amounts, IDs, codes).
 
-                Rules:
-                - Keep already-correct values as-is; fix wrong values or wrong pages using the document text.
-                - Fill in a null value if the field is actually present on that page; leave it null if it genuinely isn't there.
-                - Add any row/field the first pass missed, on the correct page.
-                - Keep the same pages/keys - never rename an entry; remove only a confirmed same-page duplicate (see below).
-                - Correct "type"/"section"/"priority" only if clearly wrong.
+                {{DeduplicationInstructions}}
+
+                Respond with ONLY a JSON object - a SPARSE PATCH, not a full re-list:
+                - "corrections": one entry per field that actually needs a change, each giving that field's FULL corrected
+                  data: {"i": <its index>, "value": ..., "type": ..., "section": ..., "priority": ...}. Omit any field that's
+                  already correct - do not list it.
+                - "additions": complete new entries for any row/field the first pass missed: {"page": N, "key": ..., "value": ..., "type": ..., "section": ..., "priority": ...}.
+                - "removals": the "i" index of any confirmed same-page duplicate to remove.
+                - Never rename a key or move it to a different page via a correction - fields not listed keep their original data exactly.
+                - If nothing needs to change, respond with {"corrections":[],"additions":[],"removals":[]}.
 
                 YOUR FIRST-PASS EXTRACTION (grouped by page):
                 {{fieldsJson}}
 
-                Respond with ONLY the corrected JSON array, no prose, no markdown fences, same shape:
-                [{"page": 1, "fields": [{"key": "Invoice No.", "value": "INV-2024-001", "type": "Reference", "section": "Billing Info", "priority": 1}]}, ...]
+                Example shape: {"corrections":[{"i":2,"value":"INV-2024-001","type":"Reference","section":"Billing Info","priority":1}],"additions":[{"page":1,"key":"PO Number","value":"PO-55","type":"Reference","section":"Billing Info","priority":2}],"removals":[]}
                 """;
             return new PromptParts(systemRules, documentText, taskInstructions);
         }
 
-        var flatFieldsJson = JsonSerializer.Serialize(initialFields.Select(f => new { key = f.Key, value = f.Value, page = f.PageNumber, type = f.SemanticType, section = f.SectionLabel, priority = f.Priority }));
-        var flatSystemRules = $"{FuzzyFieldMatchInstructions}\n{TypeAndSectionInstructions}\n{SignalVsNoiseInstructions}";
+        var flatFieldsJson = JsonSerializer.Serialize(initialFields.Select((f, i) => new { i, key = f.Key, value = f.Value, page = f.PageNumber, type = f.SemanticType, section = f.SectionLabel, priority = f.Priority }));
+        // Identical composition/order to BuildPrompt's formatted-mode SystemRules - required for cache alignment (see above).
+        var flatSystemRules = $"{FuzzyFieldMatchInstructions}\n{TypeAndSectionInstructions}\n{SignalVsNoiseInstructions}\n{customization}";
 
         var flatTaskInstructions = $$"""
-            You previously extracted the fields below from the document text above - a fixed,
-            caller-specified list, not open-ended. Re-check every value character by character
-            where it matters.
+            You previously extracted the fields below, each with its index "i", from a fixed caller-specified list -
+            not open-ended. Re-check every value character by character where it matters.
 
-            Rules:
-            - Keep already-correct values as-is; fix wrong or misplaced values using the document text.
-            - Fill in a null value if the field is actually present; leave it null if it genuinely isn't.
-            - Keep the exact same keys, same order - never add, remove, or rename any.
-            - Correct "type"/"section"/"priority" only if clearly wrong.
+            Respond with ONLY a JSON object - a SPARSE PATCH, not a full re-list:
+            - "corrections": one entry per field that actually needs a change, each giving that field's FULL corrected
+              data: {"i": <its index>, "value": ..., "type": ..., "section": ..., "priority": ...}. Omit any field that's
+              already correct - do not list it. Never add, remove, or rename a field - only "corrections" apply here.
+            - If nothing needs to change, respond with {"corrections":[]}.
 
             YOUR FIRST-PASS EXTRACTION:
             {{flatFieldsJson}}
 
-            Respond with ONLY the corrected JSON array, no prose, no markdown fences, same shape:
-            [{"key": "Invoice No.", "value": "INV-2024-001", "page": 1, "type": "Reference", "section": "Billing Info", "priority": 1}, ...]
+            Example shape: {"corrections":[{"i":0,"value":"INV-2024-001","type":"Reference","section":"Billing Info","priority":1}]}
             """;
         return new PromptParts(flatSystemRules, documentText, flatTaskInstructions);
+    }
+
+    /// <summary>
+    /// Splices a sparse verify patch (see BuildVerificationPrompt) back into the first-pass field
+    /// list. Corrections overwrite in place by index, removals filter by (pre-addition) index,
+    /// additions append - order mirrors how the model was told to build the patch. Throws on
+    /// malformed JSON so the caller's existing try/catch can fall back to the first-pass result
+    /// unchanged, same safety net as before this patch format existed.
+    /// </summary>
+    public static List<ExtractedFieldDto> ApplyVerificationPatch(string rawModelText, List<ExtractedFieldDto> original, bool groupByPage)
+    {
+        var cleaned = CleanJsonText(rawModelText);
+        var patch = JsonSerializer.Deserialize<VerifyPatchJson>(cleaned, JsonOptions) ?? new VerifyPatchJson();
+
+        var result = new List<ExtractedFieldDto>(original);
+
+        if (patch.Corrections is not null)
+        {
+            foreach (var c in patch.Corrections)
+            {
+                if (c.I < 0 || c.I >= result.Count) continue; // ignore a bad index rather than let it invalidate an otherwise-good patch
+                var existing = result[c.I];
+                result[c.I] = existing with
+                {
+                    Value = c.Value,
+                    SemanticType = c.Type ?? existing.SemanticType,
+                    SectionLabel = c.Section ?? existing.SectionLabel,
+                    Priority = c.Priority ?? existing.Priority
+                };
+            }
+        }
+
+        // Removals reference indices into `original` (pre-addition), so filter before appending additions.
+        if (patch.Removals is { Count: > 0 })
+        {
+            var removeSet = new HashSet<int>(patch.Removals);
+            result = result.Where((_, idx) => !removeSet.Contains(idx)).ToList();
+        }
+
+        if (groupByPage && patch.Additions is not null)
+        {
+            foreach (var a in patch.Additions)
+                result.Add(new ExtractedFieldDto(a.Key, a.Value, a.Page, a.Type, a.Section, a.Priority));
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -370,5 +433,31 @@ public static class AiExtractionPromptHelper
         public int? Priority { get; set; }
         public string? Type { get; set; }
         public string? Section { get; set; }
+    }
+
+    private class VerifyPatchJson
+    {
+        public List<CorrectionJson>? Corrections { get; set; }
+        public List<AdditionJson>? Additions { get; set; }
+        public List<int>? Removals { get; set; }
+    }
+
+    private class CorrectionJson
+    {
+        public int I { get; set; }
+        public string? Value { get; set; }
+        public string? Type { get; set; }
+        public string? Section { get; set; }
+        public int? Priority { get; set; }
+    }
+
+    private class AdditionJson
+    {
+        public int? Page { get; set; }
+        public string Key { get; set; } = default!;
+        public string? Value { get; set; }
+        public string? Type { get; set; }
+        public string? Section { get; set; }
+        public int? Priority { get; set; }
     }
 }

@@ -161,20 +161,21 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
                 return new AiExtractionResultDto(new List<ExtractedFieldDto>(), false, GenericExtractionFailureMessage);
             }
 
-            var verifyPrompt = AiExtractionPromptHelper.BuildVerificationPrompt(pageList, fields, isDynamicMode);
+            var verifyPrompt = AiExtractionPromptHelper.BuildVerificationPrompt(pageList, fields, tier, isDynamicMode);
             var (verifyText, verifyError) = await CallAndRecordAsync("Verify", apiKey, tier.ModelName, verifyPrompt, Array.Empty<PageImageDto>(), ct);
             if (verifyError is null && verifyText is not null)
             {
                 try
                 {
-                    var verified = isDynamicMode
-                        ? AiExtractionPromptHelper.ParsePageGroupedFieldsJson(verifyText)
-                        : ReconcileFormattedFields(AiExtractionPromptHelper.ParseFieldsJson(verifyText), requestedFields!);
-                    if (verified.Count > 0) fields = verified;
+                    // A patch that parses but changes nothing (empty corrections/additions/removals)
+                    // is a normal, desirable outcome now - it means the first pass was already
+                    // correct - unlike the old full-re-list format, "no changes" is no longer
+                    // indistinguishable from "verify failed", so there's no count>0 check needed here.
+                    fields = AiExtractionPromptHelper.ApplyVerificationPatch(verifyText, fields, isDynamicMode);
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogWarning(ex, "Verification pass returned unparseable JSON, keeping first-pass result");
+                    Logger.LogWarning(ex, "Verification pass returned unparseable patch, keeping first-pass result");
                 }
             }
 
