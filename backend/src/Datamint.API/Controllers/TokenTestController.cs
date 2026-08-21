@@ -55,10 +55,19 @@ public class TokenTestController : ControllerBase
 
     [HttpPost("extract")]
     [RequestSizeLimit(20_000_000)]
-    public async Task<IActionResult> Extract(IFormFile? file, CancellationToken ct)
+    public async Task<IActionResult> Extract(IFormFile? file, [FromForm] string? requestedFields, CancellationToken ct)
     {
         if (file is null || file.Length == 0)
             return BadRequest(new { success = false, message = "No file provided." });
+
+        // Mirrors the real upload page's Dynamic-vs-Formatted choice: a non-empty comma-separated
+        // list switches this into the same "extract ONLY these fields" mode DocumentProcessingService
+        // uses for Formatted-mode/template uploads - same prompt path, same reconciliation, so the
+        // token/cost numbers shown here are exactly what that mode would really cost.
+        var fieldList = (requestedFields ?? "")
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .ToList();
+        List<string>? requestedFieldsList = fieldList.Count > 0 ? fieldList : null;
 
         var ext = Path.GetExtension(file.FileName);
         if (!AllowedExtensions.Contains(ext))
@@ -107,7 +116,7 @@ public class TokenTestController : ControllerBase
 
             var tier = await _tierResolver.ResolveForUserAsync(_currentUser.UserId!.Value, ct);
             var aiService = _aiFactory.GetService(tier.AiProvider);
-            var result = await aiService.ExtractStructuredDataAsync(pages, tier, requestedFields: null, ct);
+            var result = await aiService.ExtractStructuredDataAsync(pages, tier, requestedFieldsList, ct);
 
             if (!result.Success)
                 return StatusCode(502, new { success = false, message = result.ErrorMessage ?? "Extraction failed." });
@@ -118,6 +127,8 @@ public class TokenTestController : ControllerBase
             return Ok(new
             {
                 success = true,
+                mode = requestedFieldsList is null ? "Dynamic" : "Formatted",
+                requestedFields = requestedFieldsList,
                 fields = result.Fields,
                 provider = tier.AiProvider.ToString(),
                 model = tier.ModelName,
