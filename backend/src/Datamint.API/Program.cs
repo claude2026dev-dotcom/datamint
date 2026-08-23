@@ -29,8 +29,14 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog();
 
 // ---------- EF Core / SQL Server ----------
+// EnableRetryOnFailure: without it, a transient connection blip - most commonly a serverless/
+// auto-pause Azure SQL database waking up from being paused, which resets the very first login
+// attempt while it finishes resuming - surfaces as a hard failure on whatever request happened to
+// hit it first, even though a retry moments later would have succeeded on its own. This is exactly
+// the class of error SqlServerRetryingExecutionStrategy exists for.
 builder.Services.AddDbContext<DatamintDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"),
+        sql => sql.EnableRetryOnFailure(maxRetryCount: 5, maxRetryDelay: TimeSpan.FromSeconds(10), errorNumbersToAdd: null)));
 
 // Backs OAuthService's short-lived authorization-code replay cache (see IOAuthService).
 builder.Services.AddMemoryCache();
