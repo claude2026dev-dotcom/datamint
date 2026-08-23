@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
 using Datamint.Domain.Entities;
@@ -28,9 +29,13 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
     protected readonly ILogger Logger;
     private readonly int _maxEmptyResultRetries;
     private readonly int _maxPagesPerExtractionChunk;
-    private readonly List<AiCallUsage> _callUsages = new();
+    private readonly int _maxConcurrentChunks;
+    // Concurrent chunk processing (see ExtractStructuredDataAsync) means multiple threads can
+    // record a call's usage at the same instant - a plain List<T> isn't safe under that, so this
+    // is a concurrent collection even though nothing here needs its FIFO ordering guarantee.
+    private readonly ConcurrentQueue<AiCallUsage> _callUsages = new();
 
-    public IReadOnlyList<AiCallUsage> CallUsages => _callUsages;
+    public IReadOnlyList<AiCallUsage> CallUsages => _callUsages.ToList();
 
     protected AiFieldExtractionServiceBase(HttpClient http, IConfiguration config, ILogger logger)
     {
@@ -45,6 +50,13 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         // this are split into separate calls and merged rather than risking truncation.
         _maxPagesPerExtractionChunk = int.TryParse(config["Ai:MaxPagesPerExtractionChunk"], out var chunkSize) && chunkSize > 0
             ? chunkSize : 3;
+        // Independent chunks (disjoint page ranges, no shared state) used to be awaited one at a
+        // time - for a 10-page document at the default chunk size that's up to 8 sequential
+        // Claude round-trips, several minutes of pure waiting even though nothing about chunk 2
+        // depends on chunk 1's result. Bounded concurrency instead of unlimited fan-out keeps this
+        // from slamming into the provider's per-minute rate limit on a large document.
+        _maxConcurrentChunks = int.TryParse(config["Ai:MaxConcurrentChunks"], out var maxConcurrent) && maxConcurrent > 0
+            ? maxConcurrent : 4;
     }
 
     /// <summary>The provider's own API key config value (e.g. Config["Claude:ApiKey"]) - always
@@ -75,7 +87,7 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         string purpose, string apiKey, string modelName, AiExtractionPromptHelper.PromptParts prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct)
     {
         var (text, error, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens) = await CallModelAsync(apiKey, modelName, prompt, images, ct);
-        _callUsages.Add(new AiCallUsage(purpose, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens));
+        _callUsages.Enqueue(new AiCallUsage(purpose, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens));
         return (text, error);
     }
 
@@ -98,17 +110,42 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         // so it's never at risk of the truncation this chunking exists to avoid.
         if (isDynamicMode && pageList.Count > _maxPagesPerExtractionChunk)
         {
-            var allFields = new List<ExtractedFieldDto>();
-            foreach (var chunk in Chunk(pageList, _maxPagesPerExtractionChunk))
+            var chunks = Chunk(pageList, _maxPagesPerExtractionChunk).ToList();
+
+            // Each chunk is a fully independent extraction over its own disjoint page range - no
+            // chunk reads another's output, so there is no correctness reason to serialize them.
+            // A SemaphoreSlim bounds how many run at once rather than firing all of them at the
+            // provider simultaneously, which on a large document would risk tripping its
+            // requests/tokens-per-minute limit instead of actually finishing faster.
+            using var throttle = new SemaphoreSlim(_maxConcurrentChunks);
+            var chunkTasks = chunks.Select(async chunk =>
             {
-                var chunkResult = await ExtractChunkAsync(chunk, tier, requestedFields, isDynamicMode, apiKey, ct);
-                // Fail the whole document rather than silently return a partial result if any
-                // chunk fails outright - the caller has no way to tell "partial" from "complete"
-                // otherwise, and a silently incomplete extraction is worse than a clear failure.
-                if (!chunkResult.Success)
-                    return chunkResult;
-                allFields.AddRange(chunkResult.Fields);
-            }
+                await throttle.WaitAsync(ct);
+                try
+                {
+                    return await ExtractChunkAsync(chunk, tier, requestedFields, isDynamicMode, apiKey, ct);
+                }
+                finally
+                {
+                    throttle.Release();
+                }
+            }).ToList();
+
+            // Task.WhenAll's result array mirrors the input task array's order (not completion
+            // order), so chunk 1's fields still precede chunk 2's below even though chunk 2 may
+            // finish first.
+            var chunkResults = await Task.WhenAll(chunkTasks);
+
+            // Fail the whole document rather than silently return a partial result if any chunk
+            // failed outright - the caller has no way to tell "partial" from "complete" otherwise,
+            // and a silently incomplete extraction is worse than a clear failure. Waiting for every
+            // chunk before checking (rather than cancelling siblings on the first failure) costs at
+            // most one chunk's worth of extra latency and keeps this simple - failures are rare.
+            var firstFailure = chunkResults.FirstOrDefault(r => !r.Success);
+            if (firstFailure is not null)
+                return firstFailure;
+
+            var allFields = chunkResults.SelectMany(r => r.Fields).ToList();
             return new AiExtractionResultDto(allFields, true, null);
         }
 

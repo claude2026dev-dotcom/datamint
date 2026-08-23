@@ -74,15 +74,19 @@ public class ClaudeFieldExtractionService : AiFieldExtractionServiceBase
             ["messages"] = new[] { new { role = "user", content = (object)content } }
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, ClaudeApiUrl);
-        request.Headers.Add("x-api-key", apiKey);
-        request.Headers.Add("anthropic-version", "2023-06-01");
-        request.Headers.Add("anthropic-beta", "prompt-caching-2024-07-31");
-        request.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+        var requestJson = JsonSerializer.Serialize(requestBody);
 
         try
         {
-            var response = await Http.SendAsync(request, ct);
+            using var response = await TransientHttpRetry.SendWithRetryAsync(Http, () =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, ClaudeApiUrl);
+                request.Headers.Add("x-api-key", apiKey);
+                request.Headers.Add("anthropic-version", "2023-06-01");
+                request.Headers.Add("anthropic-beta", "prompt-caching-2024-07-31");
+                request.Content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+                return request;
+            }, Logger, ct);
             var raw = await response.Content.ReadAsStringAsync(ct);
 
             if (!response.IsSuccessStatusCode)

@@ -65,13 +65,17 @@ public class OpenAiFieldExtractionService : AiFieldExtractionServiceBase
             ? new { model = modelName, temperature = 0, max_tokens = 16000, messages = new[] { new { role = "user", content = (object)content } } }
             : new { model = modelName, max_tokens = 16000, messages = new[] { new { role = "user", content = (object)content } } };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, OpenAiApiUrl);
-        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-        request.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+        var requestJson = JsonSerializer.Serialize(requestBody);
 
         try
         {
-            var response = await Http.SendAsync(request, ct);
+            using var response = await TransientHttpRetry.SendWithRetryAsync(Http, () =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, OpenAiApiUrl);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+                request.Content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+                return request;
+            }, Logger, ct);
             var raw = await response.Content.ReadAsStringAsync(ct);
 
             if (!response.IsSuccessStatusCode)
