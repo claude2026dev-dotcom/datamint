@@ -118,7 +118,7 @@ interface CardDocument {
               <div class="field-list" cdkDropList [cdkDropListData]="section.fields" [cdkDropListDisabled]="!!searchTerm"
                    (cdkDropListDropped)="onDrop($event, doc, section)">
                 @for (field of section.fields; track field.id) {
-                  @if (fieldMatches(field)) {
+                  @if (fieldMatches(field) && hasValue(field)) {
                   <div class="field-row" cdkDrag [cdkDragData]="field" [class.excluded]="!field.includeInExport">
                     <span class="drag-handle" cdkDragHandle title="Drag to reorder or move to another section">
                       <app-icon name="grip" [size]="14" />
@@ -244,7 +244,13 @@ interface CardDocument {
     .toolbar-hint { margin-left: 2px; }
 
     .section-card { padding: 0; margin-bottom: 16px; overflow: hidden; }
-    .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: var(--dm-surface); border-bottom: 1px solid var(--dm-border); flex-wrap: wrap; }
+    /* Plain --dm-surface here used to be the exact same color as the card's own body
+       (.section-card is a .dm-card, background: var(--dm-surface)), so the header band was
+       distinguishable only by its 1px bottom border - easy to miss at a glance. A soft
+       primary-tinted wash (not a solid, loud color) gives it its own visual identity as "this is
+       a header" while staying theme-safe: color-mix blends with whatever --dm-surface already
+       is, so it looks right in both light and dark mode without a separate override. */
+    .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: color-mix(in srgb, var(--dm-primary) 7%, var(--dm-surface)); border-bottom: 1px solid var(--dm-border); flex-wrap: wrap; }
     .section-title { font-size: 0.92rem; font-weight: 700; border: none; background: transparent; padding: 3px 6px; border-radius: var(--dm-radius-sm); min-width: 0; color: var(--dm-text); flex: 1; }
     .section-title:hover, .section-title:focus { background: var(--dm-surface-hover); }
     .section-actions { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
@@ -341,8 +347,16 @@ export class FieldCardEditorComponent implements OnChanges {
     return true;
   }
 
+  /// A field the AI didn't find anything for is real signal (it was checked, not present) but
+  /// clutters the review surface as an empty row with nothing to fix - hidden from view here,
+  /// though the field itself is untouched (still exists, still exportable) so nothing is lost,
+  /// just not shown on screen.
+  hasValue(field: ExtractedFieldEdit): boolean {
+    return !!field.fieldValue && field.fieldValue.trim().length > 0;
+  }
+
   sectionMatches(section: CardSection): boolean {
-    return section.fields.some(f => this.fieldMatches(f));
+    return section.fields.some(f => this.fieldMatches(f) && this.hasValue(f));
   }
 
   docHasMatch(doc: CardDocument): boolean {
