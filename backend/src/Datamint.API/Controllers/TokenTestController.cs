@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Datamint.API.Pricing;
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
@@ -74,6 +75,7 @@ public class TokenTestController : ControllerBase
             return BadRequest(new { success = false, message = "Only PDF, JPG, PNG, or WEBP files are supported." });
 
         var tempPath = Path.Combine(Path.GetTempPath(), $"datamint-tokentest-{Guid.NewGuid()}{ext}");
+        var stopwatch = Stopwatch.StartNew();
         try
         {
             await using (var stream = new FileStream(tempPath, FileMode.Create))
@@ -121,6 +123,8 @@ public class TokenTestController : ControllerBase
             if (!result.Success)
                 return StatusCode(502, new { success = false, message = result.ErrorMessage ?? "Extraction failed." });
 
+            stopwatch.Stop();
+
             var calls = aiService.CallUsages;
             var totalInputTokens = calls.Sum(c => c.InputTokens);
             var totalOutputTokens = calls.Sum(c => c.OutputTokens);
@@ -139,13 +143,22 @@ public class TokenTestController : ControllerBase
                     outputTokens = c.OutputTokens,
                     cacheCreationInputTokens = c.CacheCreationInputTokens,
                     cacheReadInputTokens = c.CacheReadInputTokens,
-                    costUsd = AiModelPricing.CalculateCostUsd(tier.ModelName, c.InputTokens, c.OutputTokens)
+                    costUsd = AiModelPricing.CalculateCostUsd(tier.ModelName, c.InputTokens, c.OutputTokens),
+                    // Individual call wall-clock time, not just tokens - on a multi-chunk document
+                    // several of these overlap (chunks run concurrently), so they will NOT sum to
+                    // totalDurationMs below; that's expected, not a bug - see its own comment.
+                    durationMs = c.DurationMs
                 }),
                 totalInputTokens,
                 totalOutputTokens,
                 totalCacheReadInputTokens = calls.Sum(c => c.CacheReadInputTokens),
                 totalCostUsd = AiModelPricing.CalculateCostUsd(tier.ModelName, totalInputTokens, totalOutputTokens),
-                pricingKnown = AiModelPricing.GetRates(tier.ModelName) is not null
+                pricingKnown = AiModelPricing.GetRates(tier.ModelName) is not null,
+                // Real end-to-end wall-clock time for this request - PDF text/image extraction
+                // plus every AI call - i.e. what a real upload would actually make someone wait,
+                // not just the sum of individual call durations (chunks can run concurrently, see
+                // AiFieldExtractionServiceBase.ExtractStructuredDataAsync).
+                totalDurationMs = stopwatch.ElapsedMilliseconds
             });
         }
         finally

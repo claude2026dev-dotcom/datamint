@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Datamint.Application.DTOs;
 using Datamint.Application.Interfaces;
 using Datamint.Domain.Entities;
@@ -86,8 +87,10 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
     private async Task<(string? text, string? error)> CallAndRecordAsync(
         string purpose, string apiKey, string modelName, AiExtractionPromptHelper.PromptParts prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct)
     {
+        var stopwatch = Stopwatch.StartNew();
         var (text, error, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens) = await CallModelAsync(apiKey, modelName, prompt, images, ct);
-        _callUsages.Enqueue(new AiCallUsage(purpose, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens));
+        stopwatch.Stop();
+        _callUsages.Enqueue(new AiCallUsage(purpose, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens, stopwatch.ElapsedMilliseconds));
         return (text, error);
     }
 

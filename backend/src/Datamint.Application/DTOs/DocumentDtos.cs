@@ -23,7 +23,7 @@ public record AiExtractionResultDto(List<ExtractedFieldDto> Fields, bool Success
 /// CacheCreationInputTokens/CacheReadInputTokens are Claude-only (prompt caching) - always 0 for
 /// a provider that doesn't report them, which just means "no caching data available", not
 /// "caching failed".</summary>
-public record AiCallUsage(string Purpose, int InputTokens, int OutputTokens, int CacheCreationInputTokens = 0, int CacheReadInputTokens = 0);
+public record AiCallUsage(string Purpose, int InputTokens, int OutputTokens, int CacheCreationInputTokens = 0, int CacheReadInputTokens = 0, long DurationMs = 0);
 
 public record DocumentSummaryDto(
     Guid Id,
