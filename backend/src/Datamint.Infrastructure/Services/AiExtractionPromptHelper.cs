@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Datamint.Application.DTOs;
 using Datamint.Domain.Entities;
+using Microsoft.Extensions.Logging;
 
 namespace Datamint.Infrastructure.Services;
 
@@ -192,18 +193,19 @@ public static class AiExtractionPromptHelper
                 {{DeduplicationInstructions}}
 
                 Respond with ONLY a JSON object - a SPARSE PATCH, not a full re-list:
-                - "corrections": one entry per field that actually needs a change, each giving that field's FULL corrected
-                  data: {"i": <its index>, "value": ..., "type": ..., "section": ..., "priority": ...}. Omit any field that's
-                  already correct - do not list it.
+                - "corrections": one entry per field that actually needs a change, each giving BOTH its index "i" AND its
+                  exact original "key" (so a miscounted index can be caught instead of silently overwriting the wrong
+                  field), plus the FULL corrected data: {"i": <its index>, "key": <its exact original key>, "value": ...,
+                  "type": ..., "section": ..., "priority": ...}. Omit any field that's already correct - do not list it.
                 - "additions": complete new entries for any row/field the first pass missed: {"page": N, "key": ..., "value": ..., "type": ..., "section": ..., "priority": ...}.
-                - "removals": the "i" index of any confirmed same-page duplicate to remove.
+                - "removals": the "i" index AND exact "key" of any confirmed same-page duplicate to remove: {"i": ..., "key": ...}.
                 - Never rename a key or move it to a different page via a correction - fields not listed keep their original data exactly.
                 - If nothing needs to change, respond with {"corrections":[],"additions":[],"removals":[]}.
 
                 YOUR FIRST-PASS EXTRACTION (grouped by page):
                 {{fieldsJson}}
 
-                Example shape: {"corrections":[{"i":2,"value":"INV-2024-001","type":"Reference","section":"Billing Info","priority":1}],"additions":[{"page":1,"key":"PO Number","value":"PO-55","type":"Reference","section":"Billing Info","priority":2}],"removals":[]}
+                Example shape: {"corrections":[{"i":2,"key":"Invoice No.","value":"INV-2024-001","type":"Reference","section":"Billing Info","priority":1}],"additions":[{"page":1,"key":"PO Number","value":"PO-55","type":"Reference","section":"Billing Info","priority":2}],"removals":[]}
                 """;
             return new PromptParts(systemRules, documentText, taskInstructions);
         }
@@ -217,15 +219,17 @@ public static class AiExtractionPromptHelper
             not open-ended. Re-check every value character by character where it matters.
 
             Respond with ONLY a JSON object - a SPARSE PATCH, not a full re-list:
-            - "corrections": one entry per field that actually needs a change, each giving that field's FULL corrected
-              data: {"i": <its index>, "value": ..., "type": ..., "section": ..., "priority": ...}. Omit any field that's
-              already correct - do not list it. Never add, remove, or rename a field - only "corrections" apply here.
+            - "corrections": one entry per field that actually needs a change, each giving BOTH its index "i" AND its
+              exact original "key" (so a miscounted index can be caught instead of silently overwriting the wrong
+              field), plus the FULL corrected data: {"i": <its index>, "key": <its exact original key>, "value": ...,
+              "type": ..., "section": ..., "priority": ...}. Omit any field that's already correct - do not list it.
+              Never add, remove, or rename a field - only "corrections" apply here.
             - If nothing needs to change, respond with {"corrections":[]}.
 
             YOUR FIRST-PASS EXTRACTION:
             {{flatFieldsJson}}
 
-            Example shape: {"corrections":[{"i":0,"value":"INV-2024-001","type":"Reference","section":"Billing Info","priority":1}]}
+            Example shape: {"corrections":[{"i":0,"key":"Invoice No.","value":"INV-2024-001","type":"Reference","section":"Billing Info","priority":1}]}
             """;
         return new PromptParts(flatSystemRules, documentText, flatTaskInstructions);
     }
@@ -236,8 +240,17 @@ public static class AiExtractionPromptHelper
     /// additions append - order mirrors how the model was told to build the patch. Throws on
     /// malformed JSON so the caller's existing try/catch can fall back to the first-pass result
     /// unchanged, same safety net as before this patch format existed.
+    ///
+    /// Every correction/removal is validated against the ORIGINAL field's key before it's applied
+    /// (see ResolveIndex) - a miscounted "i" on a large field list (real, observed failure mode:
+    /// the model references index 12 meaning to correct/remove index 45) used to silently
+    /// overwrite or delete an unrelated field with no error, mangling or dropping real data with
+    /// no trace. A key mismatch now falls back to locating the field by its key instead, and if
+    /// even that fails, the entry is skipped entirely and logged rather than risking corruption -
+    /// leaving a field un-corrected (or a rare duplicate un-removed) is a far smaller accuracy
+    /// cost than silently corrupting or deleting a different, correct field.
     /// </summary>
-    public static List<ExtractedFieldDto> ApplyVerificationPatch(string rawModelText, List<ExtractedFieldDto> original, bool groupByPage)
+    public static List<ExtractedFieldDto> ApplyVerificationPatch(string rawModelText, List<ExtractedFieldDto> original, bool groupByPage, ILogger? logger = null)
     {
         var cleaned = CleanJsonText(rawModelText);
         var patch = JsonSerializer.Deserialize<VerifyPatchJson>(cleaned, JsonOptions) ?? new VerifyPatchJson();
@@ -248,9 +261,10 @@ public static class AiExtractionPromptHelper
         {
             foreach (var c in patch.Corrections)
             {
-                if (c.I < 0 || c.I >= result.Count) continue; // ignore a bad index rather than let it invalidate an otherwise-good patch
-                var existing = result[c.I];
-                result[c.I] = existing with
+                var idx = ResolveIndex(original, c.I, c.Key, "correction", logger);
+                if (idx is null) continue;
+                var existing = result[idx.Value];
+                result[idx.Value] = existing with
                 {
                     Value = c.Value,
                     SemanticType = c.Type ?? existing.SemanticType,
@@ -263,8 +277,12 @@ public static class AiExtractionPromptHelper
         // Removals reference indices into `original` (pre-addition), so filter before appending additions.
         if (patch.Removals is { Count: > 0 })
         {
-            var removeSet = new HashSet<int>(patch.Removals);
-            result = result.Where((_, idx) => !removeSet.Contains(idx)).ToList();
+            var removeIndices = patch.Removals
+                .Select(r => ResolveIndex(original, r.I, r.Key, "removal", logger))
+                .Where(idx => idx is not null)
+                .Select(idx => idx!.Value)
+                .ToHashSet();
+            result = result.Where((_, idx) => !removeIndices.Contains(idx)).ToList();
         }
 
         if (groupByPage && patch.Additions is not null)
@@ -274,6 +292,38 @@ public static class AiExtractionPromptHelper
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Validates a patch entry's claimed index against the ORIGINAL field list before trusting it:
+    /// exact index match (key confirms it) is the fast path; a mismatch falls back to a key lookup
+    /// (the model got the position wrong but named the right field); no match at all means the
+    /// entry is untrustworthy and is skipped. Always resolves against `original`, never the
+    /// in-progress `result` list, so corrections/removals within the same patch can't shift each
+    /// other's indices out from under later entries in that same patch.
+    /// </summary>
+    private static int? ResolveIndex(List<ExtractedFieldDto> original, int claimedIndex, string? claimedKey, string kind, ILogger? logger)
+    {
+        if (claimedIndex >= 0 && claimedIndex < original.Count &&
+            (claimedKey is null || string.Equals(original[claimedIndex].Key, claimedKey, StringComparison.OrdinalIgnoreCase)))
+            return claimedIndex;
+
+        if (!string.IsNullOrWhiteSpace(claimedKey))
+        {
+            var byKey = original.FindIndex(f => string.Equals(f.Key, claimedKey, StringComparison.OrdinalIgnoreCase));
+            if (byKey >= 0)
+            {
+                logger?.LogWarning(
+                    "Verify {Kind} index {ClaimedIndex} didn't match key \"{Key}\" - resolved by key to index {ResolvedIndex} instead",
+                    kind, claimedIndex, claimedKey, byKey);
+                return byKey;
+            }
+        }
+
+        logger?.LogWarning(
+            "Verify {Kind} referenced index {ClaimedIndex} / key \"{Key}\" which don't match any first-pass field - skipping rather than risking a wrong field",
+            kind, claimedIndex, claimedKey);
+        return null;
     }
 
     /// <summary>
@@ -440,16 +490,25 @@ public static class AiExtractionPromptHelper
     {
         public List<CorrectionJson>? Corrections { get; set; }
         public List<AdditionJson>? Additions { get; set; }
-        public List<int>? Removals { get; set; }
+        public List<RemovalJson>? Removals { get; set; }
     }
 
     private class CorrectionJson
     {
         public int I { get; set; }
+        // Nullable, not required, so an older/degraded model response missing "key" still applies
+        // via the index-only fast path in ResolveIndex rather than being dropped outright.
+        public string? Key { get; set; }
         public string? Value { get; set; }
         public string? Type { get; set; }
         public string? Section { get; set; }
         public int? Priority { get; set; }
+    }
+
+    private class RemovalJson
+    {
+        public int I { get; set; }
+        public string? Key { get; set; }
     }
 
     private class AdditionJson

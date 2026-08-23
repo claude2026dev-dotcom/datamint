@@ -211,7 +211,7 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
                     // is a normal, desirable outcome now - it means the first pass was already
                     // correct - unlike the old full-re-list format, "no changes" is no longer
                     // indistinguishable from "verify failed", so there's no count>0 check needed here.
-                    fields = AiExtractionPromptHelper.ApplyVerificationPatch(verifyText, fields, isDynamicMode);
+                    fields = AiExtractionPromptHelper.ApplyVerificationPatch(verifyText, fields, isDynamicMode, Logger);
                 }
                 catch (Exception ex)
                 {
