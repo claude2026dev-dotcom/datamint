@@ -34,6 +34,8 @@ public class DocumentProcessingService
     private readonly ILogger<DocumentProcessingService> _logger;
     private readonly string _appName;
     private readonly int _maxPageImagesPerDocument;
+    private readonly bool _skipImagesForCleanTextPages;
+    private readonly int _minReliableTextLength;
 
     public DocumentProcessingService(
         IDocumentRepository documents,
@@ -62,6 +64,12 @@ public class DocumentProcessingService
         _logger = logger;
         _appName = config["App:Name"] ?? "Datamint";
         _maxPageImagesPerDocument = int.TryParse(config["Ai:MaxPageImagesPerDocument"], out var maxImages) ? maxImages : 20;
+        // Cost-only toggle (image tokens are the single most expensive input type per byte) -
+        // a page whose text layer already reads cleanly doesn't need a vision fallback too.
+        // Default on; flip Ai:SkipImagesForCleanTextPages to false to restore always-attach
+        // behavior if this ever needs to be ruled out during accuracy troubleshooting.
+        _skipImagesForCleanTextPages = !bool.TryParse(config["Ai:SkipImagesForCleanTextPages"], out var skip) || skip;
+        _minReliableTextLength = int.TryParse(config["Ai:MinPageTextLengthForSkippingImage"], out var minLength) ? minLength : 40;
     }
 
     public static bool IsImageFile(string originalFileName) => ImageExtensions.Contains(Path.GetExtension(originalFileName));
@@ -239,11 +247,13 @@ public class DocumentProcessingService
     }
 
     /// <summary>
-    /// Renders an image for each page (capped to _maxPageImagesPerDocument - every page's text
-    /// still reaches the AI regardless, only the accompanying image is capped) and merges it
-    /// onto the corresponding page. A direct image upload's whole content IS the image - read
-    /// straight off disk, no rendering needed. A rendering failure here must never block
-    /// extraction - it just falls back to the text-only pages that already worked before this.
+    /// Renders an image for each page that actually needs one (capped to
+    /// _maxPageImagesPerDocument - every page's text still reaches the AI regardless, only the
+    /// accompanying image is capped/skipped) and merges it onto the corresponding page. A direct
+    /// image upload's whole content IS the image - read straight off disk, no rendering needed,
+    /// no gating (there's no text layer to judge it against). A rendering failure here must never
+    /// block extraction - it just falls back to the text-only pages that already worked before
+    /// this.
     /// </summary>
     private async Task<List<PdfPageTextDto>> AttachPageImagesAsync(Document document, List<PdfPageTextDto> pages, CancellationToken ct)
     {
@@ -257,7 +267,12 @@ public class DocumentProcessingService
             }
             else
             {
-                var pageNumbers = pages.Select(p => p.PageNumber).Take(_maxPageImagesPerDocument).ToList();
+                var pageNumbers = pages
+                    .Where(p => !_skipImagesForCleanTextPages || NeedsVisionFallback(p))
+                    .Select(p => p.PageNumber)
+                    .Take(_maxPageImagesPerDocument)
+                    .ToList();
+                if (pageNumbers.Count == 0) return pages; // every page's text layer already looks reliable - no vision needed, no image tokens spent
                 images = await _pageImages.RenderPagesAsync(document.StoredFilePath, pageNumbers, ct);
             }
 
@@ -273,6 +288,18 @@ public class DocumentProcessingService
             return pages;
         }
     }
+
+    /// <summary>
+    /// A page's text is "reliable" enough to skip the vision fallback when PdfPig actually found
+    /// a meaningful amount of it - a genuinely blank/near-blank result usually means the page is
+    /// a scanned image with no real text layer at all, where vision is the only way to read it.
+    /// Deliberately conservative (a low bar, not a quality check): this is a cost optimization,
+    /// not a "does this text look clean" judgment call - a page with a full, if imperfectly
+    /// extracted, text layer still reaches the AI as text either way, and the verify pass (which
+    /// never gets images regardless) already has to work from text-only for every page.
+    /// </summary>
+    private bool NeedsVisionFallback(PdfPageTextDto page) =>
+        string.IsNullOrWhiteSpace(page.Text) || page.Text.Trim().Length < _minReliableTextLength;
 
     private static DocumentSummaryDto ToSummaryDto(Document document) => new(
         document.Id, document.OriginalFileName, document.ContentType, document.PageCount,

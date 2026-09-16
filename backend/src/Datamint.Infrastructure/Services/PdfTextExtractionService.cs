@@ -54,7 +54,16 @@ public class PdfTextExtractionService : IPdfTextExtractionService
         foreach (var page in document.GetPages())
         {
             pageNumber++;
-            var text = page.Text;
+            string text;
+            try
+            {
+                text = RowMajorText(page);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Row-major reconstruction failed on page {Page} of {File}; falling back to PdfPig's default reading order.", pageNumber, filePath);
+                text = page.Text;
+            }
 
             string? annotationsText = null;
             try
@@ -74,6 +83,45 @@ public class PdfTextExtractionService : IPdfTextExtractionService
         }
 
         return Task.FromResult(new PdfTextExtractionResultDto(pageNumber, pages));
+    }
+
+    /// <summary>
+    /// PdfPig's default page.Text follows the PDF's content-stream draw order, not visual
+    /// reading order - for templates where a form's static labels and its dynamically-inserted
+    /// values were drawn in separate passes (very common for invoices/receipts/bills-of-lading
+    /// generated from a template engine), this can emit every value first, then every label
+    /// afterward, completely severing each label from its value before the AI ever sees the
+    /// text. Reconstructing lines purely from word geometry - cluster words into rows by
+    /// vertical center, then order each row left-to-right - restores human reading order
+    /// regardless of draw order, with no knowledge of any particular field name or document
+    /// type (confirmed across bills of lading, ride-hailing invoices, GST invoices, bank
+    /// statements, and dense two-column utility bills).
+    /// </summary>
+    private static string RowMajorText(UglyToad.PdfPig.Content.Page page)
+    {
+        const double rowTolerance = 3.0;
+
+        var words = page.GetWords()
+            .Select(w => new { w.Text, Center = (w.BoundingBox.Top + w.BoundingBox.Bottom) / 2, Left = w.BoundingBox.Left })
+            .OrderByDescending(w => w.Center)
+            .ToList();
+        if (words.Count == 0) return page.Text;
+
+        var rows = new List<(double Center, List<(string Text, double Left)> Words)>();
+        foreach (var word in words)
+        {
+            var rowIndex = rows.FindIndex(r => Math.Abs(r.Center - word.Center) <= rowTolerance);
+            if (rowIndex < 0)
+            {
+                rows.Add((word.Center, new List<(string, double)> { (word.Text, word.Left) }));
+            }
+            else
+            {
+                rows[rowIndex].Words.Add((word.Text, word.Left));
+            }
+        }
+
+        return string.Join("\n", rows.Select(r => string.Join(" ", r.Words.OrderBy(w => w.Left).Select(w => w.Text))));
     }
 
     /// <summary>Filled-in AcroForm field values, if this PDF actually uses real interactive

@@ -11,7 +11,7 @@ export type IconName =
   | 'search' | 'user' | 'users' | 'credit-card' | 'bar-chart' | 'file-text'
   | 'tool' | 'log-out' | 'edit' | 'key' | 'pause' | 'play' | 'trash'
   | 'alert-triangle' | 'dollar-sign' | 'inbox' | 'upload-cloud' | 'cpu'
-  | 'sparkles' | 'chevron-left' | 'menu' | 'arrow-right' | 'scan' | 'grid'
+  | 'sparkles' | 'chevron-left' | 'chevron-right' | 'menu' | 'arrow-right' | 'scan' | 'grid'
   | 'file' | 'shield' | 'close' | 'sun' | 'moon' | 'monitor' | 'eye' | 'eye-off'
   | 'check-circle' | 'x-circle' | 'flask' | 'grip' | 'copy';
 
@@ -96,6 +96,9 @@ export type IconName =
         }
         @case ('chevron-left') {
           <polyline points="14.5 4 7 12 14.5 20"/>
+        }
+        @case ('chevron-right') {
+          <polyline points="9.5 4 17 12 9.5 20"/>
         }
         @case ('arrow-right') {
           <line x1="4" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/>

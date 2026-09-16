@@ -22,6 +22,11 @@ interface SelectedFile {
   // file that's never had its page selector opened needs no special-casing anywhere else.
   deselectedPages: Set<number>;
   justAdded: boolean;
+  // Which batch of CHIPS_PER_BATCH page-chips is currently on screen - only meaningful once
+  // pageCount exceeds LARGE_PAGE_COUNT_THRESHOLD, where showing every page as its own chip at
+  // once stops being something a person can scan or tap accurately. The chip-click interaction
+  // itself never changes; this only windows how many chips render at a time.
+  chipBatch: number;
 }
 
 interface BulkFileStatus {
@@ -31,6 +36,11 @@ interface BulkFileStatus {
 }
 
 const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/bmp'];
+// Past this many pages, a flat grid of one chip button per page (see .page-chips) stops being
+// something a person can actually scan or tap accurately - the chips are windowed into batches
+// instead (see CHIPS_PER_BATCH), navigated with Prev/Next and a batch-jump dropdown.
+const LARGE_PAGE_COUNT_THRESHOLD = 30;
+const CHIPS_PER_BATCH = 25;
 
 @Component({
   selector: 'app-upload',
@@ -140,15 +150,17 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
               <div class="file-entry" [class.just-added]="f.justAdded" [@fileEnter]>
                 <div class="file-row">
                   <span class="file-name"><app-icon name="file" [size]="15" /> {{ f.file.name }}</span>
-                  <span class="muted size-chip">{{ formatFileSize(f.file.size) }}</span>
-                  @if (f.isPdf) {
-                    <button type="button" class="dm-btn dm-btn-ghost pages-toggle" (click)="togglePageSelector(i)">
-                      <app-icon name="grid" [size]="13" /> {{ f.expanded ? 'Hide pages' : 'Select pages' }}
+                  <div class="file-meta">
+                    <span class="muted size-chip">{{ formatFileSize(f.file.size) }}</span>
+                    @if (f.isPdf) {
+                      <button type="button" class="dm-btn dm-btn-ghost pages-toggle" (click)="togglePageSelector(i)">
+                        <app-icon name="grid" [size]="13" /> {{ f.expanded ? 'Hide pages' : 'Select pages' }}
+                      </button>
+                    }
+                    <button type="button" class="remove-file-btn" (click)="removeFile(i)" aria-label="Remove this file">
+                      <app-icon name="close" [size]="14" />
                     </button>
-                  }
-                  <button type="button" class="remove-file-btn" (click)="removeFile(i)" aria-label="Remove this file">
-                    <app-icon name="close" [size]="14" />
-                  </button>
+                  </div>
                 </div>
                 @if (f.expanded) {
                   <div class="page-selector">
@@ -162,8 +174,23 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
                           <button type="button" class="link-btn" (click)="selectNoPages(f)">Select none</button>
                         </div>
                       </div>
+                      @if (f.pageCount > largePageCountThreshold) {
+                        <div class="batch-nav">
+                          <button type="button" class="dm-btn dm-btn-ghost tiny batch-nav-btn" [disabled]="f.chipBatch === 0" (click)="prevBatch(f)" aria-label="Previous pages">
+                            <app-icon name="chevron-left" [size]="14" />
+                          </button>
+                          <select class="dm-input batch-jump" [ngModel]="f.chipBatch" (ngModelChange)="jumpToBatch(f, $event)">
+                            @for (b of batchRanges(f); track $index; let bi = $index) {
+                              <option [ngValue]="bi">Pages {{ b.from }}–{{ b.to }}</option>
+                            }
+                          </select>
+                          <button type="button" class="dm-btn dm-btn-ghost tiny batch-nav-btn" [disabled]="f.chipBatch >= batchRanges(f).length - 1" (click)="nextBatch(f)" aria-label="Next pages">
+                            <app-icon name="chevron-right" [size]="14" />
+                          </button>
+                        </div>
+                      }
                       <div class="page-chips">
-                        @for (p of pageNumbers(f.pageCount); track p) {
+                        @for (p of visiblePages(f); track p) {
                           <button type="button" class="page-chip" [class.selected]="!f.deselectedPages.has(p)" (click)="togglePage(f, p)">
                             {{ p }}
                           </button>
@@ -257,6 +284,12 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
     .file-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 0.9rem; padding: 6px 4px; flex-wrap: wrap; }
     .file-name { display: inline-flex; align-items: center; gap: 8px; flex: 1; min-width: 0; overflow-wrap: break-word; }
     .file-name app-icon { color: var(--dm-text-muted); flex-shrink: 0; }
+    /* Grouping size/pages-toggle/remove into their own flex container (rather than three loose
+       siblings of .file-row) is what lets the mobile media query below put the filename on its
+       own full-width line and this trio on a clean second line - without it, a long filename's
+       text can render wider than its shrunk flex box and visually bleed into these controls
+       instead of wrapping cleanly past them. */
+    .file-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
     .size-chip { flex-shrink: 0; font-size: 0.78rem; }
     .pages-toggle { flex-shrink: 0; padding: 4px 10px; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 5px; }
     .remove-file-btn { flex-shrink: 0; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: none; background: transparent; color: var(--dm-text-muted); cursor: pointer; }
@@ -266,6 +299,9 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
     .page-selector-actions { display: flex; gap: 10px; flex-shrink: 0; }
     .link-btn { background: none; border: none; padding: 0; color: var(--dm-primary); font-size: 0.78rem; cursor: pointer; }
     .page-chips { display: flex; flex-wrap: wrap; gap: 6px; max-width: 480px; }
+    .batch-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+    .batch-nav-btn { flex-shrink: 0; width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; }
+    .batch-jump { width: auto; min-width: 140px; font-size: 0.82rem; padding: 6px 10px; }
     .page-chip {
       width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--dm-border); background: var(--dm-surface);
       color: var(--dm-text-muted); font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.12s ease;
@@ -285,7 +321,13 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/web
     @keyframes spin { to { transform: rotate(360deg); } }
 
     @media (max-width: 700px) {
-      .file-row { flex-wrap: wrap; }
+      /* Below this width there's no longer room for filename + size + pages-toggle + remove all
+         on one line without either truncating the filename or (the actual bug reported) the
+         filename's text overflowing its shrunk flex box and rendering underneath the controls
+         that follow it. Two clean full-width rows - filename, then the controls - instead. */
+      .file-row { flex-direction: column; align-items: stretch; gap: 8px; }
+      .file-name { width: 100%; }
+      .file-meta { width: 100%; justify-content: space-between; }
     }
   `]
 })
@@ -421,7 +463,7 @@ export class UploadComponent implements OnInit, AfterViewChecked {
 
     const added: SelectedFile[] = accepted.map(file => ({
       file, isPdf: file.type === 'application/pdf', expanded: false, peeking: false,
-      pageCount: null, deselectedPages: new Set<number>(), justAdded: true
+      pageCount: null, deselectedPages: new Set<number>(), justAdded: true, chipBatch: 0
     }));
     this.selectedFiles = [...this.selectedFiles, ...added];
     this.toast.success(accepted.length === 1 ? `"${accepted[0].name}" added.` : `${accepted.length} files added.`);
@@ -467,6 +509,33 @@ export class UploadComponent implements OnInit, AfterViewChecked {
       });
     }
   }
+
+  get largePageCountThreshold() { return LARGE_PAGE_COUNT_THRESHOLD; }
+
+  /// The chip windows a large page count is split into, each one {from, to} inclusive - used
+  /// both to render the batch-jump dropdown's options and to size/bound prevBatch/nextBatch.
+  batchRanges(f: SelectedFile): { from: number; to: number }[] {
+    if (!f.pageCount) return [];
+    const ranges: { from: number; to: number }[] = [];
+    for (let start = 1; start <= f.pageCount; start += CHIPS_PER_BATCH) {
+      ranges.push({ from: start, to: Math.min(start + CHIPS_PER_BATCH - 1, f.pageCount) });
+    }
+    return ranges;
+  }
+
+  /// The actual page numbers to render as chips right now - every page when the count is small
+  /// enough to show at once, otherwise just the current batch's window.
+  visiblePages(f: SelectedFile): number[] {
+    if (!f.pageCount) return [];
+    if (f.pageCount <= LARGE_PAGE_COUNT_THRESHOLD) return this.pageNumbers(f.pageCount);
+    const range = this.batchRanges(f)[f.chipBatch];
+    if (!range) return [];
+    return Array.from({ length: range.to - range.from + 1 }, (_, i) => range.from + i);
+  }
+
+  prevBatch(f: SelectedFile) { if (f.chipBatch > 0) f.chipBatch--; }
+  nextBatch(f: SelectedFile) { if (f.chipBatch < this.batchRanges(f).length - 1) f.chipBatch++; }
+  jumpToBatch(f: SelectedFile, batch: number) { f.chipBatch = batch; }
 
   /// Builds the "1-3,5" style spec the backend expects from whichever pages are still
   /// selected - an empty deselection set (the default, untouched state) needs no spec at all,

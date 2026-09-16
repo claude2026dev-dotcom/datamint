@@ -27,11 +27,19 @@ public class OpenAiFieldExtractionService : AiFieldExtractionServiceBase
     protected override string? ApiKey => Config["OpenAI:ApiKey"];
     protected override string MissingApiKeyMessage => GenericExtractionFailureMessage;
 
-    protected override Task<(string? text, string? error)> CallModelAsync(
-        string apiKey, string modelName, string prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct) =>
-        CallOpenAiAsync(apiKey, modelName, prompt, images, includeTemperature: true, ct);
+    protected override Task<(string? text, string? error, int inputTokens, int outputTokens, int cacheCreationInputTokens, int cacheReadInputTokens, bool wasTruncated)> CallModelAsync(
+        string apiKey, string modelName, AiExtractionPromptHelper.PromptParts prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct)
+    {
+        // OpenAI caches automatically based on the longest matching prefix (no cache_control
+        // needed) - concatenating with the static parts (rules, document text) first and the
+        // always-different task instructions last keeps that automatic behavior working, even
+        // though this provider doesn't report cache hits the way Claude does.
+        var combinedPrompt = string.Join("\n\n",
+            new[] { prompt.SystemRules, prompt.DocumentText, prompt.TaskInstructions }.Where(s => !string.IsNullOrEmpty(s)));
+        return CallOpenAiAsync(apiKey, modelName, combinedPrompt, images, includeTemperature: true, ct);
+    }
 
-    private async Task<(string? text, string? error)> CallOpenAiAsync(
+    private async Task<(string? text, string? error, int inputTokens, int outputTokens, int cacheCreationInputTokens, int cacheReadInputTokens, bool wasTruncated)> CallOpenAiAsync(
         string apiKey, string modelName, string prompt, IReadOnlyList<PageImageDto> images, bool includeTemperature, CancellationToken ct)
     {
         // OpenAI's vision cost is tile/detail-based rather than a single dimension knob like
@@ -57,13 +65,17 @@ public class OpenAiFieldExtractionService : AiFieldExtractionServiceBase
             ? new { model = modelName, temperature = 0, max_tokens = 16000, messages = new[] { new { role = "user", content = (object)content } } }
             : new { model = modelName, max_tokens = 16000, messages = new[] { new { role = "user", content = (object)content } } };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, OpenAiApiUrl);
-        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-        request.Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+        var requestJson = JsonSerializer.Serialize(requestBody);
 
         try
         {
-            var response = await Http.SendAsync(request, ct);
+            using var response = await TransientHttpRetry.SendWithRetryAsync(Http, () =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, OpenAiApiUrl);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+                request.Content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+                return request;
+            }, Logger, ct);
             var raw = await response.Content.ReadAsStringAsync(ct);
 
             if (!response.IsSuccessStatusCode)
@@ -80,17 +92,29 @@ public class OpenAiFieldExtractionService : AiFieldExtractionServiceBase
                 }
 
                 Logger.LogError("OpenAI API error {Status}: {Body}", response.StatusCode, raw);
-                return (null, GenericExtractionFailureMessage);
+                return (null, GenericExtractionFailureMessage, 0, 0, 0, 0, false);
             }
 
             using var doc = JsonDocument.Parse(raw);
-            var text = doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "[]";
-            return (text, null);
+            var choice = doc.RootElement.GetProperty("choices")[0];
+            var text = choice.GetProperty("message").GetProperty("content").GetString() ?? "[]";
+            // "length" here means the response was cut off mid-generation, not that it finished
+            // normally at exactly the budget - the caller needs to know this to avoid silently
+            // accepting a truncated JSON array as if it were complete.
+            var wasTruncated = choice.TryGetProperty("finish_reason", out var finishReason) && finishReason.GetString() == "length";
+            var usage = doc.RootElement.GetProperty("usage");
+            var inputTokens = usage.GetProperty("prompt_tokens").GetInt32();
+            var outputTokens = usage.GetProperty("completion_tokens").GetInt32();
+            // OpenAI reports automatic-cache hits under usage.prompt_tokens_details.cached_tokens
+            // (no explicit cache-write count the way Claude has) - surfaced as "read", 0 "created".
+            var cacheReadInputTokens = usage.TryGetProperty("prompt_tokens_details", out var details) && details.TryGetProperty("cached_tokens", out var ct2)
+                ? ct2.GetInt32() : 0;
+            return (text, null, inputTokens, outputTokens, 0, cacheReadInputTokens, wasTruncated);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Unexpected error calling OpenAI API");
-            return (null, GenericExtractionFailureMessage);
+            return (null, GenericExtractionFailureMessage, 0, 0, 0, 0, false);
         }
     }
 

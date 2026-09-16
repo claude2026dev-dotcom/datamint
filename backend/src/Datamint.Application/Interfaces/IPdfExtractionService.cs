@@ -48,6 +48,12 @@ public interface IAiFieldExtractionService
         IReadOnlyList<string>? requestedFields = null,
         CancellationToken ct = default);
 
+    /// <summary>Every real call (FirstPass/Verify/Harmonization) made by this instance so far -
+    /// each provider is resolved fresh per request (see AiFieldExtractionServiceFactory), so this
+    /// naturally covers exactly one document's (or one batch's) extraction. Purely additive
+    /// instrumentation for the token-usage sample app; the real product never reads this.</summary>
+    IReadOnlyList<AiCallUsage> CallUsages { get; }
+
     /// <summary>
     /// Each document in a bulk upload is extracted independently, so the exact same real-world
     /// field (e.g. an invoice number) can come back worded differently per document ("Invoice

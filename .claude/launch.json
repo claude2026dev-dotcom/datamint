@@ -26,6 +26,13 @@
       "runtimeArgs": ["run", "--project", "D:\\datamint-qa\\backend\\src\\Datamint.API", "--launch-profile", "QA", "--urls", "https://localhost:5002"],
       "port": 5002,
       "autoPort": false
+    },
+    {
+      "name": "token-test-app",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "serve", "-l", "8080", "D:\\datamint-token-test-app"],
+      "port": 8080,
+      "autoPort": false
     }
   ]
 }
