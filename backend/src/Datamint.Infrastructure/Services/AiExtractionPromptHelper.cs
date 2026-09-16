@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Datamint.Application.DTOs;
 using Datamint.Domain.Entities;
 using Microsoft.Extensions.Logging;
@@ -466,6 +467,7 @@ public static class AiExtractionPromptHelper
     private class FlatFieldJson
     {
         public string Key { get; set; } = default!;
+        [JsonConverter(typeof(FlexibleStringConverter))]
         public string? Value { get; set; }
         public int? Page { get; set; }
         public string? Type { get; set; }
@@ -482,6 +484,7 @@ public static class AiExtractionPromptHelper
     private class FieldOnlyJson
     {
         public string Key { get; set; } = default!;
+        [JsonConverter(typeof(FlexibleStringConverter))]
         public string? Value { get; set; }
         public int? Priority { get; set; }
         public string? Type { get; set; }
@@ -501,6 +504,7 @@ public static class AiExtractionPromptHelper
         // Nullable, not required, so an older/degraded model response missing "key" still applies
         // via the index-only fast path in ResolveIndex rather than being dropped outright.
         public string? Key { get; set; }
+        [JsonConverter(typeof(FlexibleStringConverter))]
         public string? Value { get; set; }
         public string? Type { get; set; }
         public string? Section { get; set; }
@@ -517,9 +521,58 @@ public static class AiExtractionPromptHelper
     {
         public int? Page { get; set; }
         public string Key { get; set; } = default!;
+        [JsonConverter(typeof(FlexibleStringConverter))]
         public string? Value { get; set; }
         public string? Type { get; set; }
         public string? Section { get; set; }
         public int? Priority { get; set; }
+    }
+
+    /// <summary>
+    /// Some models (observed with Claude Haiku 4.5) don't reliably keep "value" a plain
+    /// string despite the prompt asking for one - e.g. returning a JSON array when a field
+    /// looks like it has several matches, or a bare number for a numeric-looking value. The
+    /// model's raw reply is an external-API boundary, not something we control the shape of,
+    /// so the parser coerces any of these back into the flat string the rest of the app
+    /// expects instead of throwing and failing the whole document.
+    /// </summary>
+    private sealed class FlexibleStringConverter : JsonConverter<string?>
+    {
+        public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            ReadValue(ref reader);
+
+        private static string? ReadValue(ref Utf8JsonReader reader)
+        {
+            switch (reader.TokenType)
+            {
+                case JsonTokenType.Null:
+                    return null;
+                case JsonTokenType.String:
+                    return reader.GetString();
+                case JsonTokenType.Number:
+                    using (var numDoc = JsonDocument.ParseValue(ref reader))
+                        return numDoc.RootElement.GetRawText();
+                case JsonTokenType.True:
+                case JsonTokenType.False:
+                    return reader.GetBoolean().ToString();
+                case JsonTokenType.StartArray:
+                    var items = new List<string>();
+                    while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                    {
+                        var item = ReadValue(ref reader);
+                        if (!string.IsNullOrWhiteSpace(item))
+                            items.Add(item);
+                    }
+                    return items.Count > 0 ? string.Join("; ", items) : null;
+                case JsonTokenType.StartObject:
+                    using (var objDoc = JsonDocument.ParseValue(ref reader))
+                        return objDoc.RootElement.GetRawText();
+                default:
+                    return null;
+            }
+        }
+
+        public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value);
     }
 }
