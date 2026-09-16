@@ -26,6 +26,8 @@ param emailPassword string
 param claudeApiKey string
 @secure()
 param openAiApiKey string
+@secure()
+param geminiApiKey string
 
 var tags = { 'azd-env-name': environmentName }
 
@@ -50,6 +52,7 @@ module resources './modules/resources.bicep' = {
     emailPassword: emailPassword
     claudeApiKey: claudeApiKey
     openAiApiKey: openAiApiKey
+    geminiApiKey: geminiApiKey
   }
 }
 

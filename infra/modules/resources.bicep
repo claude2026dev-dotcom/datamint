@@ -52,6 +52,8 @@ param emailPassword string
 param claudeApiKey string
 @secure()
 param openAiApiKey string
+@secure()
+param geminiApiKey string
 
 resource secretJwt 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
@@ -72,6 +74,11 @@ resource secretOpenAiKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: keyVault
   name: 'openai-api-key'
   properties: { value: openAiApiKey }
+}
+resource secretGeminiKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'gemini-api-key'
+  properties: { value: geminiApiKey }
 }
 
 // ---------- SQL Database (Entra-only auth - no admin login/password anywhere) ----------
@@ -166,6 +173,7 @@ resource api 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'Email__Password', value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=email-password)' }
         { name: 'Claude__ApiKey', value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=claude-api-key)' }
         { name: 'OpenAI__ApiKey', value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=openai-api-key)' }
+        { name: 'Gemini__ApiKey', value: '@Microsoft.KeyVault(VaultName=${keyVault.name};SecretName=gemini-api-key)' }
         { name: 'FileStorage__UploadsRootPath', value: '/home/uploads' }
         { name: 'App__ApiBaseUrl', value: 'https://${apiName}.azurewebsites.net' }
         { name: 'App__FrontendBaseUrl', value: 'https://${web.properties.defaultHostname}' }

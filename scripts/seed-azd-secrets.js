@@ -20,6 +20,7 @@ const azdVarToConfigPath = {
   EMAIL_PASSWORD: ['Email', 'Password'],
   CLAUDE_API_KEY: ['Claude', 'ApiKey'],
   OPENAI_API_KEY: ['OpenAI', 'ApiKey'],
+  GEMINI_API_KEY: ['Gemini', 'ApiKey'],
 };
 
 for (const [azdVar, [section, key]] of Object.entries(azdVarToConfigPath)) {
