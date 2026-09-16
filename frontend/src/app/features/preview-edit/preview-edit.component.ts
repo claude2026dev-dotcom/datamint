@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DocumentService } from '../../core/services/document.service';
 import { ToastService } from '../../core/services/toast.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ExtractedFieldEdit, ExportFormat, ExportLayout } from '../../core/models/models';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
@@ -11,6 +12,7 @@ import { ExportModalComponent, EmailModalResult } from '../../shared/components/
 import { FieldCardEditorComponent, FieldCardEvent, FieldCardReorderEvent, FieldCardSectionRenameEvent } from '../../shared/components/field-card-editor/field-card-editor.component';
 import { FieldTableViewComponent } from '../../shared/components/field-table-view/field-table-view.component';
 import { FieldJsonViewComponent } from '../../shared/components/field-json-view/field-json-view.component';
+import { SpinnerComponent } from '../../shared/components/spinner/spinner.component';
 
 /// A document's review is two distinct steps, not one screen doing both: "Edit" (the default
 /// landing view - a card-based editor, never a spreadsheet grid) is where corrections actually
@@ -21,7 +23,7 @@ import { FieldJsonViewComponent } from '../../shared/components/field-json-view/
   selector: 'app-preview-edit',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, ExportModalComponent,
-            FieldCardEditorComponent, FieldTableViewComponent, FieldJsonViewComponent],
+            FieldCardEditorComponent, FieldTableViewComponent, FieldJsonViewComponent, SpinnerComponent],
   template: `
     <div class="dm-container page page-wide">
       <app-back-button fallbackUrl="/documents" />
@@ -72,11 +74,19 @@ import { FieldJsonViewComponent } from '../../shared/components/field-json-view/
             }
           </div>
           <div class="actions">
-            <button class="dm-btn dm-btn-ghost btn-excel" [disabled]="exporting" (click)="downloadExport('Excel')" title="Download as an Excel spreadsheet">
-              <app-icon name="file-text" [size]="15" /> Excel
+            <button class="dm-btn dm-btn-ghost btn-excel" [disabled]="exportingFormat !== null" (click)="downloadExport('Excel')" title="Download as an Excel spreadsheet">
+              @if (exportingFormat === 'Excel') {
+                <app-spinner [size]="14" /> Preparing your Excel file…
+              } @else {
+                <app-icon name="file-text" [size]="15" /> Excel
+              }
             </button>
-            <button class="dm-btn dm-btn-ghost btn-json" [disabled]="exporting" (click)="downloadExport('Json')" title="Download as a structured JSON file">
-              {{ '{ }' }} JSON
+            <button class="dm-btn dm-btn-ghost btn-json" [disabled]="exportingFormat !== null" (click)="downloadExport('Json')" title="Download as a structured JSON file">
+              @if (exportingFormat === 'Json') {
+                <app-spinner [size]="14" /> Preparing your JSON file…
+              } @else {
+                {{ '{ }' }} JSON
+              }
             </button>
             <button class="dm-btn dm-btn-primary" (click)="emailModalOpen = !emailModalOpen" title="Email this export to someone">
               <app-icon name="inbox" [size]="15" /> Email
@@ -85,7 +95,8 @@ import { FieldJsonViewComponent } from '../../shared/components/field-json-view/
         </div>
 
         @if (emailModalOpen) {
-          <app-export-modal [busy]="emailBusy" (confirmed)="onEmailConfirmed($event)" (cancelled)="emailModalOpen = false" />
+          <app-export-modal [busy]="emailBusy" [defaultToAddress]="authService.currentUser()?.email ?? ''"
+                             (confirmed)="onEmailConfirmed($event)" (cancelled)="emailModalOpen = false" />
         }
 
         @if (previewKind === 'json') {
@@ -152,6 +163,26 @@ import { FieldJsonViewComponent } from '../../shared/components/field-json-view/
     .not-found-card .icon { color: var(--dm-text-muted); display: flex; justify-content: center; margin-bottom: 14px; }
     .not-found-card h2 { margin-bottom: 10px; }
     .not-found-card p { margin-bottom: 20px; }
+    /* .header-title's "flex: 1 1 320px" (above) uses 320px as a WIDTH basis while .header is a
+       row - the threshold that decides whether the title and the mode-toggle fit side by side
+       before wrapping. Once this media query switches .header to flex-direction:column, the
+       main axis becomes vertical, so that same 320px basis is reinterpreted as a HEIGHT hint
+       instead - inflating the title block to a fixed 320px tall with a large empty gap below the
+       actual one-or-two-line text, before the mode-toggle appears underneath it. Resetting the
+       basis to auto here drops that leftover width-axis value so the title's height is driven by
+       its own content again, the same as every other stacked mobile section. */
+    /* .mode-option sizes to its own content (never explicitly stretched) - fine on desktop where
+       both buttons sit on one row filling .mode-toggle's width between them, but once .mode-toggle
+       wraps them onto separate rows here, each button just left-aligns at its own (narrower than
+       full-width) size, leaving a large blank rectangle next to it on that row. Stacking them as
+       explicit full-width rows removes that dead space, matching how every other button group
+       already collapses on mobile elsewhere in the app (.toolbar, .card-footer, etc).
+       flex-wrap:nowrap is needed alongside flex-direction:column - .mode-toggle's desktop rule
+       sets flex-wrap:wrap for the ROW-direction case (letting a button wrap onto a new line), but
+       wrap in a COLUMN-direction container instead creates new side-by-side COLUMNS, which sizes
+       .mode-toggle itself to only as wide as its content needs (fit-content) rather than the full
+       width of .header - explaining why width:100% on .mode-option alone wasn't enough; the
+       button was already 100% of an .mode-toggle that had shrunk to ~200px, not the page's width. */
     @media (max-width: 700px) {
       .header { flex-direction: column; }
       .header-title { flex: 1 1 auto; }
@@ -172,11 +203,11 @@ export class PreviewEditComponent implements OnInit {
   pageCounts: Record<string, number> = {};
   emailModalOpen = false;
   emailBusy = false;
-  exporting = false;
+  exportingFormat: ExportFormat | null = null;
   loading = true;
   notFound = false;
 
-  constructor(private route: ActivatedRoute, private documentService: DocumentService, private toast: ToastService) {}
+  constructor(private route: ActivatedRoute, private documentService: DocumentService, private toast: ToastService, public authService: AuthService) {}
 
   ngOnInit() {
     this.documentId = this.route.snapshot.paramMap.get('id')!;
@@ -262,10 +293,23 @@ export class PreviewEditComponent implements OnInit {
     });
   }
 
+  /// The exporting/sending spinner is only worth showing at all if it stays on screen long
+  /// enough to actually be seen - a fast response (LAN, small document) could otherwise resolve
+  /// in under 100ms and just flash, reading as a glitch rather than confirmation that something
+  /// happened. Padding every request out to this floor means slow AND fast requests both end
+  /// with a moment the user can actually register as "done", without makng slow ones feel worse.
+  private static readonly MIN_BUSY_MS = 700;
+
+  private withMinimumBusyDuration(start: number, clear: () => void) {
+    const remaining = PreviewEditComponent.MIN_BUSY_MS - (Date.now() - start);
+    if (remaining > 0) setTimeout(clear, remaining); else clear();
+  }
+
   /// Export/download never re-asks anything - it uses whatever layout is already on screen
   /// (Rows/Columns) right now, matching what the user is already looking at.
   downloadExport(format: ExportFormat) {
-    this.exporting = true;
+    const start = Date.now();
+    this.exportingFormat = format;
     const layout: ExportLayout = this.viewMode === 'columns' ? 'ColumnsPerField' : 'RowsPerField';
     this.documentService.exportDocument(this.documentId, { format, layout }).subscribe({
       next: blob => {
@@ -276,19 +320,29 @@ export class PreviewEditComponent implements OnInit {
         a.download = `${this.fileName.replace(/\.[^.]+$/, '')}-export.${ext}`;
         a.click();
         window.URL.revokeObjectURL(url);
-        this.exporting = false;
         this.toast.success('Export downloaded.');
+        this.withMinimumBusyDuration(start, () => this.exportingFormat = null);
       },
-      error: () => { this.exporting = false; this.toast.error('Could not export. Please try again.'); }
+      error: () => {
+        this.toast.error('Could not export. Please try again.');
+        this.withMinimumBusyDuration(start, () => this.exportingFormat = null);
+      }
     });
   }
 
   onEmailConfirmed(result: EmailModalResult) {
+    const start = Date.now();
     this.emailBusy = true;
     const layout: ExportLayout = this.viewMode === 'columns' ? 'ColumnsPerField' : 'RowsPerField';
     this.documentService.sendEmail(this.documentId, result.toAddress, result.cc, undefined, { format: result.format, layout }).subscribe({
-      next: () => { this.toast.success('Export emailed successfully.'); this.emailModalOpen = false; this.emailBusy = false; },
-      error: () => { this.toast.error('Could not send that email. Please try again.'); this.emailBusy = false; }
+      next: () => {
+        this.toast.success('Export emailed successfully.');
+        this.withMinimumBusyDuration(start, () => { this.emailModalOpen = false; this.emailBusy = false; });
+      },
+      error: () => {
+        this.toast.error('Could not send that email. Please try again.');
+        this.withMinimumBusyDuration(start, () => this.emailBusy = false);
+      }
     });
   }
 }

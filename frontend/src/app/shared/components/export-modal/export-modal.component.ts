@@ -1,9 +1,10 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { ExportFormat } from '../../../core/models/models';
 import { IconComponent } from '../icon/icon.component';
+import { SpinnerComponent } from '../spinner/spinner.component';
 
 export interface EmailModalResult {
   toAddress: string;
@@ -20,7 +21,7 @@ export interface EmailModalResult {
 @Component({
   selector: 'app-export-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, IconComponent],
+  imports: [CommonModule, FormsModule, IconComponent, SpinnerComponent],
   animations: [
     trigger('fade', [
       transition(':enter', [style({ opacity: 0 }), animate('140ms ease-out', style({ opacity: 1 }))]),
@@ -58,17 +59,27 @@ export interface EmailModalResult {
 
         <div class="field-block">
           <label>Send to</label>
-          <input class="dm-input" type="email" [(ngModel)]="toAddress" placeholder="recipient@company.com" />
+          <input class="dm-input" type="email" [(ngModel)]="toAddress" [disabled]="busy" placeholder="recipient@company.com" />
         </div>
         <div class="field-block">
           <label>CC <span class="muted">(optional)</span></label>
-          <input class="dm-input" type="text" [(ngModel)]="cc" placeholder="cc1@company.com, cc2@company.com" />
+          <input class="dm-input" type="text" [(ngModel)]="cc" [disabled]="busy" placeholder="cc1@company.com, cc2@company.com" />
         </div>
+
+        @if (busy) {
+          <div class="send-progress" role="status">
+            <span class="send-progress-fill"></span>
+          </div>
+        }
 
         <div class="actions">
           <button class="dm-btn dm-btn-ghost" (click)="cancelled.emit()" [disabled]="busy">Cancel</button>
           <button class="dm-btn dm-btn-primary" (click)="confirm()" [disabled]="busy || !toAddress">
-            <app-icon name="inbox" [size]="14" /> {{ busy ? 'Sending…' : 'Send' }}
+            @if (busy) {
+              <app-spinner [size]="14" /> Sending your export…
+            } @else {
+              <app-icon name="inbox" [size]="14" /> Send
+            }
           </button>
         </div>
       </div>
@@ -101,8 +112,12 @@ export interface EmailModalResult {
     .actions .dm-btn { display: inline-flex; align-items: center; gap: 6px; }
   `]
 })
-export class ExportModalComponent {
+export class ExportModalComponent implements OnInit {
   @Input() busy = false;
+  // Pre-fills "Send to" with the logged-in user's own address - the overwhelmingly common case
+  // is emailing an export to yourself, and it's still a plain editable field for anyone who
+  // actually wants a different recipient.
+  @Input() defaultToAddress = '';
 
   @Output() confirmed = new EventEmitter<EmailModalResult>();
   @Output() cancelled = new EventEmitter<void>();
@@ -110,6 +125,10 @@ export class ExportModalComponent {
   format: ExportFormat = 'Excel';
   toAddress = '';
   cc = '';
+
+  ngOnInit() {
+    this.toAddress = this.defaultToAddress;
+  }
 
   confirm() {
     if (!this.toAddress) return;

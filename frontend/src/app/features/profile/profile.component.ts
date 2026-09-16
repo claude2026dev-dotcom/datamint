@@ -106,7 +106,7 @@ const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gi
     .danger-btn { color: var(--dm-danger); border-color: var(--dm-danger); }
     .danger-btn:hover { background: rgba(239,68,68,0.1); }
 
-    .card-footer { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--dm-border); display: flex; justify-content: flex-end; }
+    .card-footer { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--dm-border); display: flex; justify-content: flex-end; gap: 12px; }
     @media (max-width: 480px) {
       .card-footer { flex-direction: column-reverse; align-items: stretch; }
       .card-footer .dm-btn { width: 100%; }
