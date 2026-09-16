@@ -36,6 +36,13 @@ interface BulkFileStatus {
 }
 
 const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/bmp'];
+// Must match DocumentsController's MaxUploadBytes (backend/src/Datamint.API/Controllers/
+// DocumentsController.cs) - rejecting an oversized file here, with a clear reason, beats letting
+// it reach the server only to fail with a raw 413 that has no JSON body for the error toast to
+// show a real message from (a large real-world document - e.g. a 473-page, 46.2MB report - used
+// to hit exactly this: peek/upload both failed past the old 30MB cap with only a generic,
+// misleading fallback message).
+const MAX_FILE_SIZE_BYTES = 100_000_000;
 // Past this many pages, a flat grid of one chip button per page (see .page-chips) stops being
 // something a person can actually scan or tap accurately - the chips are windowed into batches
 // instead (see CHIPS_PER_BATCH), navigated with Prev/Next and a batch-jump dropdown.
@@ -457,8 +464,18 @@ export class UploadComponent implements OnInit, AfterViewChecked {
   }
 
   private addFiles(files: File[]) {
-    const accepted = files.filter(f => ACCEPTED_TYPES.includes(f.type));
-    if (accepted.length !== files.length) this.toast.error('Only PDF and image (JPG/PNG/WEBP/BMP) files are supported.');
+    const rightType = files.filter(f => ACCEPTED_TYPES.includes(f.type));
+    if (rightType.length !== files.length) this.toast.error('Only PDF and image (JPG/PNG/WEBP/BMP) files are supported.');
+
+    const oversized = rightType.filter(f => f.size > MAX_FILE_SIZE_BYTES);
+    if (oversized.length > 0) {
+      const maxLabel = formatFileSize(MAX_FILE_SIZE_BYTES);
+      this.toast.error(oversized.length === 1
+        ? `"${oversized[0].name}" is ${formatFileSize(oversized[0].size)}, which is over the ${maxLabel} limit per file.`
+        : `${oversized.length} files are over the ${maxLabel} limit per file.`);
+    }
+
+    const accepted = rightType.filter(f => f.size <= MAX_FILE_SIZE_BYTES);
     if (accepted.length === 0) return;
 
     const added: SelectedFile[] = accepted.map(file => ({
