@@ -30,6 +30,7 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
     protected readonly ILogger Logger;
     private readonly int _maxEmptyResultRetries;
     private readonly int _maxPagesPerExtractionChunk;
+    private readonly int _maxWordsPerExtractionChunk;
     private readonly int _maxConcurrentChunks;
     // Concurrent chunk processing (see ExtractStructuredDataAsync) means multiple threads can
     // record a call's usage at the same instant - a plain List<T> isn't safe under that, so this
@@ -51,6 +52,24 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         // this are split into separate calls and merged rather than risking truncation.
         _maxPagesPerExtractionChunk = int.TryParse(config["Ai:MaxPagesPerExtractionChunk"], out var chunkSize) && chunkSize > 0
             ? chunkSize : 3;
+        // Page count alone is a poor proxy for how much a chunk will cost to extract - a
+        // line-item-table-heavy page (a bulk utility bill, a detailed ledger) can carry 4-5x the
+        // extractable fields of a typical narrative-style page with a similar word count on
+        // paper, but a wildly different one once expanded into per-field JSON. Word count is an
+        // imperfect but cheap-to-measure, fully general proxy for that density (no knowledge of
+        // any specific field name or document type) - capping cumulative words per chunk means a
+        // dense document naturally gets smaller chunks (avoiding the output-token cap before ever
+        // calling the model) while a normal document is unaffected, since it never approaches the
+        // budget within _maxPagesPerExtractionChunk pages anyway. Calibrated from real-world
+        // measurement: ~345 words on a genuinely dense line-item page produced ~5,000-5,800 output
+        // tokens (~15-17 tokens/word); a 750-word budget stays comfortably under the 16,000-token
+        // cap even at that worst-observed expansion rate, leaving headroom for JSON-structure
+        // overhead and normal variance. This is a first line of defense, not the only one - the
+        // output-truncation retry in ExtractChunkAsync (splitting and re-extracting) still catches
+        // any chunk that turns out denser than this estimate predicted, so a bad guess here costs
+        // an extra round-trip, never a silently incomplete result.
+        _maxWordsPerExtractionChunk = int.TryParse(config["Ai:MaxWordsPerExtractionChunk"], out var wordBudget) && wordBudget > 0
+            ? wordBudget : 750;
         // Independent chunks (disjoint page ranges, no shared state) used to be awaited one at a
         // time - for a 10-page document at the default chunk size that's up to 8 sequential
         // Claude round-trips, several minutes of pure waiting even though nothing about chunk 2
@@ -79,19 +98,19 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
     /// separately - Claude's real-world minimum cacheable length is higher than either piece
     /// alone tends to be for a typical document).
     /// </summary>
-    protected abstract Task<(string? text, string? error, int inputTokens, int outputTokens, int cacheCreationInputTokens, int cacheReadInputTokens)> CallModelAsync(
+    protected abstract Task<(string? text, string? error, int inputTokens, int outputTokens, int cacheCreationInputTokens, int cacheReadInputTokens, bool wasTruncated)> CallModelAsync(
         string apiKey, string modelName, AiExtractionPromptHelper.PromptParts prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct);
 
     /// <summary>Every call site goes through here (never CallModelAsync directly) so CallUsages
     /// stays a complete record of every real request this instance made.</summary>
-    private async Task<(string? text, string? error)> CallAndRecordAsync(
+    private async Task<(string? text, string? error, bool wasTruncated)> CallAndRecordAsync(
         string purpose, string apiKey, string modelName, AiExtractionPromptHelper.PromptParts prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct)
     {
         var stopwatch = Stopwatch.StartNew();
-        var (text, error, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens) = await CallModelAsync(apiKey, modelName, prompt, images, ct);
+        var (text, error, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens, wasTruncated) = await CallModelAsync(apiKey, modelName, prompt, images, ct);
         stopwatch.Stop();
         _callUsages.Enqueue(new AiCallUsage(purpose, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens, stopwatch.ElapsedMilliseconds));
-        return (text, error);
+        return (text, error, wasTruncated);
     }
 
     public async Task<AiExtractionResultDto> ExtractStructuredDataAsync(
@@ -111,9 +130,9 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         // Only Dynamic mode's response size scales with page count - Formatted mode's output is
         // always bounded by the caller's fixed field list regardless of how many pages it spans,
         // so it's never at risk of the truncation this chunking exists to avoid.
-        if (isDynamicMode && pageList.Count > _maxPagesPerExtractionChunk)
+        if (isDynamicMode && (pageList.Count > _maxPagesPerExtractionChunk || TotalWordCount(pageList) > _maxWordsPerExtractionChunk))
         {
-            var chunks = Chunk(pageList, _maxPagesPerExtractionChunk).ToList();
+            var chunks = Chunk(pageList, _maxPagesPerExtractionChunk, _maxWordsPerExtractionChunk).ToList();
 
             // Each chunk is a fully independent extraction over its own disjoint page range - no
             // chunk reads another's output, so there is no correctness reason to serialize them.
@@ -155,11 +174,33 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         return await ExtractChunkAsync(pageList, tier, requestedFields, isDynamicMode, apiKey, ct);
     }
 
-    private static IEnumerable<List<PdfPageTextDto>> Chunk(List<PdfPageTextDto> pages, int size)
+    /// <summary>Splits pages into chunks bounded by both a page-count ceiling and a cumulative
+    /// word-count budget (see _maxWordsPerExtractionChunk) - whichever limit is hit first ends
+    /// the current chunk. A single page always forms its own chunk even if it alone exceeds the
+    /// word budget; there's nothing smaller to split it into here.</summary>
+    private static IEnumerable<List<PdfPageTextDto>> Chunk(List<PdfPageTextDto> pages, int maxPages, int maxWords)
     {
-        for (var i = 0; i < pages.Count; i += size)
-            yield return pages.GetRange(i, Math.Min(size, pages.Count - i));
+        var current = new List<PdfPageTextDto>();
+        var currentWords = 0;
+        foreach (var page in pages)
+        {
+            var pageWords = WordCount(page.Text);
+            if (current.Count > 0 && (current.Count >= maxPages || currentWords + pageWords > maxWords))
+            {
+                yield return current;
+                current = new List<PdfPageTextDto>();
+                currentWords = 0;
+            }
+            current.Add(page);
+            currentWords += pageWords;
+        }
+        if (current.Count > 0) yield return current;
     }
+
+    private static int TotalWordCount(IEnumerable<PdfPageTextDto> pages) => pages.Sum(p => WordCount(p.Text));
+
+    private static int WordCount(string? text) =>
+        string.IsNullOrWhiteSpace(text) ? 0 : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
 
     private async Task<AiExtractionResultDto> ExtractChunkAsync(
         List<PdfPageTextDto> pageList, ExtractionTier tier, IReadOnlyList<string>? requestedFields,
@@ -179,9 +220,31 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         while (true)
         {
             var firstPassPrompt = AiExtractionPromptHelper.BuildPrompt(pageList, tier, requestedFields, isRetryAfterEmptyResult: attempt > 0);
-            var (firstPassText, firstPassError) = await CallAndRecordAsync("FirstPass", apiKey, tier.ModelName, firstPassPrompt, images, ct);
+            var (firstPassText, firstPassError, firstPassTruncated) = await CallAndRecordAsync("FirstPass", apiKey, tier.ModelName, firstPassPrompt, images, ct);
             if (firstPassError is not null)
                 return new AiExtractionResultDto(new List<ExtractedFieldDto>(), false, firstPassError);
+
+            // The model hit its output-token cap mid-generation - whatever ParsePageGroupedFieldsJson/
+            // ParseFieldsJson salvages below is a response cut off partway through, silently missing
+            // every field after that point. A page-count-based chunk size can't predict this in
+            // advance (a dense line-item table produces far more output per page than a typical
+            // document), so instead of accepting the partial result, split this chunk in half and
+            // retry each half - halving the fields-per-call means halving the output size, which
+            // reliably clears the cap. Only bottoms out at "accept the salvage" for an already
+            // single-page chunk, where there's nothing left to split.
+            if (firstPassTruncated && pageList.Count > 1)
+            {
+                Logger.LogWarning(
+                    "First-pass response hit the model's output-token cap on a {PageCount}-page chunk; splitting and retrying instead of keeping a truncated result.",
+                    pageList.Count);
+                var mid = pageList.Count / 2;
+                var firstHalfTask = ExtractChunkAsync(pageList.GetRange(0, mid), tier, requestedFields, isDynamicMode, apiKey, ct);
+                var secondHalfTask = ExtractChunkAsync(pageList.GetRange(mid, pageList.Count - mid), tier, requestedFields, isDynamicMode, apiKey, ct);
+                var halves = await Task.WhenAll(firstHalfTask, secondHalfTask);
+                var failedHalf = halves.FirstOrDefault(r => !r.Success);
+                if (failedHalf is not null) return failedHalf;
+                return new AiExtractionResultDto(halves.SelectMany(r => r.Fields).ToList(), true, null);
+            }
 
             try
             {
@@ -202,7 +265,7 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
             }
 
             var verifyPrompt = AiExtractionPromptHelper.BuildVerificationPrompt(pageList, fields, tier, isDynamicMode);
-            var (verifyText, verifyError) = await CallAndRecordAsync("Verify", apiKey, tier.ModelName, verifyPrompt, Array.Empty<PageImageDto>(), ct);
+            var (verifyText, verifyError, _) = await CallAndRecordAsync("Verify", apiKey, tier.ModelName, verifyPrompt, Array.Empty<PageImageDto>(), ct);
             if (verifyError is null && verifyText is not null)
             {
                 try
@@ -278,7 +341,7 @@ public abstract class AiFieldExtractionServiceBase : IAiFieldExtractionService
         // No SystemRules/DocumentText split here - every batch's label list is different, so
         // there's nothing cacheable to separate out.
         var prompt = new AiExtractionPromptHelper.PromptParts("", "", AiExtractionPromptHelper.BuildHarmonizationPrompt(distinctKeys));
-        var (text, error) = await CallAndRecordAsync("Harmonization", apiKey, tier.ModelName, prompt, Array.Empty<PageImageDto>(), ct);
+        var (text, error, _) = await CallAndRecordAsync("Harmonization", apiKey, tier.ModelName, prompt, Array.Empty<PageImageDto>(), ct);
         if (error is not null || text is null) return new Dictionary<string, string>();
 
         try

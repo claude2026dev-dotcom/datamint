@@ -27,7 +27,7 @@ public class ClaudeFieldExtractionService : AiFieldExtractionServiceBase
     protected override string? ApiKey => Config["Claude:ApiKey"];
     protected override string MissingApiKeyMessage => GenericExtractionFailureMessage;
 
-    protected override async Task<(string? text, string? error, int inputTokens, int outputTokens, int cacheCreationInputTokens, int cacheReadInputTokens)> CallModelAsync(
+    protected override async Task<(string? text, string? error, int inputTokens, int outputTokens, int cacheCreationInputTokens, int cacheReadInputTokens, bool wasTruncated)> CallModelAsync(
         string apiKey, string modelName, AiExtractionPromptHelper.PromptParts prompt, IReadOnlyList<PageImageDto> images, CancellationToken ct)
     {
         var content = new List<object>();
@@ -92,22 +92,26 @@ public class ClaudeFieldExtractionService : AiFieldExtractionServiceBase
             if (!response.IsSuccessStatusCode)
             {
                 Logger.LogError("Claude API error {Status}: {Body}", response.StatusCode, raw);
-                return (null, GenericExtractionFailureMessage, 0, 0, 0, 0);
+                return (null, GenericExtractionFailureMessage, 0, 0, 0, 0, false);
             }
 
             using var doc = JsonDocument.Parse(raw);
             var text = doc.RootElement.GetProperty("content")[0].GetProperty("text").GetString() ?? "[]";
+            // "max_tokens" here means the response was cut off mid-generation, not that it
+            // finished normally at exactly the budget - the caller needs to know this to avoid
+            // silently accepting a truncated JSON array as if it were complete.
+            var wasTruncated = doc.RootElement.TryGetProperty("stop_reason", out var stopReason) && stopReason.GetString() == "max_tokens";
             var usage = doc.RootElement.GetProperty("usage");
             var inputTokens = usage.GetProperty("input_tokens").GetInt32();
             var outputTokens = usage.GetProperty("output_tokens").GetInt32();
             var cacheCreationInputTokens = usage.TryGetProperty("cache_creation_input_tokens", out var cc) ? cc.GetInt32() : 0;
             var cacheReadInputTokens = usage.TryGetProperty("cache_read_input_tokens", out var cr) ? cr.GetInt32() : 0;
-            return (text, null, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens);
+            return (text, null, inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens, wasTruncated);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Unexpected error calling Claude API");
-            return (null, GenericExtractionFailureMessage, 0, 0, 0, 0);
+            return (null, GenericExtractionFailureMessage, 0, 0, 0, 0, false);
         }
     }
 }
