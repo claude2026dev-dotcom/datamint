@@ -61,16 +61,19 @@ public class AiFieldExtractionServiceFactory : IAiFieldExtractionServiceFactory
 {
     private readonly ClaudeFieldExtractionService _claude;
     private readonly OpenAiFieldExtractionService _openAi;
+    private readonly GeminiFieldExtractionService _gemini;
 
-    public AiFieldExtractionServiceFactory(ClaudeFieldExtractionService claude, OpenAiFieldExtractionService openAi)
+    public AiFieldExtractionServiceFactory(ClaudeFieldExtractionService claude, OpenAiFieldExtractionService openAi, GeminiFieldExtractionService gemini)
     {
         _claude = claude;
         _openAi = openAi;
+        _gemini = gemini;
     }
 
     public Application.Interfaces.IAiFieldExtractionService GetService(Domain.Enums.AiProvider provider) => provider switch
     {
         Domain.Enums.AiProvider.OpenAi => _openAi,
+        Domain.Enums.AiProvider.Gemini => _gemini,
         _ => _claude
     };
 }

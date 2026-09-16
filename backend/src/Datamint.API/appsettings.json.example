@@ -51,13 +51,16 @@
     "ContactEmail": "claude2026dev@gmail.com"
   },
 
-  "// 7": "----- AI EXTRACTION: API keys for both providers are always needed (which one a given document actually uses is decided per-Plan via admin-configured Extraction Tiers, not this file - see Admin > Extraction Tiers). MaxEmptyResultRetries bounds the empty-result retry loop; PageImageMaxDimensionPx caps the rendered page image sent for vision-based extraction. SkipImagesForCleanTextPages/MinPageTextLengthForSkippingImage are a cost optimization (dev-only while being validated, see CLAUDE.md) - a page whose PdfPig text already looks reliable doesn't also get a rendered image sent, since images are the most expensive input token type. MaxConcurrentChunks bounds how many of a large document's page-chunks are extracted in parallel (dev-only while being validated) - independent chunks used to run strictly one at a time, which is the main reason a multi-page document took minutes; raise it if the provider account's rate limit comfortably allows more, lower it if you see 429s -----",
+  "// 7": "----- AI EXTRACTION: API keys for every provider are always needed (which one a given document actually uses is decided per-Plan via admin-configured Extraction Tiers, not this file - see Admin > Extraction Tiers). MaxEmptyResultRetries bounds the empty-result retry loop; PageImageMaxDimensionPx caps the rendered page image sent for vision-based extraction. SkipImagesForCleanTextPages/MinPageTextLengthForSkippingImage are a cost optimization (dev-only while being validated, see CLAUDE.md) - a page whose PdfPig text already looks reliable doesn't also get a rendered image sent, since images are the most expensive input token type. MaxConcurrentChunks bounds how many of a large document's page-chunks are extracted in parallel (dev-only while being validated) - independent chunks used to run strictly one at a time, which is the main reason a multi-page document took minutes; raise it if the provider account's rate limit comfortably allows more, lower it if you see 429s -----",
   "Claude": {
     "ApiKey": "YOUR_CLAUDE_API_KEY"
   },
   "OpenAI": {
     "ApiKey": "YOUR_OPENAI_API_KEY",
     "ImageDetail": "low"
+  },
+  "Gemini": {
+    "ApiKey": "YOUR_GEMINI_API_KEY"
   },
   "Ai": {
     "MaxEmptyResultRetries": "1",
