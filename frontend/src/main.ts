@@ -6,6 +6,7 @@ import { AppComponent } from './app/app.component';
 import { routes } from './app/app.routes';
 import { authInterceptor } from './app/core/interceptors/auth.interceptor';
 import { errorInterceptor } from './app/core/interceptors/error.interceptor';
+import { timeoutInterceptor } from './app/core/interceptors/timeout.interceptor';
 
 bootstrapApplication(AppComponent, {
   providers: [
@@ -23,6 +24,9 @@ bootstrapApplication(AppComponent, {
     // response/error-side in REVERSE - so authInterceptor (listed second) sees
     // a raw error first and gets to try a silent token refresh before
     // errorInterceptor's blanket "session expired" handling ever runs.
-    provideHttpClient(withInterceptors([errorInterceptor, authInterceptor]))
+    // timeoutInterceptor is listed last so it sits closest to the backend and
+    // wraps every real request - including authInterceptor's own refresh call
+    // and its retried request - with a timeout, not just the original call.
+    provideHttpClient(withInterceptors([errorInterceptor, authInterceptor, timeoutInterceptor]))
   ]
 }).catch(err => console.error(err));
