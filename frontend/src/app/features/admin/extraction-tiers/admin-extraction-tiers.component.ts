@@ -107,6 +107,7 @@ interface TierForm {
               <select class="dm-input" [(ngModel)]="form.aiProvider">
                 <option value="Claude">Claude</option>
                 <option value="OpenAi">OpenAI</option>
+                <option value="Gemini">Gemini</option>
               </select>
             </label>
             <label class="field">
