@@ -94,7 +94,13 @@ import { BackButtonComponent } from '../../../shared/components/back-button/back
     .danger-btn { color: var(--dm-danger); border-color: var(--dm-danger); }
     .danger-btn:hover { background: rgba(239,68,68,0.1); }
 
-    .card-footer { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--dm-border); display: flex; justify-content: flex-end; }
+    /* justify-content:space-between/flex-end alone gives no spacing once the mobile media query
+       below switches this to flex-direction:column - with an auto (shrink-to-fit) height, there's
+       no leftover space for "space-between" to distribute, so stacked buttons end up touching
+       with zero gap. An explicit gap covers both the row (desktop, alongside justify-content) and
+       column (mobile) cases the same way, instead of relying on justify-content's cross-axis
+       behavior actually producing spacing. */
+    .card-footer { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--dm-border); display: flex; justify-content: flex-end; gap: 12px; }
     @media (max-width: 480px) {
       .card-footer { flex-direction: column-reverse; align-items: stretch; }
       .card-footer .dm-btn { width: 100%; }

@@ -10,9 +10,10 @@ namespace Datamint.Infrastructure.Services;
 
 /// <summary>Builds a clean .xlsx from the (possibly user-edited) extracted fields, in either
 /// a rows-per-field or columns-per-field layout, respecting per-field/per-document export
-/// selection. Deliberately shows only field/value (plus page and type for context) - edit
-/// history and the AI's original values are a review-page-only concept (see the on-screen
-/// "Edit" tab), never written into the exported file itself.</summary>
+/// selection. Deliberately shows only field/value (plus page, for context) - the semantic
+/// type is used to format each cell correctly (see SetTypedValue) but isn't itself written as
+/// its own column, and edit history / the AI's original values are a review-page-only concept
+/// (see the on-screen "Edit" tab) - none of that belongs in the exported file itself.</summary>
 public class ExcelExportService : IExcelExportService
 {
     private static readonly XLColor HeaderFill = XLColor.FromHtml("#4F46E5");
@@ -140,7 +141,7 @@ public class ExcelExportService : IExcelExportService
         if (includeDocHeader)
         {
             sheet.Cell(row, 1).Value = fileName;
-            var docHeader = sheet.Range(row, 1, row, 4);
+            var docHeader = sheet.Range(row, 1, row, 3);
             docHeader.Merge();
             docHeader.Style.Font.Bold = true;
             docHeader.Style.Font.FontSize = 12;
@@ -150,8 +151,7 @@ public class ExcelExportService : IExcelExportService
         sheet.Cell(row, 1).Value = "Page";
         sheet.Cell(row, 2).Value = "Field Name";
         sheet.Cell(row, 3).Value = "Value";
-        sheet.Cell(row, 4).Value = "Type";
-        var header = sheet.Range(row, 1, row, 4);
+        var header = sheet.Range(row, 1, row, 3);
         header.Style.Font.Bold = true;
         header.Style.Fill.BackgroundColor = HeaderFill;
         header.Style.Font.FontColor = XLColor.White;
@@ -166,7 +166,7 @@ public class ExcelExportService : IExcelExportService
             {
                 currentSection = field.SectionLabel;
                 sheet.Cell(row, 1).Value = currentSection ?? "General";
-                var sectionRow = sheet.Range(row, 1, row, 4);
+                var sectionRow = sheet.Range(row, 1, row, 3);
                 sectionRow.Merge();
                 sectionRow.Style.Font.Bold = true;
                 sectionRow.Style.Fill.BackgroundColor = SectionFill;
@@ -176,7 +176,6 @@ public class ExcelExportService : IExcelExportService
             sheet.Cell(row, 1).Value = field.PageNumber?.ToString() ?? "-";
             sheet.Cell(row, 2).Value = field.FieldKey;
             SetTypedValue(sheet.Cell(row, 3), field.FieldValue, field.SemanticType);
-            sheet.Cell(row, 4).Value = string.IsNullOrWhiteSpace(field.SemanticType) ? "Text" : field.SemanticType;
             row++;
         }
 
@@ -239,6 +238,16 @@ public class ExcelExportService : IExcelExportService
         const int FirstFieldCol = 2;
         sheet.Cell(1, 1).Value = "Document";
         sheet.Range(1, 1, 2, 1).Merge();
+        // Excel only ever renders a merged range's styling from its TOP-LEFT anchor cell -
+        // styling was previously applied to Cell(2, 1) below (the range's bottom cell), which
+        // Excel silently ignores once the range is merged, leaving this cell plain white/black
+        // while every other header cell in the row is filled and bold. Style the anchor cell
+        // (1, 1) instead, with vertical centering since it now spans two source rows' height.
+        sheet.Cell(1, 1).Style.Font.Bold = true;
+        sheet.Cell(1, 1).Style.Fill.BackgroundColor = HeaderFill;
+        sheet.Cell(1, 1).Style.Font.FontColor = XLColor.White;
+        sheet.Cell(1, 1).Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+        sheet.Cell(1, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
         // Section band row: one merged, colored cell per contiguous run of columns sharing a
         // section - built by walking fieldKeysInOrder and grouping equal-section runs, so a
@@ -272,9 +281,6 @@ public class ExcelExportService : IExcelExportService
         fieldHeaderRow.Style.Font.Bold = true;
         fieldHeaderRow.Style.Fill.BackgroundColor = HeaderFill;
         fieldHeaderRow.Style.Font.FontColor = XLColor.White;
-        sheet.Cell(2, 1).Style.Font.Bold = true;
-        sheet.Cell(2, 1).Style.Fill.BackgroundColor = HeaderFill;
-        sheet.Cell(2, 1).Style.Font.FontColor = XLColor.White;
 
         int row = 3;
         foreach (var (fileName, fields) in filteredPerDoc)

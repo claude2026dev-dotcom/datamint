@@ -5,6 +5,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { DocumentService } from '../../core/services/document.service';
 import { ToastService } from '../../core/services/toast.service';
+import { AuthService } from '../../core/services/auth.service';
 import { BatchExportMode, ExportFormat, ExportLayout, ExtractedFieldEdit } from '../../core/models/models';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 import { BackButtonComponent } from '../../shared/components/back-button/back-button.component';
@@ -12,6 +13,7 @@ import { ExportModalComponent, EmailModalResult } from '../../shared/components/
 import { FieldCardEditorComponent, FieldCardEvent, FieldCardReorderEvent, FieldCardSectionRenameEvent } from '../../shared/components/field-card-editor/field-card-editor.component';
 import { FieldTableViewComponent } from '../../shared/components/field-table-view/field-table-view.component';
 import { FieldJsonViewComponent } from '../../shared/components/field-json-view/field-json-view.component';
+import { SpinnerComponent } from '../../shared/components/spinner/spinner.component';
 
 interface BatchDocument {
   id: string;
@@ -31,7 +33,7 @@ type SheetMode = 'combined' | 'byFile' | 'separateFiles';
   selector: 'app-batch-review',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink, IconComponent, BackButtonComponent, ExportModalComponent,
-            FieldCardEditorComponent, FieldTableViewComponent, FieldJsonViewComponent],
+            FieldCardEditorComponent, FieldTableViewComponent, FieldJsonViewComponent, SpinnerComponent],
   template: `
     <div class="dm-container page page-wide">
       <app-back-button fallbackUrl="/documents" />
@@ -84,11 +86,19 @@ type SheetMode = 'combined' | 'byFile' | 'separateFiles';
             }
           </div>
           <div class="actions">
-            <button class="dm-btn dm-btn-ghost btn-excel" [disabled]="exporting" (click)="downloadExport('Excel')" title="Download as an Excel spreadsheet">
-              <app-icon name="file-text" [size]="15" /> Excel
+            <button class="dm-btn dm-btn-ghost btn-excel" [disabled]="exportingFormat !== null" (click)="downloadExport('Excel')" title="Download as an Excel spreadsheet">
+              @if (exportingFormat === 'Excel') {
+                <app-spinner [size]="14" /> Preparing your Excel file…
+              } @else {
+                <app-icon name="file-text" [size]="15" /> Excel
+              }
             </button>
-            <button class="dm-btn dm-btn-ghost btn-json" [disabled]="exporting" (click)="downloadExport('Json')" title="Download as a structured JSON file">
-              {{ '{ }' }} JSON
+            <button class="dm-btn dm-btn-ghost btn-json" [disabled]="exportingFormat !== null" (click)="downloadExport('Json')" title="Download as a structured JSON file">
+              @if (exportingFormat === 'Json') {
+                <app-spinner [size]="14" /> Preparing your JSON file…
+              } @else {
+                {{ '{ }' }} JSON
+              }
             </button>
             <button class="dm-btn dm-btn-primary" (click)="emailModalOpen = !emailModalOpen" title="Email this export to someone">
               <app-icon name="inbox" [size]="15" /> Email
@@ -112,7 +122,8 @@ type SheetMode = 'combined' | 'byFile' | 'separateFiles';
         </p>
 
         @if (emailModalOpen) {
-          <app-export-modal [busy]="emailBusy" (confirmed)="onEmailConfirmed($event)" (cancelled)="emailModalOpen = false" />
+          <app-export-modal [busy]="emailBusy" [defaultToAddress]="authService.currentUser()?.email ?? ''"
+                             (confirmed)="onEmailConfirmed($event)" (cancelled)="emailModalOpen = false" />
         }
       }
 
@@ -211,9 +222,22 @@ type SheetMode = 'combined' | 'byFile' | 'separateFiles';
     .tab:hover { background: var(--dm-surface-hover); }
     .tab.active { color: var(--dm-primary); border-bottom-color: var(--dm-primary); background: rgba(99,102,241,0.06); }
 
+    /* See preview-edit.component.ts's identical rule for why: .header-title's "flex: 1 1 320px"
+       reinterprets its 320px basis as a HEIGHT once .header switches to flex-direction:column
+       here, inflating the title block far taller than its actual text needs. Resetting to
+       flex:1 1 auto lets it size to content again. */
     @media (max-width: 700px) {
       .header { flex-direction: column; }
+      .header-title { flex: 1 1 auto; }
       .toolbar { flex-direction: column; align-items: stretch; }
+      /* See preview-edit.component.ts's identical rule: .mode-option sizes to its own content, so
+         once .mode-toggle wraps them onto separate rows here, each button left-aligns at less
+         than the full row width, leaving a large blank rectangle beside it. flex-wrap:nowrap is
+         needed too - .mode-toggle's desktop flex-wrap:wrap creates side-by-side COLUMNS (not
+         rows) once flex-direction is column, shrinking .mode-toggle itself to fit-content instead
+         of the full row width. */
+      .mode-toggle { flex-direction: column; flex-wrap: nowrap; width: 100%; }
+      .mode-option { width: 100%; }
     }
   `]
 })
@@ -230,13 +254,14 @@ export class BatchReviewComponent implements OnInit {
 
   emailModalOpen = false;
   emailBusy = false;
-  exporting = false;
+  exportingFormat: ExportFormat | null = null;
 
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private documentService: DocumentService,
-    private toast: ToastService
+    private toast: ToastService,
+    public authService: AuthService
   ) {}
 
   ngOnInit() {
@@ -350,8 +375,19 @@ export class BatchReviewComponent implements OnInit {
     return this.viewMode === 'columns' ? 'ColumnsPerField' : 'RowsPerField';
   }
 
+  /// See preview-edit.component.ts's identical constant/method for why: without a floor, a fast
+  /// response can resolve the spinner before it's even visible, reading as a glitch rather than
+  /// confirmation that the export/email actually happened.
+  private static readonly MIN_BUSY_MS = 700;
+
+  private withMinimumBusyDuration(start: number, clear: () => void) {
+    const remaining = BatchReviewComponent.MIN_BUSY_MS - (Date.now() - start);
+    if (remaining > 0) setTimeout(clear, remaining); else clear();
+  }
+
   downloadExport(format: ExportFormat) {
-    this.exporting = true;
+    const start = Date.now();
+    this.exportingFormat = format;
     const documentIds = this.documents.map(d => d.id);
     const mode = this.currentExportMode();
     this.documentService.batchExport(documentIds, mode, { format, layout: this.currentLayout() }).subscribe({
@@ -363,23 +399,29 @@ export class BatchReviewComponent implements OnInit {
         a.download = `datamint-batch-export.${ext}`;
         a.click();
         window.URL.revokeObjectURL(url);
-        this.exporting = false;
         this.toast.success('Export downloaded.');
+        this.withMinimumBusyDuration(start, () => this.exportingFormat = null);
       },
-      error: () => { this.exporting = false; this.toast.error('Could not export. Please try again.'); }
+      error: () => {
+        this.toast.error('Could not export. Please try again.');
+        this.withMinimumBusyDuration(start, () => this.exportingFormat = null);
+      }
     });
   }
 
   onEmailConfirmed(result: EmailModalResult) {
+    const start = Date.now();
     this.emailBusy = true;
     const documentIds = this.documents.map(d => d.id);
     this.documentService.batchSendEmail(documentIds, result.toAddress, result.cc, this.currentExportMode(), { format: result.format, layout: this.currentLayout() }).subscribe({
       next: () => {
         this.toast.success('Export emailed successfully.');
-        this.emailModalOpen = false;
-        this.emailBusy = false;
+        this.withMinimumBusyDuration(start, () => { this.emailModalOpen = false; this.emailBusy = false; });
       },
-      error: () => { this.emailBusy = false; this.toast.error('Could not send that email. Please try again.'); }
+      error: () => {
+        this.toast.error('Could not send that email. Please try again.');
+        this.withMinimumBusyDuration(start, () => this.emailBusy = false);
+      }
     });
   }
 }

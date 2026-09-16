@@ -197,7 +197,7 @@ import { LoadingHintComponent } from '../../../shared/components/loading-hint/lo
     .danger-confirm { background: var(--dm-danger); color: var(--dm-danger-contrast-text); }
     .danger-confirm:hover { filter: brightness(1.08); }
 
-    .card-footer { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--dm-border); display: flex; justify-content: flex-end; }
+    .card-footer { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--dm-border); display: flex; justify-content: flex-end; gap: 12px; }
     .card-footer .delete-actions { width: 100%; justify-content: flex-end; }
     @media (max-width: 480px) {
       .card-footer, .card-footer .delete-actions { flex-direction: column-reverse; align-items: stretch; }
