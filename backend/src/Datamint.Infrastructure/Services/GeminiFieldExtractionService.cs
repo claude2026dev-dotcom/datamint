@@ -65,15 +65,19 @@ public class GeminiFieldExtractionService : AiFieldExtractionServiceBase
         };
 
         var requestJson = JsonSerializer.Serialize(requestBody);
-        // Gemini authenticates via an API-key query parameter, not a header - kept out of every
-        // log line below (only the response body/status is ever logged) so it never leaks.
-        var url = $"{GeminiApiBaseUrl}/{Uri.EscapeDataString(modelName)}:generateContent?key={Uri.EscapeDataString(apiKey)}";
+        // Gemini also accepts the API key as a "?key=" query parameter, but that ends up inside
+        // the request URI - which ASP.NET's own HttpClient logging handler writes to the log
+        // ("Sending HTTP request POST https://...") regardless of what this method itself logs,
+        // leaking the key into every log line for every call. The x-goog-api-key header is the
+        // documented alternative and never appears in that URI-only logging.
+        var url = $"{GeminiApiBaseUrl}/{Uri.EscapeDataString(modelName)}:generateContent";
 
         try
         {
             using var response = await TransientHttpRetry.SendWithRetryAsync(Http, () =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Post, url);
+                request.Headers.Add("x-goog-api-key", apiKey);
                 request.Content = new StringContent(requestJson, Encoding.UTF8, "application/json");
                 return request;
             }, Logger, ct);
@@ -97,11 +101,23 @@ public class GeminiFieldExtractionService : AiFieldExtractionServiceBase
             }
 
             var candidate = candidates[0];
-            var text = candidate.TryGetProperty("content", out var content)
-                && content.TryGetProperty("parts", out var responseParts) && responseParts.GetArrayLength() > 0
-                && responseParts[0].TryGetProperty("text", out var textElement)
-                ? textElement.GetString() ?? "[]"
-                : "[]";
+            // A single candidate's answer can legitimately arrive split across several parts
+            // (observed on a real dense document: a "thinking" trace part followed by the actual
+            // JSON answer part) - reading only parts[0] silently discarded everything after it,
+            // handing the JSON parser a string truncated mid-way through and making a real,
+            // complete response look identical to a genuinely-truncated one. Concatenating every
+            // non-thought part's text is the general fix, not specific to any one document.
+            var text = "[]";
+            if (candidate.TryGetProperty("content", out var content) && content.TryGetProperty("parts", out var responseParts))
+            {
+                var sb = new StringBuilder();
+                foreach (var part in responseParts.EnumerateArray())
+                {
+                    if (part.TryGetProperty("thought", out var thought) && thought.GetBoolean()) continue;
+                    if (part.TryGetProperty("text", out var textElement)) sb.Append(textElement.GetString());
+                }
+                if (sb.Length > 0) text = sb.ToString();
+            }
             // "MAX_TOKENS" here means the response was cut off mid-generation, not that it finished
             // normally at exactly the budget - the caller needs to know this to avoid silently
             // accepting a truncated JSON array as if it were complete.
