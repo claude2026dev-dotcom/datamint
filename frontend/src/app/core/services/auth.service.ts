@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { Observable, tap, catchError, of, finalize, shareReplay } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { AuthResponse, UserProfile } from '../models/models';
+import { ToastService } from './toast.service';
 
 type RefreshResponse = { accessToken: string; refreshToken: string; accessTokenExpiresAtUtc: string };
 
@@ -25,8 +26,9 @@ export class AuthService {
   // refresh call; sessionExpiryHandled makes errorInterceptor show that toast once.
   private refreshInFlight$: Observable<RefreshResponse> | null = null;
   private sessionExpiryHandled = false;
+  private sessionCheckTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private http: HttpClient, private router: Router) {
+  constructor(private http: HttpClient, private router: Router, private toast: ToastService) {
     // localStorage is one shared bucket per browser (not per tab), so every
     // open tab already reads the same session. The `storage` event is what
     // makes that live: it fires in every OTHER tab the instant one tab logs
@@ -36,6 +38,89 @@ export class AuthService {
     window.addEventListener('storage', (event: StorageEvent) => {
       if (event.key !== USER_KEY) return;
       this.userSignal.set(event.newValue ? JSON.parse(event.newValue) : null);
+      // Another tab just logged out - this tab's own proactive-refresh timer would
+      // otherwise fire later against a session that's already gone, an avoidable
+      // wasted request and a stray toast. Login elsewhere re-arms correctly on its
+      // own once THIS tab makes any authenticated request, so no action needed there.
+      if (event.newValue === null && this.sessionCheckTimer) {
+        clearTimeout(this.sessionCheckTimer);
+        this.sessionCheckTimer = null;
+      }
+    });
+
+    // Everything else in this service only reacts to an access token dying WHEN a
+    // request happens to use it - a user idle on a page that makes no calls (or one
+    // sitting in a background tab) would keep showing as logged in indefinitely even
+    // after both tokens are truly dead, until they eventually click something. This
+    // schedules a proactive check ahead of the CURRENT access token's own expiry
+    // (whatever is already in localStorage from a previous visit) so app bootstrap
+    // covers a page reload/reopen the exact same way a fresh login does.
+    this.scheduleProactiveRefresh();
+
+    // setTimeout can be throttled or paused entirely while a tab is backgrounded or
+    // the OS suspends the whole browser (laptop sleep) - the scheduled check above
+    // can end up firing very late, or effectively never until something else wakes
+    // the tab. Re-arming on resume recomputes the delay against the real current
+    // time, so a token that's already expired by the time the tab becomes visible
+    // again triggers the check almost immediately instead of waiting on a timer that
+    // was silently starved.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') this.scheduleProactiveRefresh();
+    });
+  }
+
+  /// Reads the "exp" claim straight out of the access token itself rather than
+  /// tracking a separately-stored expiry value - one source of truth that's already
+  /// correct on every code path (initial page load, login, Google sign-in, silent
+  /// refresh) with nothing extra to keep in sync.
+  private decodeJwtExpiryMs(token: string): number | null {
+    try {
+      const payload = token.split('.')[1];
+      const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+      const exp = JSON.parse(json)?.exp;
+      return typeof exp === 'number' ? exp * 1000 : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /// Schedules checkSessionValidity() to run shortly before the CURRENT access
+  /// token's own expiry (never negative - an already-expired token still schedules
+  /// an almost-immediate check rather than silently doing nothing). Re-armed after
+  /// every login, Google sign-in, and successful silent refresh (see persistSession/
+  /// refreshAccessToken), so this keeps re-triggering itself roughly every ~30
+  /// minutes (the access token lifetime) for as long as the refresh token underneath
+  /// it keeps working - which is exactly how long "remember me" or a normal session
+  /// is supposed to last, regardless of which login method produced it.
+  private scheduleProactiveRefresh() {
+    if (this.sessionCheckTimer) {
+      clearTimeout(this.sessionCheckTimer);
+      this.sessionCheckTimer = null;
+    }
+    const token = this.getAccessToken();
+    if (!token || !this.getRefreshToken()) return;
+
+    const expiryMs = this.decodeJwtExpiryMs(token);
+    if (!expiryMs) return;
+
+    const REFRESH_MARGIN_MS = 60_000;
+    const delay = Math.max(expiryMs - Date.now() - REFRESH_MARGIN_MS, 1_000);
+    this.sessionCheckTimer = setTimeout(() => this.checkSessionValidity(), delay);
+  }
+
+  /// The proactive counterpart to authInterceptor's reactive 401-triggered refresh -
+  /// same refreshAccessToken() call, same claimSessionExpiry()-gated single toast/
+  /// logout, just fired by a timer instead of an actual request so it still happens
+  /// for a user who's simply idle rather than one who's actively clicking around.
+  private checkSessionValidity() {
+    if (!this.getAccessToken() || !this.getRefreshToken()) return;
+    this.refreshAccessToken().subscribe({
+      error: () => {
+        if (this.claimSessionExpiry()) {
+          this.toast.error('Your session has expired. Please sign in again.');
+          this.logout(`/login?returnUrl=${encodeURIComponent(this.router.url)}`);
+        }
+      }
     });
   }
 
@@ -66,6 +151,10 @@ export class AuthService {
     localStorage.setItem(USER_KEY, JSON.stringify(user));
     this.userSignal.set(user);
     this.sessionExpiryHandled = false;
+    // Every login path (credentials, Google, register) funnels through here, so this
+    // is the one place that needs to (re)arm the proactive expiry check - covers all
+    // three the same way, no per-method wiring needed.
+    this.scheduleProactiveRefresh();
   }
 
   /// Lets errorInterceptor show exactly one "session expired" toast/logout even when
@@ -181,6 +270,10 @@ export class AuthService {
   logout(redirectTo = '/') {
     const refreshToken = this.getRefreshToken();
     const clearAndRedirect = () => {
+      if (this.sessionCheckTimer) {
+        clearTimeout(this.sessionCheckTimer);
+        this.sessionCheckTimer = null;
+      }
       localStorage.removeItem(ACCESS_TOKEN_KEY);
       localStorage.removeItem(REFRESH_TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
@@ -223,6 +316,12 @@ export class AuthService {
       tap(res => {
         localStorage.setItem(ACCESS_TOKEN_KEY, res.accessToken);
         localStorage.setItem(REFRESH_TOKEN_KEY, res.refreshToken);
+        // Re-arm against the NEW token's own expiry - this is what keeps the
+        // proactive check self-sustaining every ~30 minutes for as long as the
+        // refresh token underneath it keeps working, whether this refresh was
+        // triggered reactively (authInterceptor, on a real request's 401) or
+        // proactively (checkSessionValidity's timer).
+        this.scheduleProactiveRefresh();
       }),
       finalize(() => this.refreshInFlight$ = null),
       shareReplay(1)
