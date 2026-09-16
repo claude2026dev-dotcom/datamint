@@ -28,6 +28,14 @@ public class DocumentsController : ControllerBase
     private static readonly HashSet<string> AllowedUploadExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".pdf", ".jpg", ".jpeg", ".png", ".webp", ".bmp" };
 
+    // A real multi-hundred-page report/case-study PDF can comfortably exceed the old 30MB cap
+    // (a 473-page, 46.2MB file was rejected by both endpoints below) - raising this doesn't
+    // uncontrollably raise extraction cost, since the per-plan page-count quota gate further down
+    // Upload() already bounds that independently of the file's raw byte size. Shared by both
+    // Upload and Peek so a file that clears one always clears the other - [RequestSizeLimit]
+    // requires a compile-time constant, so this can't be a static readonly field.
+    private const int MaxUploadBytes = 100_000_000;
+
     public DocumentsController(
         DocumentProcessingService service, IDocumentRepository documents,
         ICurrentUserService currentUser, IConfiguration config, DatamintDbContext db, IBackgroundJobQueue jobQueue)
@@ -57,7 +65,7 @@ public class DocumentsController : ControllerBase
     /// </summary>
     [HttpPost("upload")]
     [EnforcesUploadLimit]
-    [RequestSizeLimit(30_000_000)]
+    [RequestSizeLimit(MaxUploadBytes)]
     public async Task<IActionResult> Upload(
         [FromForm] List<IFormFile> files,
         [FromForm] string? extractionMode = "Dynamic",
@@ -208,6 +216,7 @@ public class DocumentsController : ControllerBase
     /// decoupled by design, cheap relative to the AI call).
     /// </summary>
     [HttpPost("peek")]
+    [RequestSizeLimit(MaxUploadBytes)]
     public async Task<IActionResult> Peek([FromForm] List<IFormFile> files, CancellationToken ct)
     {
         if (files is null || files.Count == 0)
